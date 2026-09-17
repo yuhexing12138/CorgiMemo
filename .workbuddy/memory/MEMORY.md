@@ -52,6 +52,11 @@
 - `Modifier.shadow` 在 scale+alpha 动画中出方角阴影。`animateContentSize` 内部 `clipToBounds()` 持续裁剪。
 - ⚠️ **`verticalScroll` 会把子项高度约束改成 `Constraints.Infinity`** → 内部 `fillMaxSize()` 失效，子组件只能按内容高撑开。
   要在滚动容器内给子组件保底高度，必须由宿主传 `heightIn(min=...)`，且子组件**不要再追加 `fillMaxSize()`**（会覆盖宿主意图）。
+- ⚠️⚠️ **无限高约束会"穿透多层"逐级吞掉宿主意图（2026-09-17 实测，改一层不够）**：
+  `host(verticalScroll) → 外层Box → 内层AndroidView` 这种嵌套里，只要**任意一层**还写着 `fillMaxSize()`，
+  该层在无限高约束下解不出有限高度 → 退化为"按子内容包装" → 把外层顶到内容高 → 宿主的 `heightIn(min)` 被静默吞掉。
+  **判据**：宿主传了 `heightIn(min)` 但视觉没生效时，逐层 grep `fillMaxSize`，全部改为 `fillMaxWidth()`。
+  自维护组件「不 fill 高度」的约定，**要在每一层都写，不能只写外层**——首版只在 Box 上去掉 `fillMaxSize`，真机仍没占满。
 
 ## 图片附件页（`InspirationImageGallery`，全屏沉浸预览）
 - `MainActivity` 已声明 `configChanges`（不含 uiMode）→ 旋转不重建，改 `requestedOrientation`。

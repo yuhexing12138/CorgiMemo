@@ -15,7 +15,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -281,7 +281,15 @@ fun BlockNoteEditorWebView(
             onRelease = { controller.webView = null },
             /** 主题背景变化时同步刷新 WebView 底色（v1.9） */
             update = { wv -> wv.setBackgroundColor(effectiveBackground.toArgb()) },
-            modifier = Modifier.fillMaxSize()
+            /**
+             * ⚠️ 必须是 `fillMaxWidth()` 而非 `fillMaxSize()`（v1.9.1 修复）：
+             * 外层 Box 已改为「不 fill、让宿主高度约束生效」，但如果内层 AndroidView 仍
+             * `fillMaxSize()`，在 `verticalScroll` 提供的**无限高约束**下它无法解出有限高度，
+             * 于是退化为"按子内容包装"，再把 Box 顶到内容高——宿主的 `heightIn(min=...)`
+             * 会被这一层静默吞掉，表现为"编辑区仍然没占满"（首版修复后真机复现）。
+             * 高度只需横向占满，纵向交由父级（=宿主约束）决定。
+             */
+            modifier = Modifier.fillMaxWidth()
         )
         // appContext 仅用于 WebView 工厂上下文语义校验（编译引用保留）
         @Suppress("UNUSED_EXPRESSION")

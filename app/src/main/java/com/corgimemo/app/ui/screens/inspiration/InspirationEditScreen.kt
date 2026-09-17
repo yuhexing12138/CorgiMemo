@@ -502,15 +502,56 @@ fun InspirationEditScreen(
     val rawBackgroundColor = Color(backgroundColorInt) /** 从数据库加载或使用默认白色 */
 
     /**
-     * 内容区实际背景色：
-     * - 默认状态（未选颜色）→ 透明，不使用主题暖米色背景
+     * 内容区「自选背景色」：
+     * - 默认状态（未选颜色 / 恰好是纯白）→ `Color.Transparent`，表示"不铺自选色"
      * - 用户主动选择颜色后 → 使用用户选择的颜色
+     *
+     * 注意：本值只回答"用户选了什么"，**不回答"内容区最终显示什么颜色"**——
+     * 后者见 [contentBackgroundColor]。
      */
-    val contentBackgroundColor = if (backgroundColorInt == -1 || rawBackgroundColor == Color.White) {
-        Color.Transparent
-    } else {
-        rawBackgroundColor
+    val userPickedBackgroundColor =
+        if (backgroundColorInt == -1 || rawBackgroundColor == Color.White) {
+            Color.Transparent
+        } else {
+            rawBackgroundColor
+        }
+
+    /**
+     * 内容区**实际生效**背景色（唯一真值，v2026-09-17 收敛）
+     *
+     * 由 [userPickedBackgroundColor] 做 `Transparent → 主题 background` 的回落得到，
+     * 是「内容区在屏幕上真正呈现的那一层色」。
+     *
+     * 之所以收敛成一个值：本值原先在两处各自求值——
+     * ① 宿主 `Column` 的 `.background(...)`（铺底色）
+     * ② 下行给 BlockNote WebView 的 `backgroundColor`（消除画中画）
+     * 两者逻辑等价但物理独立，后续任一处改动都会悄悄漂移（例如只改了 Column
+     * 的回落逻辑，WebView 仍按旧口径着色，重新出现色差）。现统一由此处产出，
+     * 两处共用同一个快照态，不可能再不一致。
+     *
+     * ⚠️ 用 `remember` 缓存：该值在重组中反复参与 `Color` 相等比较与参数传递，
+     * 且 key（用户自选色 + 主题背景）任一变化才需重算。
+     */
+    val contentBackgroundColor = remember(userPickedBackgroundColor, MaterialTheme.colorScheme.background) {
+        if (userPickedBackgroundColor == Color.Transparent) {
+            MaterialTheme.colorScheme.background
+        } else {
+            userPickedBackgroundColor
+        }
     }
+
+    /**
+     * 内容区**自选色**（绘制层真值，v2026-09-17 收敛）
+     *
+     * 语义 = "要不要真的铺一层色"：
+     * - 用户未自选背景色 → `Color.Transparent`，不绘制，让页面主题背景透出（保持原视觉）
+     * - 用户已自选背景色 → 该颜色本身，铺满全宽
+     *
+     * 与 [contentBackgroundColor] 的区别：后者是"实际生效色"（已把 Transparent 回落成
+     * 主题 background），用于**告知子组件**（BlockNote WebView 需要知道具体色值）；
+     * 本值用于**宿主自己绘制**。两个语义显式分开，避免"一个变量兼两种含义"再次成为漂移源。
+     */
+    val contentBackgroundPaint = userPickedBackgroundColor
 
     /** 格式工具栏展开/折叠状态（由底部栏 ⋮ 按钮切换） */
     var isFormatExpanded by remember { mutableStateOf(false) }
@@ -1425,15 +1466,20 @@ fun InspirationEditScreen(
         /**
          * 内容区布局：单层Column，Modifier顺序决定背景范围。
          * - background 在 horizontal padding 之前 → 用户自选背景色铺满全宽无空隙
-         * - 默认透明（Color.Transparent），仅用户主动选择颜色时显示背景
+         * - 默认不绘制（[contentBackgroundPaint] = Transparent），让页面主题背景透出
          * - 不使用 Box 包裹 → 避免触摸事件被外层拦截导致编辑器无法输入
+         *
+         * ⚠️ 此处铺的是 [contentBackgroundPaint]（"要不要真铺"），**不是**
+         * [contentBackgroundColor]（"实际生效色"）——后者已把 Transparent 回落成主题
+         * background，若拿它来铺，未自选背景色时会被强行盖上一层同色（视觉上等价但会
+         * 阻断未来可能的毛玻璃/渐变背景透出）。两个语义显式分开，见其 KDoc。
          */
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
                 /** 背景色铺满全宽（在内容padding之前设置） */
-                .background(contentBackgroundColor)
+                .background(contentBackgroundPaint)
                 /** 内容区内边距在背景之后，不影响背景范围 */
                 .padding(horizontal = 8.dp)
                 .verticalScroll(contentScrollState)
@@ -1716,26 +1762,27 @@ fun InspirationEditScreen(
              * - #标签 / @提及 建议弹层由 JS 侧编辑器的 trigger 菜单承担（宿主侧不再订阅）。
              *
              * v2026-09-17 修复（占满编辑区 + 背景色对齐主题）：
-             * 1. **背景色**：`backgroundColor` 传 `contentBackgroundColor`——即外层 Column
-             *    实际铺的那层色。用户未自选时该值为 `Color.Transparent`，此处换算成主题
-             *    `background`（暖米色 #FFFBF5 / 暗色 #1A0F08），保证 WebView 内部
-             *    `.bn-editor` 与 body 与页面同色，消除"画中画"白底圆角框。
+             * 1. **背景色**：`backgroundColor` 直接传 [contentBackgroundColor]——
+             *    该值已在顶部收敛为「内容区实际生效色」的**唯一真值**（未自选时回落主题
+             *    `background`，暖米色 #FFFBF5 / 暗色 #1A0F08），此处不再重复求值。
+             *    这样 WebView 内部 `.bn-editor` 与 body 与页面必然同色，消除"画中画"
+             *    白底圆角框；也杜绝了"两处独立回落"日后漂移的可能。
              * 2. **高度**：外层 Column 是 `verticalScroll`，其子项高度约束被改成 Infinity，
              *    导致 WebView 只能按内容高撑开（内容少时塌成几行，下方大片空白其实不属于
              *    编辑器）。此处加 `heightIn(min = ...)` 保底：取屏高的 62%，与旧 Compose
              *    版 `BodyBlocksEditor` 的可用书写区高度量级一致，避免塌陷。
              *    高度仍随内容增长（min 不封顶），滚动仍由外层 Column 承担。
+             *
+             * ⚠️ 已知取舍（方案 B）：`heightIn(min = 屏高 × 0.62f)` 是经验值，不同机型/
+             *    字号会有偏差。更严谨的做法是让编辑区高度 = `Constraints.maxHeight`
+             *    （即视口真实剩余高度），但那要求去掉外层 `verticalScroll`（方案 A），
+             *    会波及上方"滚动清除块选中态"的 LaunchedEffect 与图片画廊的 inset 链路，
+             *    故单独立项处理，此处先保底。
              */
             val configuration = LocalConfiguration.current
             /** 屏高 62% 作为编辑区最小高度（旋转时 screenHeightDp 变化 → remember 自动重算） */
             val editorMinHeight = remember(configuration.screenHeightDp) {
                 (configuration.screenHeightDp * 0.62f).dp
-            }
-            /** 未自选背景色（Transparent）时回落主题 background，避免下行透明导致白底 */
-            val editorBackgroundColor = if (contentBackgroundColor == Color.Transparent) {
-                MaterialTheme.colorScheme.background
-            } else {
-                contentBackgroundColor
             }
 
             BlockNoteEditorWebView(
@@ -1746,7 +1793,8 @@ fun InspirationEditScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = editorMinHeight),
-                backgroundColor = editorBackgroundColor
+                /** 唯一真值：内容区实际生效背景色（Transparent 已在源头回落为主题 background） */
+                backgroundColor = contentBackgroundColor
             )
 
             /**

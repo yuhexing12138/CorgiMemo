@@ -171,7 +171,73 @@ fun setTheme(dark: Boolean, primary: String, background: String) {
 2. 背景色取值口径——直接跟随宿主 `MaterialTheme.colorScheme.background`，
    还是把用户自选的「灵感背景色」（`contentBackgroundColor`，默认透明）也一并传下去。
 
-### 3.4 备选：54px 保留但改为浮层
+> **决策结果（2026-09-17）**：占满取 **B（保底高度）**；背景色取 **跟随灵感自选背景**
+> （优先用用户为该条灵感选的背景色，未选时回落主题背景）；侧边菜单 **先置 0，看真机再定**。
+
+### 3.5 ⚠️ 真机复现：`fillMaxSize()` 会"穿透多层"吞掉宿主意图（首版修复的漏网之鱼）
+
+**现象**：首版修复（Box 去 `fillMaxSize` + 宿主 `heightIn(min=屏高×0.62f)`）打包后，
+真机编辑区**仍然没占满**。
+
+**根因**：`BlockNoteEditorWebView` 内部是两层结构——
+
+```
+宿主 Column (verticalScroll)
+  └─ 外层 Box      modifier.fillMaxWidth().imePadding()   ← 首版已修正
+      └─ AndroidView modifier.fillMaxSize()               ← 漏了这一层 ❌
+```
+
+`verticalScroll` 给出的**无限高约束**会沿父链逐级下传。外层 Box 只 `fillMaxWidth()` 是对的，
+但它把「无限高 + 未定高」的约束继续传给 `AndroidView`；后者 `fillMaxSize()` 在无限高下
+**解不出有限高度**，于是退化为"按子内容包装"，再把 Box 顶到内容高 →
+宿主的 `heightIn(min=...)` 在链路上被**静默吞掉**（不报错，只是不起作用）。
+
+**修复**：`AndroidView` 的 `modifier` 由 `Modifier.fillMaxSize()` 改为 `Modifier.fillMaxWidth()`，
+同时删除已无用的 `import androidx.compose.foundation.layout.fillMaxSize`。
+
+**通用规律（已写入项目 MEMORY.md）**：
+> 自维护组件「不 fill 高度」的约定，**必须在每一层都写，不能只写外层**。
+> 判据：宿主传了 `heightIn(min)` 却视觉没生效时，**逐层 grep `fillMaxSize`**，全部改 `fillMaxWidth()`。
+
+### 3.6 背景色收敛为「内容区单一真值」（2026-09-17 第二轮）
+
+首版存在两处**独立求值**同一语义的着色值：
+
+| 位置 | 首版写法 | 用途 |
+| --- | --- | --- |
+| 宿主 `Column` 的 `.background(...)` | `contentBackgroundColor` | 宿主自己铺底色 |
+| 下行给 WebView 的 `backgroundColor` | 局部 `editorBackgroundColor`（重复求值） | 告知子组件色值 |
+
+两者逻辑等价但物理独立 → 任一处后续改动都会悄悄漂移（例如只改了 Column 的回落口径，
+WebView 仍按旧口径着色，重新出现"画中画"色差）。
+
+**修复**：在 `InspirationEditScreen` 顶部拆成三个**语义显式**的值，两处**共用**：
+
+```kotlin
+val userPickedBackgroundColor =   // 只回答"用户选了什么"
+    if (backgroundColorInt == -1 || rawBackgroundColor == Color.White) Color.Transparent
+    else rawBackgroundColor
+
+val contentBackgroundColor =      // 唯一真值："内容区实际生效色"
+    remember(userPickedBackgroundColor, MaterialTheme.colorScheme.background) {
+        if (userPickedBackgroundColor == Color.Transparent) MaterialTheme.colorScheme.background
+        else userPickedBackgroundColor
+    }
+
+val contentBackgroundPaint = userPickedBackgroundColor  // 绘制层真值："要不要真铺一层色"
+```
+
+- 宿主 `Column` 铺色 → 用 `contentBackgroundPaint`（保持"未自选不绘制、主题背景透出"原视觉）；
+- 下行 WebView → 用 `contentBackgroundColor`（WebView 需要具体色值，不能是 Transparent）。
+
+### 3.7 已知取舍与后续排期
+
+`heightIn(min = 屏高 × 0.62f)` 是**经验值**，不同机型/字号会有偏差。更严谨的做法是让编辑区高度
+= `Constraints.maxHeight`（视口真实剩余高度），但那要求去掉外层 `verticalScroll`（即 §3.2 的方案 A），
+会波及"滚动清除块选中态"（`contentScrollState.isScrollInProgress` 链路）与图片画廊的 inset 计算，
+**故单独排期，本轮不做**（已在代码注释中标注取舍）。
+
+### 3.8 备选：54px 保留但改为浮层
 
 若置 0 后侧边菜单被裁，可退为：
 
@@ -185,12 +251,16 @@ fun setTheme(dark: Boolean, primary: String, background: String) {
 
 | 文件 | 改动 |
 | --- | --- |
-| `blocknote-probe/src/editor/bridge.ts` | `ThemePayload` 增 `background?` |
+| `blocknote-probe/src/editor/bridge.ts` | `ThemePayload` 增 `background?`；跨块选择类文档已孤儿化故未动 |
 | `blocknote-probe/src/editor/EditorApp.tsx` | 注入 `--editor-bg` 到 blocknote 官方变量；body/编辑页背景；圆角归零 |
 | `blocknote-probe/src/editor/editor.css` | 去 `max-width` 居中；`padding-inline: 0`；`.bn-editor` 圆角归零 |
+| `blocknote-probe/src/probe.css` | `body` 背景 `#f5f5f7` → `transparent`（防污染正式编辑器） |
 | `blocknote-probe/editor.html` | `<html>/<body>` 默认底色，防首帧闪白 |
-| `app/.../probe/BlockNoteEditorWebView.kt` | `setTheme` 增 `background`；WebView 背景兜底 |
-| `app/.../inspiration/InspirationEditScreen.kt` | WebView 高度约束（选定方案） |
+| `app/.../probe/BlockNoteEditorWebView.kt` | `setTheme` 增 `background`；`backgroundColor` 参数 + hex 下行 + 底色兜底；**Box 与 AndroidView 均只 `fillMaxWidth()`**（§3.5）；`composeColorToHex` 工具函数 |
+| `app/.../inspiration/InspirationEditScreen.kt` | 三个语义显式的背景色值（§3.6）；WebView `heightIn(min=屏高×0.62f)` |
+| `docs/bridge-protocol.md` | `init` / `setTheme` 的 theme 载荷补 `background?: hex` |
+| `app/src/main/assets/blocknote-web/editor/editor.html` | **产物重建**（1,882,083 bytes） |
+| `.workbuddy/memory/MEMORY.md` | 新增「BlockNote 官方样式约束（v1.9 实测）」；补「无限高约束穿透多层」教训 |
 
 > ⚠️ **产物必须重建**：改完 `blocknote-probe/src/editor/` 后，需
 > `cd blocknote-probe && npm run build:editor`（或依赖 `:app:buildBlockNoteEditor`）。

@@ -33,10 +33,18 @@
 
 > `ready` 载荷自 v1.8 起带可选 `build` 字段（构建指纹，见下），故其类型为 `{ build?: string }`。
 
-> `undoState` 的取值经 BlockNote 公开 API `editor.can(editor.undo / editor.redo)` 判定
+> `undoState` 的取值经 BlockNote 公开 API `editor.can(command)` 判定
 > （`StateManager.can()` 置 `isInCan` 使 `exec()` 走 `canExec()` 分支，**只判定不派发**，
 > 不会污染历史栈）。JS 侧做变化去重，仅在布尔态翻转时上行。
 > Kotlin 侧映射为 `BlockNoteBridgeController.canUndo` / `canRedo`（Compose 快照态）。
+>
+> ⚠️ **`command` 必须是 prosemirror 命令，不能传 `editor.undo`**（v1.10 修正）：
+> `editor.undo` 是实例方法，`can(cb)` 内部**无接收者裸调用** `cb()` → `this` 丢失 →
+> `this._stateManager` 抛 `TypeError`；即便不丢 this，`canExec(command)` 按
+> `command(state, undefined, view)` 调用，与无参的 `undo()` 签名也不匹配。
+> 正确形态：`editor.getExtension("yUndo") ?? editor.getExtension("history")` 取出的
+> `undoCommand` / `redoCommand`（即 `@tiptap/pm/history` 的 `undo` / `redo`），
+> 与 `StateManager.undo()` 内部用法一致。
 
 ## 时序
 
@@ -85,3 +93,8 @@ adb logcat -s BlockNoteEditor:V | grep "ready received"
   统一由宿主顶栏图标按钮承担（点击→`requestUndo`/`requestRedo`，可用态→`undoState`）。
 - v1.8（2026-09-17）：`ready` 新增可选 `build` 构建指纹字段（vite define 注入），
   宿主打进 logcat 以排查 assets 产物滞后问题；协议本身无行为变化。
+- v1.10（2026-09-17，**修复**）：修正 `undoState` 的判定用法——`editor.can(editor.undo)` 是
+  BlockNote 文档中的误导性示例，会导致 `undoState` 因 TypeError 被静默吞掉而**永不上行**，
+  宿主撤销/重做按钮恒灰。改用 `getExtension("yUndo" | "history")` 的 `undoCommand` / `redoCommand`。
+  同时把 `pushUndoState` 的静默 `catch` 改为上行 `error`，让同类故障在 logcat 可见。
+  协议字段与形状**无变化**（纯 JS 侧实现修复）。

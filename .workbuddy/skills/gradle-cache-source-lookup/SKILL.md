@@ -50,10 +50,25 @@ Gradle 缓存路径是：
 
 | 常用 group | 说明 |
 |---|---|
-| `androidx.compose.ui` | ui / ui-text / ui-graphics / ui-tooling 等（Android 版 artifact 名带 `-android` 后缀） |
+| `androidx.compose.ui` | ui / ui-text / ui-tooling 等（Android 版 artifact 名带 `-android` 后缀） |
+| `androidx.compose.ui.graphics` | ui-graphics（`Color` / `Color.isSpecified` / `toArgb` / `SolidColor` / `Brush`） |
+| `androidx.compose.ui.unit` | ui-unit（`TextUnit.isSpecified` / `TextUnit.Unspecified` / `Dp`） |
 | `androidx.compose.foundation` | foundation |
 | `androidx.compose.material3` | material3 |
 | `androidx.activity`、`androidx.lifecycle` | 架构组件 |
+
+**⚠️ 顶层扩展属性（`isSpecified` / `isUnspecified` 这类）的包归属最容易猜错**——它们不是类成员，必须按扩展点所在的
+**源文件包名**判定，而包名 ≠ 类名所在包。实测两次踩坑的对照表：
+
+| 扩展属性 | 接收者类所在包 | **扩展属性真正所在的包** |
+|---|---|---|
+| `isSpecified` / `isUnspecified` | `androidx.compose.ui.unit.TextUnit` | `androidx.compose.ui.unit` ✅ 同名 |
+| `isSpecified` / `isUnspecified` | `androidx.compose.ui.graphics.Color` | **`androidx.compose.ui.graphics`** ⚠️ 不是 `ui.unit` |
+| `toArgb()` | `androidx.compose.ui.graphics.Color` | `androidx.compose.ui.graphics` |
+
+**判据**：凡是 `inline val Xxx.isYyy` 形式的顶层扩展，**import 的包就是它被声明时所在文件的 package**，
+和「类型名长得像哪个包」无关。拿不准就跑 Step 1 定位该类型所在的 sources jar，Read 出文件头部的 `package` 行，
+再往下找 `inline val` 声明。**不要凭类型名推断包名。**
 
 **两个高价值提示：**
 
