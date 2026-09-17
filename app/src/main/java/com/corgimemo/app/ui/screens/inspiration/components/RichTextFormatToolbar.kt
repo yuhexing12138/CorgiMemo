@@ -477,7 +477,7 @@ private fun RiFormatButton(
 }
 
 /**
- * 工具栏竖线分隔符
+ * 工具栏竖线分隔符（P1.5 增强：alpha 0.3→0.6，浅色背景上更可辨）
  */
 @Composable
 private fun ToolbarDivider() {
@@ -485,7 +485,7 @@ private fun ToolbarDivider() {
         modifier = Modifier
             .size(width = 1.dp, height = 28.dp)
             .padding(vertical = 4.dp),
-        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
     )
 }
 
@@ -638,13 +638,14 @@ private fun FormatWeightButton(
                 )
             }
             /** 展开方向箭头：展开时左箭头，收起时右箭头；单档模式不显示 */
-
-            Icon(
-                imageVector = if (expanded) Icons.Default.KeyboardArrowLeft else Icons.Default.KeyboardArrowRight,
-                contentDescription = null,
-                tint = tint,
-                modifier = Modifier.size(14.dp)
-            )
+            if (!singleTier) {
+                Icon(
+                    imageVector = if (expanded) Icons.Default.KeyboardArrowLeft else Icons.Default.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = tint,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
         }
     }
 }

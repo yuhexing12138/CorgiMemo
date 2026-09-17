@@ -97,10 +97,10 @@ ${pathsKt}
 }
 
 /** 生成 defs map 条目（menuId → RiIconDef） */
-function kotlinDefsEntry(menuId, riName) {
+function kotlinDefsEntry(riName) {
   const { viewport, paths } = extracted[riName];
   const pathsKt = paths.map((d) => "                " + ktStr(d)).join(",\n");
-  return `            "${menuId}" to RiIconDef(${viewport}f, listOf(
+  return `            "${riName}" to RiIconDef(${viewport}f, listOf(
 ${pathsKt}
             ))`;
 }
@@ -129,7 +129,7 @@ ${[...new Set(WANT.map(([, ri]) => ri))].map(kotlinProp).join("\n\n")}
 
     /** id → 图标定义（id 即 + 菜单 key） */
     private val defs: Map<String, RiIconDef> = mapOf(
-${WANT.map(([menuId, riName]) => kotlinDefsEntry(menuId, riName)).join(",\n")}
+${[...new Set(WANT.map(([, ri]) => ri))].map(kotlinDefsEntry).join(",\n")}
     )
 
     /** 解析缓存 */
