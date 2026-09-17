@@ -215,6 +215,9 @@ fun InspirationEditScreen(
     val contentLoaded by viewModel.contentLoaded.collectAsState()
     val blockNoteController = remember { BlockNoteBridgeController() }
     var blockNoteLoadStarted by remember { mutableStateOf(false) }
+    /** BlockNote 模式链接对话框（P1.5 浮层桥接：🔗 按钮 → URL 输入 → format createLink） */
+    var showLinkDialog by remember { mutableStateOf(false) }
+    var linkDialogUrl by remember { mutableStateOf("https://") }
 
     // 内容就绪（编辑模式 loadInspiration 完成 / 新建模式立即）→ 装载 WebView 编辑器（仅一次）
     androidx.compose.runtime.LaunchedEffect(contentLoaded) {
@@ -1690,7 +1693,8 @@ fun InspirationEditScreen(
                 },
                 onInsertLink = {
                     if (useBlockNoteEditor) {
-                        // BlockNote 模式：链接由 WebView 内置格式工具栏提供，此处 no-op
+                        /** BlockNote 模式：弹 URL 输入对话框 → format createLink 下发 */
+                        showLinkDialog = true
                     } else {
                         /** 简化实现：为当前选区插入示例链接，后续可扩展为弹窗输入 */
                         richTextState.addLinkToSelection(url = "https://example.com")
@@ -2248,6 +2252,44 @@ fun InspirationEditScreen(
                     confirmButton = {
                         TextButton(onClick = { showLocationPopup = false }) {
                             Text("确定")
+                        }
+                    }
+                )
+            }
+
+            /**
+             * BlockNote 模式（P1.5）：链接插入对话框——
+             * 底部工具栏 🔗 按钮触发，输入 URL 后经 format createLink 下发到 WebView 编辑器。
+             */
+            if (showLinkDialog) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { showLinkDialog = false },
+                    title = { Text("插入链接") },
+                    text = {
+                        androidx.compose.material3.OutlinedTextField(
+                            value = linkDialogUrl,
+                            onValueChange = { linkDialogUrl = it },
+                            placeholder = { Text("https://example.com") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                if (linkDialogUrl.isNotBlank()) {
+                                    blockNoteController.format("createLink", linkDialogUrl.trim())
+                                }
+                                showLinkDialog = false
+                            },
+                            enabled = linkDialogUrl.isNotBlank()
+                        ) {
+                            Text("确定")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showLinkDialog = false }) {
+                            Text("取消")
                         }
                     }
                 )

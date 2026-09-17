@@ -338,6 +338,10 @@ export default function EditorApp() {
             case "outdent":
               ed.unnestBlock();
               break;
+            case "createLink":
+              // v1.6：底部链接按钮 → 当前选区加链接（BlockNote 公开 API createLink）
+              if (value) ed.createLink(value);
+              break;
             case "alignLeft":
             case "alignCenter":
             case "alignRight": {
