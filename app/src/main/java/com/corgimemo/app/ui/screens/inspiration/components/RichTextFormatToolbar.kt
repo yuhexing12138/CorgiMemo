@@ -5,10 +5,14 @@ import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.FormatAlignLeft
@@ -472,15 +476,16 @@ private fun RiFormatButton(
 }
 
 /**
- * 工具栏竖线分隔符（P1.5 增强：alpha 0.3→0.6，浅色背景上更可辨）
+ * 工具栏竖线分隔符（P1.5 修复：HorizontalDivider 内部强制 fillMaxWidth + height(thickness)，
+ * 会把给定的 1dp 宽/28dp 高覆盖成「全宽 1dp 横线」——改用 Box 自绘，精确 1×28 竖线）
  */
 @Composable
 private fun ToolbarDivider() {
-    HorizontalDivider(
+    androidx.compose.foundation.layout.Box(
         modifier = Modifier
-            .size(width = 1.dp, height = 28.dp)
-            .padding(vertical = 4.dp),
-        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
+            .width(1.dp)
+            .height(28.dp)
+            .background(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f))
     )
 }
 
