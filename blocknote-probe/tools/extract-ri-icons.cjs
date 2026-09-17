@@ -1,4 +1,6 @@
-/* 从 react-icons/ri 提取 BlockNote「+」菜单图标 → 生成 Kotlin ImageVector 集合 */
+/* 从 react-icons/ri 提取 BlockNote「+」菜单图标 → 生成 Kotlin ImageVector 集合
+ * 用法：node extract-ri-icons.cjs <react-icons/ri/index.mjs 路径> <输出 .kt 路径>
+ */
 const fs = require("fs");
 
 const RI_SOURCE = process.argv[2];
@@ -6,7 +8,7 @@ const OUT_KT = process.argv[3];
 
 const riSource = fs.readFileSync(RI_SOURCE, "utf8");
 
-/** 图标 → Kotlin 属性名（+ 菜单 23 项全覆盖） */
+/** 图标 id → Ri 源名（+ 菜单 23 项全覆盖；paragraph 备用） */
 const WANT = [
   ["heading", "RiH1"],
   ["heading_2", "RiH2"],
@@ -33,13 +35,17 @@ const WANT = [
   ["paragraph", "RiText"],
 ];
 
-/** 提取单个图标（viewBox + path d 数组） */
+/** Kotlin 字符串字面量转义（\、"、$ 模板符） */
+function ktStr(d) {
+  return '"' + d.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\$/g, "\\$") + '"';
+}
+
+/** 提取单个图标（viewBox + path d 数组；括号配平定位 GenIcon 参数对象） */
 function extract(riName) {
   const idx = riSource.indexOf(`function ${riName} (props)`);
   if (idx < 0) return null;
   const start = riSource.indexOf("GenIcon(", idx);
   const objStart = riSource.indexOf("{", start);
-  // 括号配平找 GenIcon 参数对象
   let depth = 0;
   let end = objStart;
   for (let i = objStart; i < riSource.length; i++) {
@@ -65,11 +71,11 @@ function extract(riName) {
   return { viewport: Number(vb[2]) || 24, paths };
 }
 
-/** 去重 Ri 名（toggle_heading 与 heading 共用 RiH1 等） */
-const uniqueRi = [...new Set(WANT.map(([, ri]) => ri))];
+/** 提取全部并去重 */
 const extracted = {};
 const missing = [];
-for (const ri of uniqueRi) {
+for (const [, ri] of WANT) {
+  if (extracted[ri]) continue;
   const r = extract(ri);
   if (r) extracted[ri] = r;
   else missing.push(ri);
@@ -79,12 +85,10 @@ if (missing.length) {
   process.exit(1);
 }
 
-/** 生成每个唯一 Ri 图标的 Kotlin 属性 */
+/** 生成唯一 Ri 图标的 lazy 属性 */
 function kotlinProp(riName) {
   const { viewport, paths } = extracted[riName];
-  const pathsKt = paths
-    .map((d) => `            "${d.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\$/g, "\\$")}"`)
-    .join(",\n");
+  const pathsKt = paths.map((d) => "            " + ktStr(d)).join(",\n");
   return `    val ${riName}: RiIconDef by lazy {
         RiIconDef(${viewport}f, listOf(
 ${pathsKt}
@@ -92,11 +96,21 @@ ${pathsKt}
     }`;
 }
 
+/** 生成 defs map 条目（menuId → RiIconDef；riName 指向已提取的 Ri 图标） */
+function kotlinDefsEntry(menuId, riName) {
+  const { viewport, paths } = extracted[riName];
+  const pathsKt = paths.map((d) => "                " + ktStr(d)).join(",\n");
+  return `            "${menuId}" to RiIconDef(${viewport}f, listOf(
+${pathsKt}
+            ))`;
+}
+
 const kotlin = `package com.corgimemo.app.ui.screens.probe
 
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.core.graphics.PathParser
+import androidx.compose.ui.graphics.asComposePath
 
 /**
  * BlockNote「+」菜单同款图标集（P1-S10/S11 桥接）。
@@ -109,7 +123,12 @@ object BlockNotePlusMenuIcons {
     /** 单个图标定义：viewBox 边长（Remix 全系 24）+ path 的 d 数据列表 */
     data class RiIconDef(val viewport: Float, val paths: List<String>)
 
-${uniqueRi.map(kotlinProp).join("\n\n")}
+${[...new Set(WANT.map(([, ri]) => ri))].map(kotlinProp).join("\n\n")}
+
+    /** id → 图标定义（id 即 + 菜单 key） */
+    private val defs: Map<String, RiIconDef> = mapOf(
+${WANT.map(([menuId, riName]) => kotlinDefsEntry(menuId, riName)).join(",\n")}
+    )
 
     /** 解析缓存 */
     private val cache = mutableMapOf<String, ImageVector>()
@@ -120,8 +139,8 @@ ${uniqueRi.map(kotlinProp).join("\n\n")}
         val def = defs[riName] ?: return null
         val builder = ImageVector.Builder(
             name = "Ri.$riName",
-            defaultWidth = dp(def.viewport),
-            defaultHeight = dp(def.viewport),
+            defaultWidth = def.viewport.dp,
+            defaultHeight = def.viewport.dp,
             viewportWidth = def.viewport,
             viewportHeight = def.viewport,
         )
@@ -139,10 +158,10 @@ ${uniqueRi.map(kotlinProp).join("\n\n")}
 
 fs.writeFileSync(OUT_KT, kotlin);
 console.log(
-    "generated:",
-    OUT_KT,
-    "| unique icons:",
-    uniqueRi.length,
-    "| missing:",
-    missing.join(",") || "none"
+  "generated:",
+  OUT_KT,
+  "| unique icons:",
+  Object.keys(extracted).length,
+  "| missing:",
+  missing.join(",") || "none"
 );
