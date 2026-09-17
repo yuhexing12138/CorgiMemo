@@ -160,40 +160,38 @@ export default function EditorApp() {
   const lastUndoStateRef = useRef<{ canUndo: boolean; canRedo: boolean } | null>(null);
 
   /**
-   * 取历史扩展里的撤销/重做 prosemirror 命令（v1.10 修正）。
+   * 取历史扩展里的撤销/重做 prosemirror 命令（v1.10）。
    *
-   * ⚠️ 不能写 `editor.can(editor.undo)`——那是 BlockNote 文档里的**误导性示例**：
-   * - `StateManager.can(cb)` 内部是 `this.isInCan = true; return cb();`，**无接收者裸调用**；
-   * - 而 `editor.undo` 是实例方法 `undo(): boolean { return this._stateManager.undo(); }`，
-   *   提取为裸引用后 `this` 丢失 → 访问 `this._stateManager` 抛 TypeError；
-   * - 即便不丢 this，`can()` 置位后 `exec()` 会走 `canExec(command)`，它按
-   *   `command(state, undefined, view)` 调用，期待的是 prosemirror 命令三元组签名，
-   *   与无参的 `undo()` 也不匹配。
+   * ⚠️⚠️ 判定可用态必须走 `editor.canExec(command)`，**不能用 `editor.can(...)`**：
+   * `BlockNoteEditor` 原型上**根本没有 `can` 方法**（全类仅有 `exec` / `canExec`），
+   * `StateManager.can(cb)` 也**未**被转发到 editor 上。所以任何 `editor.can(x)` 写法
+   * 都会在运行时抛 `TypeError: ed.can is not a function`——若外面还包着静默 catch，
+   * 表现就是「按钮永远灰」而毫无线索（v1.7 的原始 bug 正是如此）。
    *
-   * 正确形态即 BlockNote 自己的 `StateManager.undo()` 内部用法：
-   * 从 history 扩展取出 `prosemirror-history` 导出的标准命令。
-   * 注意优先取 `yUndo`（协作扩展存在时它是真正的历史后端），回落到 `history`。
+   * 另注：即便 `can` 存在也传不得裸引用——`can(cb)` 内部是**无参** `cb()`：
+   * - 传实例方法 `ed.undo` → `this` 丢失 → `this._stateManager` 抛 TypeError；
+   * - 传 prosemirror 命令（需 `(state, dispatch, view)`）→ state 为 undefined →
+   *   `historyKey.getState(undefined)` 抛 TypeError。
+   * 正确形态即 BlockNote 自身 `StateManager.undo()` 的用法：把命令交给 `canExec`，
+   * 由它用**真实**的 prosemirrorState 调 `command(state, undefined, view)`（只判定不 dispatch）。
+   *
+   * 命令来源用 `yUndo` 优先、`history` 兜底——与 `StateManager.undo()` 内部一致
+   * （`HistoryExtension` 由 `getDefaultExtensions()` 无条件注册，两个 key 必有一个存在）。
    */
   const getHistoryCommands = useCallback(() => {
     const ed = editorRef.current;
     if (!ed) return null;
-    const ext =
-      ed.getExtension("yUndo") ?? ed.getExtension("history");
+    const ext = (ed.getExtension("yUndo") ?? ed.getExtension("history")) as any;
     if (!ext?.undoCommand || !ext?.redoCommand) return null;
-    return {
-      undoCommand: ext.undoCommand as (...a: any[]) => boolean,
-      redoCommand: ext.redoCommand as (...a: any[]) => boolean,
-    };
+    return { undoCommand: ext.undoCommand, redoCommand: ext.redoCommand };
   }, []);
 
   /**
    * 上报撤销/重做可用态（v1.7）：宿主左上角按钮据此置灰。
    *
-   * 用 BlockNote 公开 API `editor.can(command)`——`StateManager.can()` 内部置 isInCan 标志，
-   * 使 `exec()` 走 `canExec()` 分支**只判定不派发**，因此不会污染历史栈；
-   * 比直接读 tiptap 内部状态（_tiptapEditor）更稳，也不依赖私有字段。
+   * `canExec(command)` 只判定不 dispatch（内部传 `dispatch === undefined`），
+   * 不污染历史栈。JS 侧做变化去重，仅在布尔态翻转时上行。
    *
-   * 去重：与上次相同则不上报（按钮态无需重复刷新）。
    * 异常（v1.10）：不再静默吞——上行 `error` 让宿主 logcat 可见，避免同类问题再次无声失败。
    */
   const pushUndoState = useCallback(() => {
@@ -204,8 +202,8 @@ export default function EditorApp() {
     let canUndo = false;
     let canRedo = false;
     try {
-      canUndo = !!ed.can(cmds.undoCommand);
-      canRedo = !!ed.can(cmds.redoCommand);
+      canUndo = !!ed.canExec(cmds.undoCommand);
+      canRedo = !!ed.canExec(cmds.redoCommand);
     } catch (e: any) {
       // v1.10：异常必须可见——历史插件未就绪等情况下保守上报 false，同时上行诊断
       sendUp({ type: "error", message: `undoState probe failed: ${e?.message ?? e}` });
