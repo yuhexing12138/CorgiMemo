@@ -1106,31 +1106,36 @@ fun InspirationEditScreen(
                  */
                 if (useBlockNoteEditor) {
                     /**
-                     * BlockNote 模式（P1.5）：撤销/重做经 Bridge 下发到 JS 编辑器
-                     * （canUndo/canRedo 状态未上行，按钮恒可点；无操作时点击无副作用）。
+                     * BlockNote 模式（P1.5）：撤销/重做经 Bridge 下发到 JS 编辑器。
+                     *
+                     * v2026-09-17：JS 侧自绘的「↺ 撤销 / ↻ 重做」胶囊按钮已移除，
+                     * 此处成为唯一入口；可用态经 `undoState` 上行驱动置灰
+                     * （对齐 Compose 分支的 canUndo/canRedo 语义）。
                      */
+                    val noteCanUndo = blockNoteController.canUndo
+                    val noteCanRedo = blockNoteController.canRedo
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(
                             onClick = { blockNoteController.undo() },
-                            enabled = !isLocked,
+                            enabled = noteCanUndo && !isLocked,
                             modifier = Modifier.size(36.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.Undo,
                                 contentDescription = "撤销",
-                                tint = if (!isLocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                                tint = if (noteCanUndo && !isLocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                                 modifier = Modifier.size(18.dp)
                             )
                         }
                         IconButton(
                             onClick = { blockNoteController.redo() },
-                            enabled = !isLocked,
+                            enabled = noteCanRedo && !isLocked,
                             modifier = Modifier.size(36.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.Redo,
                                 contentDescription = "重做",
-                                tint = if (!isLocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                                tint = if (noteCanRedo && !isLocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                                 modifier = Modifier.size(18.dp)
                             )
                         }

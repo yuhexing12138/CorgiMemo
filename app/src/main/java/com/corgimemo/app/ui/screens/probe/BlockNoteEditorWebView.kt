@@ -21,6 +21,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import com.corgimemo.app.ui.theme.FontCatalog
@@ -40,8 +42,12 @@ private const val EDITOR_URL = "file:///android_asset/blocknote-web/editor/edito
  * [undo] / [redo] / [requestSave] / [setTheme] / [setFontFamily]。
  * ready 之前的命令会被缓存，ready 后按序补发（init 缓存同理）。
  *
+ * v1.7：撤销/重做的可用态经 `undoState` 上行，暴露为 [canUndo] / [canRedo]（Compose 快照态）。
+ * 界面不再由 JS 自绘撤销/重做按钮，统一由宿主顶栏那对图标按钮承担。
+ *
  * 数据流纪律（docs/bridge-protocol.md）：单向数据流——
- * Kotlin 只下行「配置与命令」，内容以 markdown 快照经 `changed` 上行。
+ * Kotlin 只下行「配置与命令」，内容以 markdown 快照经 `changed` 上行；
+ * 历史栈本身始终留在 JS 侧，上行仅是可撤销/可重做的布尔态。
  */
 class BlockNoteBridgeController {
     internal var webView: WebView? = null
@@ -51,6 +57,17 @@ class BlockNoteBridgeController {
 
     /** JS 上行的最新 markdown（changed 防抖后），宿主保存时取用 */
     var onMarkdownChanged: ((String) -> Unit)? = null
+
+    /**
+     * 撤销/重做可用态（v1.7）：JS 侧历史栈变化后经 `undoState` 上行。
+     * true 表示当前历史栈可撤销——宿主左上角按钮据此置灰（对齐 Compose 版 canUndo/canRedo）。
+     */
+    var canUndo by mutableStateOf(false)
+        private set
+
+    /** 重做可用态（v1.7，语义同 [canUndo]） */
+    var canRedo by mutableStateOf(false)
+        private set
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pendingInit: JSONObject? = null
@@ -172,6 +189,15 @@ class BlockNoteBridgeController {
                     val md = msg.optString("markdown")
                     latestMarkdown = md
                     mainHandler.post { onMarkdownChanged?.invoke(md) }
+                }
+                "undoState" -> {
+                    // v1.7：撤销/重做可用态上行 → 驱动宿主按钮 enabled（Compose 快照态，主线程安全）
+                    val u = msg.optBoolean("canUndo", false)
+                    val r = msg.optBoolean("canRedo", false)
+                    mainHandler.post {
+                        canUndo = u
+                        canRedo = r
+                    }
                 }
                 "error" -> Log.e(TAG, "js error: ${msg.optString("message")}")
             }

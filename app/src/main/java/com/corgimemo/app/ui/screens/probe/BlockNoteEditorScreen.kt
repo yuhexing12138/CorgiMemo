@@ -263,6 +263,14 @@ private fun createEditorWebView(
                                 val md = msg.optString("markdown")
                                 mainHandler.post { onChanged(md) }
                             }
+                            "undoState" -> {
+                                // v1.7：探针页只记录可用态（该页无顶栏按钮，无需驱动 UI）
+                                Log.d(
+                                    TAG,
+                                    "undoState: canUndo=${msg.optBoolean("canUndo")}, " +
+                                        "canRedo=${msg.optBoolean("canRedo")}"
+                                )
+                            }
                             "error" -> Log.e(
                                 "BlockNoteEditor",
                                 "js error: ${msg.optString("message")}"

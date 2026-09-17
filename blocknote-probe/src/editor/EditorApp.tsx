@@ -72,36 +72,6 @@ function cycleTextColor(editor: any): void {
   editor.addStyles({ textColor: TEXT_COLOR_CYCLE[i + 1] });
 }
 
-/**
- * 长按连发按钮（S12）：按下立即执行一次，450ms 后每 150ms 重复；抬起/移出停止。
- * 用于 undo/redo——软键盘没有 Ctrl+Z，长按连退是移动端刚需。
- */
-function AutoRepeatButton(props: { label: string; title: string; onAction: () => void }) {
-  const timers = useRef<{ delay?: ReturnType<typeof setTimeout>; rep?: ReturnType<typeof setInterval> }>({});
-  const start = () => {
-    props.onAction();
-    timers.current.delay = setTimeout(() => {
-      timers.current.rep = setInterval(props.onAction, 150);
-    }, 450);
-  };
-  const stop = () => {
-    if (timers.current.delay) clearTimeout(timers.current.delay);
-    if (timers.current.rep) clearInterval(timers.current.rep);
-    timers.current = {};
-  };
-  return (
-    <button
-      title={props.title}
-      onPointerDown={start}
-      onPointerUp={stop}
-      onPointerLeave={stop}
-      onPointerCancel={stop}
-    >
-      {props.label}
-    </button>
-  );
-}
-
 /** S8：字号循环按钮（格式工具栏内）——无 → 最小 → 递增 → 末档清除 */
 function FontSizeButton() {
   const Components = useComponentsContext()!;
@@ -186,6 +156,36 @@ export default function EditorApp() {
   /** editor 实例引用（bridge 下行的 requestSave 需要） */
   const editorRef = useRef<any>(null);
 
+  /** 上一次上报的撤销/重做可用态（做变化去重，避免冗余上行，v1.7） */
+  const lastUndoStateRef = useRef<{ canUndo: boolean; canRedo: boolean } | null>(null);
+
+  /**
+   * 上报撤销/重做可用态（v1.7）：宿主左上角按钮据此置灰。
+   *
+   * 用 BlockNote 公开 API `editor.can(editor.undo)`——StateManager.can() 内部置 isInCan 标志，
+   * 使 exec() 走 canExec() 分支**只判定不派发**，因此不会污染历史栈；
+   * 比直接读 tiptap 内部状态（_tiptapEditor）更稳，也不依赖私有字段。
+   *
+   * 去重：与上次相同则不上报（按钮态无需重复刷新）。
+   */
+  const pushUndoState = useCallback(() => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    let canUndo = false;
+    let canRedo = false;
+    try {
+      canUndo = !!ed.can(ed.undo);
+      canRedo = !!ed.can(ed.redo);
+    } catch {
+      // 历史插件尚未就绪（初次装载）：保守上报 false
+      return;
+    }
+    const prev = lastUndoStateRef.current;
+    if (prev && prev.canUndo === canUndo && prev.canRedo === canRedo) return;
+    lastUndoStateRef.current = { canUndo, canRedo };
+    sendUp({ type: "undoState", canUndo, canRedo });
+  }, []);
+
   /** 变更上行（防抖 800ms） */
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pushChanged = useCallback(() => {
@@ -237,9 +237,12 @@ export default function EditorApp() {
           break;
         case "requestUndo":
           editorRef.current?.undo();
+          // v1.7：撤销后立即回传可用态，宿主按钮同步置灰
+          pushUndoState();
           break;
         case "requestRedo":
           editorRef.current?.redo();
+          pushUndoState();
           break;
         case "insertImage": {
           // S11：本地路径 → file:// URL（converter.toWebImageUrl 语义），插入光标所在块之后
@@ -454,7 +457,7 @@ export default function EditorApp() {
     return () => {
       window.BlockNoteEditorHost = undefined;
     };
-  }, [pushChanged]);
+  }, [pushChanged, pushUndoState]);
 
   // ---- booted 后解析 markdown（完成才挂编辑器核心） ----
   useEffect(() => {
@@ -497,6 +500,7 @@ export default function EditorApp() {
         editorRef.current = editor;
       }}
       onChange={pushChanged}
+      onUndoStateChange={pushUndoState}
       emojiOpen={emojiOpen}
       onEmojiClose={() => setEmojiOpen(false)}
       onEmojiPick={(emoji) => {
@@ -520,6 +524,8 @@ function EditorCore(props: {
   onEmojiPick: (emoji: string) => void;
   onReady: (editor: any) => void;
   onChange: () => void;
+  /** v1.7：撤销/重做可用态上报（宿主左上角按钮置灰用） */
+  onUndoStateChange: () => void;
 }) {
   // @font-face 注入（S5）
   useEffect(() => {
@@ -534,6 +540,8 @@ function EditorCore(props: {
 
   useEffect(() => {
     props.onReady(editor);
+    // 初次挂载后上报一次可用态（初始内容装载本身不产生可撤销历史，通常为 false/false）
+    props.onUndoStateChange();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
 
@@ -554,16 +562,16 @@ function EditorCore(props: {
         ["--editor-border" as any]: props.theme.dark ? "#444444" : "#cccccc",
       }}
     >
-      <div className="editor-toolbar">
-        <AutoRepeatButton label="↶ 撤销" title="撤销（长按连发）" onAction={() => editor.undo()} />
-        <AutoRepeatButton label="↷ 重做" title="重做（长按连发）" onAction={() => editor.redo()} />
-      </div>
       <div style={{ fontFamily: "var(--content-font, system-ui)" }}>
         <BlockNoteView
           editor={editor}
           theme={props.theme.dark ? "dark" : "light"}
           formattingToolbar={false}
-          onChange={props.onChange}
+          onChange={() => {
+            // v1.7：内容变更既推 markdown 快照，也刷新撤销/重做可用态
+            props.onChange();
+            props.onUndoStateChange();
+          }}
         >
           <FormattingToolbarController
             formattingToolbar={() => (

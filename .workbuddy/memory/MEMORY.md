@@ -34,6 +34,14 @@
 - （历史）操作入口挂系统 TextToolbar：抬指定格主动 `textToolbar.showMenu(rect=窗口坐标)`，非null 回调决定菜单项；主动弹出的工具栏不随焦点迁移消失——控制器 `onCrossSelectionCleared` 回调 + clearCrossSelection 真清除时才 invoke → 编辑层 SideEffect 接 `textToolbar.hide()`。
 - （历史）跨块选区模型/布局注册表/hitTest/富文本拼接见 `docs/跨块文字选择优化方案.md` §8。
 
+### TaskList 行级渲染（v2026-09-16 定稿，4 提交 f631159..f386b1e）
+- **结构不变**：TaskList 段落 = 单段落 + 段内 `\n`（方案 D）；勾选按行：`checked`=行 0，`checkedLines: Map<Int,Boolean>`=行 ≥1（setter 重建 startRichSpan）。
+- **渲染**：`ModifierExt` 对 CheckBox 传**段落全 range**；`drawCustomStyle` 按 `\n` 分行逐行画（行盒 = `getBoundingBoxes(lineStart, +1)` 单字符 range）；x 以行 0 marker 左缘为基准。
+- **命中**：`toggleTaskListCheckedAtTextOffset` 命中 = **行首**（段首或前字符 `\n`）；行号 = 段首到 offset 的 `\n` 数；翻转走 `withCheckedLines` **换新实例**（快照 deepCopy → copy 必须带行级状态）。
+- **对账**：`updateAnnotatedString` 内 `reconcileCheckedLines`——行数变 ⇒ 清 checkedLines（行 0 保留）；reconcile 重建 marker 后**必须立即恢复 textRange**（否则本帧 (0,0) 错位）。
+- **parser 往返**：编码逐行前缀（`- [ ] 行1\n- [x] 行2`，尾 `\n`=空项）；解码连续**同层级**任务行并段续行 + 逐行回填/剥前缀（行首 span = children 最后一个 span）；普通列表项行恢复分段（修复 `- a\n- b` 并段回归）。
+- 已知取舍：增删 `\n` 清行级状态（行 0 保留）；段末空行不画框；跨行样式被前缀截断；文字降级仍整段按行 0。App 侧零行级逻辑（`toggleCheckboxAtFocused` = 整块 toggleTaskList）。
+
 ## 块级拖拽重排（自维护 fork）
 - `ui/components/reorderable/BlocksReorderableList.kt`（fork 自 `sh.calvin.reorderable:3.1.0`）。唯一改动：`settle()` 改「抓快照→立即 onSettle→滑行交 `BlocksGlideController` 接续」。
 - **拖拽期间绝不能改列表**（库 intervals 定长）。`itemKey` 身兼组合身份锚定+滑行归属+zIndex。
@@ -51,6 +59,19 @@
 - ⚠️ **缩放期间绝不夹紧边界**（缩小必越界，否则锚点白算）；手势结束再做「越界收回」。
 - **窗口/insets**：`LocalView.current` 在 Dialog content 非 `DialogLayout` → 沿父链 `findDialogWindow()`（tailrec）。insets 从 `activity.window.decorView` 读；旋转后高频重读。系统栏：竖屏始终显示，横屏双通道 hide。边距 300ms 补间。
 - Pager 阈值：横屏 0.08，竖屏 0.35。顶栏 `ChromeTopGapFromStatusBar=12.dp`。`VoicePreviewDialog` 与本页共用 `findDialogWindow()`。
+
+## BlockNote WebView 编辑器（迁移 P1.5+）
+- 资源：`app/src/main/assets/blocknote-web/editor/editor.html`（1.8MB `viteSingleFile` 内联单文件，`file:///android_asset/...`）。
+  **源码在 `blocknote-probe/src/editor/`，改完必须 `cd blocknote-probe && npm run build:editor` 才生效**（输出目录写在 `vite.editor.config.ts`）。
+  同名 `BlockNoteEditorScreen.kt` 是独立探针页，与灵感编辑页共用的 `BlockNoteEditorWebView.kt` 是两套实现，勿混。
+- Bridge：下行 `evaluateJavascript("window.BlockNoteEditorHost.onMessage(<json>)")`；上行 `AndroidBridge.postMessage(json)`（匿名对象，只这一个方法）。
+  协议见 `docs/bridge-protocol.md`。上行 `ready`/`changed`/`error`/`undoState`。
+- BlockNote 版本 0.52.1。**`BlockNoteEditor` 没有 transaction 事件**（`extends EventEmitter<{create: void}>` 仅 `create`）。
+- ⚠️ **撤销/重做可用态用公开 API `editor.can(editor.undo / editor.redo)`**：`StateManager.can()` 置 `isInCan`
+  使 `exec()` 走 `canExec()` **只判定不 dispatch**，不污染历史栈。别读 `_tiptapEditor`（私有字段）、别扫自定义调用点。
+- **v1.7（2026-09-17）**：JS 侧自绘的 `.editor-toolbar`「↺ 撤销/↻ 重做」胶囊按钮（`AutoRepeatButton`）**已删除**；
+  唯一入口是宿主顶栏 `InspirationEditScreen` 的 ↶/↷ 图标按钮，可用态经 `undoState` → `BlockNoteBridgeController.canUndo/canRedo`（mutableStateOf）驱动置灰。
+  原「长按连发」未在 Compose 侧复刻。**BlockNote 官方从无撤销/重做 UI，`BlockNoteView` 没有关闭它的配置——只能删自绘代码。**
 
 ## 工具/协作教训
 - ⚠️ 连续 2 次「猜测→改码→失败」后，停止猜测、加埋点取真实数据。

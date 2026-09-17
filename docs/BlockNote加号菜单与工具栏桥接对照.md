@@ -79,7 +79,7 @@
 | 斜体/下划线/删除线/代码样式 | format: italic / underline / strike / codeSpan | 行内格式 |
 | 字号面板点选 | format: fontSize(value px/default) | |
 | 颜色面板预设色/自定义取色 | format: textColor(hex / default) | 拖动取色逐帧下发 |
-| 撤销/重做（长按连发） | requestUndo / requestRedo | |
+| 撤销/重做 | requestUndo / requestRedo | v1.7：JS 自绘按钮已移除，唯一入口是宿主顶栏图标按钮；可用态经 `undoState` 上行置灰 |
 
 ---
 

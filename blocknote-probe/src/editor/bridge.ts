@@ -6,7 +6,8 @@
  * 上行（JS → Kotlin）：JS 侧 window.AndroidBridge.postMessage(JSON)
  *   （Kotlin 侧 addJavascriptInterface(BridgeHost, "AndroidBridge")）
  *
- * 纪律：单向数据流——Kotlin 永不向 JS 回灌内容变更；undo/redo 状态全部留在 JS 侧。
+ * 纪律：单向数据流——Kotlin 永不向 JS 回灌内容变更；undo/redo 的**历史栈**留在 JS 侧，
+ * 仅把「是否可撤销/可重做」的布尔态经 undoState 上行供宿主按钮置灰（v1.7）。
  */
 
 /** 主题载荷（P0：深浅态 + 主色；P1 扩展六色主题） */
@@ -65,6 +66,11 @@ export type UpMessage =
   | { type: "ready" }
   /** 内容变更快照（JS 侧防抖 800ms） */
   | { type: "changed"; markdown: string }
+  /**
+   * 撤销/重做可用态（v1.7）：JS 侧历史栈变化后上报，
+   * 宿主据此给左上角撤销/重做按钮置灰（对齐 Compose 版 canUndo/canRedo 语义）。
+   */
+  | { type: "undoState"; canUndo: boolean; canRedo: boolean }
   | { type: "error"; message: string };
 
 declare global {

@@ -110,7 +110,7 @@ Web 侧工作区：**沿用 `blocknote-probe/` 目录**（改名破坏 git 历�
 **S9 任务块**（2 天）：checkListItem 勾选视觉降级（CSS）、任务格式按钮、markdown `- [x]` 往返核对
 **S10 分割线工具条**（2 天）：extendBlockSpec 定稿（追加 style prop）、选中弹出三样式切换 + 删除（Mantine popover，对齐设计稿视觉）
 **S11 图片块**（3 天）：撑满宽度 CSS、`uploadFile` bridge（Kotlin 收流存文件回传 URI）、删除/预览交互
-**S12 undo/redo UI**（1 天）：编辑器顶栏按钮（bridge 调 `editor.undo()/redo()`）+ 长按连发
+**S12 undo/redo UI**（1 天）：**v1.7 改版**——JS 侧自绘按钮已移除，统一由宿主顶栏图标按钮承担（bridge 调 `editor.undo()/redo()`）；可用态经 `undoState` 上行驱动按钮置灰
 **S13 自动保存落库**（2 天）：`changed` 接真 Repository（替换 S3 mock）；退出/切后台强制 `requestSave`
 **S14 P1 回归与验收**（1–2 天）：50 篇真实笔记往返回归全绿；与 Compose 编辑器逐功能对照清单全过
 
