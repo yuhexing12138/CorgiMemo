@@ -183,6 +183,15 @@ import kotlin.math.roundToInt
  */
 private const val USE_BLOCKNOTE_EDITOR = true
 
+/** Compose Color → "#RRGGBB"（BlockNote textColor 自由值格式；忽略 alpha） */
+private fun composeColorToHex(c: Color): String = String.format(
+    Locale.US,
+    "#%02X%02X%02X",
+    (c.red * 255).toInt(),
+    (c.green * 255).toInt(),
+    (c.blue * 255).toInt()
+)
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class, ExperimentalRichTextApi::class)
 @Composable
 fun InspirationEditScreen(
@@ -1355,7 +1364,13 @@ fun InspirationEditScreen(
                 onFontPanelDismiss = {
                     val cjkChanged = pendingCjkFontId != contentFontEntry.id
                     val latinChanged = pendingLatinFontId != contentLatinFontId
-                    if (cjkChanged || latinChanged) {
+                    if (useBlockNoteEditor) {
+                        // BlockNote 模式（P1.5）：「应用」= setFontFamily 下行（S5 字体流，正文即时换字）
+                        if (cjkChanged || latinChanged) {
+                            blockNoteController.setFontFamily(pendingCjkFontId)
+                        }
+                        isFontPanelExpanded = false
+                    } else if (cjkChanged || latinChanged) {
                         // 应用：点选过程只更新 pending（面板高亮），此处才写内容字体，
                         // 避免逐次点选经 FontFamilyResolver 全局缓存累积各款字体而 OOM
                         if (cjkChanged) {
@@ -1397,6 +1412,13 @@ fun InspirationEditScreen(
                  * 再写目标档；点默认档（[DEFAULT_BODY_SP] = 16sp）只清除不写入（回落正文默认）。
                  */
                 onFontSizeSelect = { sp ->
+                    if (useBlockNoteEditor) {
+                        // BlockNote 模式（P1.5）：字号面板点选 → fontSize 下行（默认档=清除）
+                        blockNoteController.format(
+                            "fontSize",
+                            if (sp == DEFAULT_BODY_SP) "default" else "${sp.sp}px"
+                        )
+                    } else {
                     val target = sp.sp
                     val current = richTextState.currentSpanStyle.fontSize
                     FONT_SIZE_TIERS.forEach { tier ->
@@ -1404,6 +1426,7 @@ fun InspirationEditScreen(
                     }
                     if (sp != DEFAULT_BODY_SP && current != target) {
                         richTextState.toggleSpanStyle(SpanStyle(fontSize = target))
+                    }
                     }
                 },
                 /**
@@ -1413,6 +1436,12 @@ fun InspirationEditScreen(
                  */
                 onPresetColorSelect = { idx ->
                     val targetColor = TEXT_COLORS.getOrNull(idx)?.color
+                    if (useBlockNoteEditor) {
+                        blockNoteController.format(
+                            "textColor",
+                            if (targetColor == null) "default" else composeColorToHex(targetColor)
+                        )
+                    } else {
                     val current = richTextState.currentSpanStyle.color
                     TEXT_COLORS.forEach { entry ->
                         entry.color?.let {
@@ -1425,6 +1454,7 @@ fun InspirationEditScreen(
                     if (targetColor != null && current != targetColor) {
                         richTextState.toggleSpanStyle(SpanStyle(color = targetColor))
                     }
+                    }
                 },
                 /**
                  * 自定义取色（拖动每帧回调，即时生效）：清除当前色后写入新色。
@@ -1434,7 +1464,10 @@ fun InspirationEditScreen(
                  */
                 onCustomColorSelect = { hex ->
                     val parsed = runCatching { Color(AndroidColor.parseColor(hex)) }.getOrNull()
-                    if (parsed != null) {
+                    if (useBlockNoteEditor) {
+                        // 拖动高频：直接下发 hex（WebView 端 addStyles 幂等）
+                        blockNoteController.format("textColor", hex)
+                    } else if (parsed != null) {
                         val targetColor = parsed
                         val current = richTextState.currentSpanStyle.color
                         if (current.isSpecified && current != targetColor) {
@@ -1468,6 +1501,10 @@ fun InspirationEditScreen(
                  * 已废弃的 VM 旧撤销栈（UI 层从不消费），早已移除。
                  */
                 onSetFontWeight = { weight ->
+                    if (useBlockNoteEditor) {
+                        // BlockNote 模式（P1.5）：字重档位桥接为加粗 toggle（HTML 无多档字重概念）
+                        blockNoteController.format("bold")
+                    } else {
                     // 设置字重档位（候选为当前内容字体 ContentFontManager.boldTiers，档数随字体变化；
                     // 无独立字形的档位已置灰禁用、不会进入此回调）：
                     // 先清除全部档位字重避免叠加，再 toggle 目标档。
@@ -1483,29 +1520,58 @@ fun InspirationEditScreen(
                     if (current != target) {
                         richTextState.toggleSpanStyle(SpanStyle(fontWeight = target))
                     }
+                    }
                 },
                 onToggleItalic = {
-                    richTextState.toggleSpanStyle(SpanStyle(fontStyle = FontStyle.Italic))
+                    if (useBlockNoteEditor) {
+                        blockNoteController.format("italic")
+                    } else {
+                        richTextState.toggleSpanStyle(SpanStyle(fontStyle = FontStyle.Italic))
+                    }
                 },
                 onToggleUnderline = {
-                    richTextState.toggleSpanStyle(SpanStyle(textDecoration = TextDecoration.Underline))
+                    if (useBlockNoteEditor) {
+                        blockNoteController.format("underline")
+                    } else {
+                        richTextState.toggleSpanStyle(SpanStyle(textDecoration = TextDecoration.Underline))
+                    }
                 },
                 onToggleStrikethrough = {
-                    richTextState.toggleSpanStyle(SpanStyle(textDecoration = TextDecoration.LineThrough))
+                    if (useBlockNoteEditor) {
+                        blockNoteController.format("strike")
+                    } else {
+                        richTextState.toggleSpanStyle(SpanStyle(textDecoration = TextDecoration.LineThrough))
+                    }
                 },
                 onInsertUnorderedList = {
-                    richTextState.toggleUnorderedList()
+                    if (useBlockNoteEditor) {
+                        blockNoteController.format("bulletList")
+                    } else {
+                        richTextState.toggleUnorderedList()
+                    }
                 },
                 onInsertOrderedList = {
-                    richTextState.toggleOrderedList()
+                    if (useBlockNoteEditor) {
+                        blockNoteController.format("numberedList")
+                    } else {
+                        richTextState.toggleOrderedList()
+                    }
                 },
                 onIncreaseIndent = {
                     /** 增加缩进（v2026-09-05）：对聚焦正文块做列表层级 +1（普通文本行自动转列表） */
-                    bodyBlocks.indentFocusedBlock(delta = +1)
+                    if (useBlockNoteEditor) {
+                        blockNoteController.format("indent")
+                    } else {
+                        bodyBlocks.indentFocusedBlock(delta = +1)
+                    }
                 },
                 onDecreaseIndent = {
                     /** 减少缩进（v2026-09-05）：对聚焦正文块做列表层级 -1（一级再减退出列表） */
-                    bodyBlocks.indentFocusedBlock(delta = -1)
+                    if (useBlockNoteEditor) {
+                        blockNoteController.format("outdent")
+                    } else {
+                        bodyBlocks.indentFocusedBlock(delta = -1)
+                    }
                 },
                 onInsertDivider = {
                     /** 插入分割线（v2026-09-07）：聚焦块光标处拆块插入 `---` 段，可撤销/可退格删除
@@ -1522,33 +1588,64 @@ fun InspirationEditScreen(
                     /** 复选框（v2026-09-07）：聚焦块在 复选框块 ↔ 普通块 间切换，可撤销；
                      *  行首复选框标识可点击勾选（文字视觉降级），markdown 以 `- [ ] `/`- [x] ` 持久化 */
                     if (!isLocked) {
-                        bodyBlocks.toggleCheckboxAtFocused()
+                        if (useBlockNoteEditor) {
+                            blockNoteController.format("checkList")
+                        } else {
+                            bodyBlocks.toggleCheckboxAtFocused()
+                        }
                     }
                 },
                 isCheckboxActive = bodyBlocks.isFocusedBlockCheckbox,
                 canIncreaseIndent = bodyBlocks.canIncreaseIndent,
                 canDecreaseIndent = bodyBlocks.canDecreaseIndent,
+                onTransform = { action ->
+                    /** BlockNote 迁移（P1-S10）：块类型转换/插入经 Bridge 下发（Compose 模式按钮置灰） */
+                    if (useBlockNoteEditor) {
+                        blockNoteController.format("transform", action)
+                    }
+                },
+                onTransformEnabled = useBlockNoteEditor,
                 onAlignLeft = {
-                    richTextState.toggleParagraphStyle(
-                        androidx.compose.ui.text.ParagraphStyle(textAlign = TextAlign.Start)
-                    )
+                    if (useBlockNoteEditor) {
+                        blockNoteController.format("alignLeft")
+                    } else {
+                        richTextState.toggleParagraphStyle(
+                            androidx.compose.ui.text.ParagraphStyle(textAlign = TextAlign.Start)
+                        )
+                    }
                 },
                 onAlignCenter = {
-                    richTextState.toggleParagraphStyle(
-                        androidx.compose.ui.text.ParagraphStyle(textAlign = TextAlign.Center)
-                    )
+                    if (useBlockNoteEditor) {
+                        blockNoteController.format("alignCenter")
+                    } else {
+                        richTextState.toggleParagraphStyle(
+                            androidx.compose.ui.text.ParagraphStyle(textAlign = TextAlign.Center)
+                        )
+                    }
                 },
                 onAlignRight = {
-                    richTextState.toggleParagraphStyle(
-                        androidx.compose.ui.text.ParagraphStyle(textAlign = TextAlign.End)
-                    )
+                    if (useBlockNoteEditor) {
+                        blockNoteController.format("alignRight")
+                    } else {
+                        richTextState.toggleParagraphStyle(
+                            androidx.compose.ui.text.ParagraphStyle(textAlign = TextAlign.End)
+                        )
+                    }
                 },
                 onInsertLink = {
-                    /** 简化实现：为当前选区插入示例链接，后续可扩展为弹窗输入 */
-                    richTextState.addLinkToSelection(url = "https://example.com")
+                    if (useBlockNoteEditor) {
+                        // BlockNote 模式：链接由 WebView 内置格式工具栏提供，此处 no-op
+                    } else {
+                        /** 简化实现：为当前选区插入示例链接，后续可扩展为弹窗输入 */
+                        richTextState.addLinkToSelection(url = "https://example.com")
+                    }
                 },
                 onToggleCodeSpan = {
-                    richTextState.toggleCodeSpan()
+                    if (useBlockNoteEditor) {
+                        blockNoteController.format("codeSpan")
+                    } else {
+                        richTextState.toggleCodeSpan()
+                    }
                 },
                 modifier = Modifier.safeAreaForEditBar()
             )

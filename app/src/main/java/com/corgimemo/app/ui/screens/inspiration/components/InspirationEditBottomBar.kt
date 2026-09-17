@@ -148,6 +148,10 @@ fun InspirationEditBottomBar(
     onInsertDivider: () -> Unit = {},
     /** 复选框回调（v2026-09-07）：透传给 [RichTextFormatToolbar]，聚焦块切换复选框属性 */
     onToggleCheckbox: () -> Unit = {},
+    /** BlockNote 迁移（P1-S10）：块类型转换/插入（heading1-3/quote/codeBlock/table/pageBreak），透传格式工具栏 */
+    onTransform: (String) -> Unit = {},
+    /** 块类型按钮可用性（BlockNote 模式 true，Compose 模式 false 置灰） */
+    onTransformEnabled: Boolean = false,
     /** 是否可增加缩进（v2026-09-05 视觉降级）：列表到顶时置灰，透传给 [RichTextFormatToolbar] */
     canIncreaseIndent: Boolean = true,
     /** 是否可减少缩进（v2026-09-05 视觉降级）：非列表行置灰，透传给 [RichTextFormatToolbar] */
@@ -208,6 +212,8 @@ fun InspirationEditBottomBar(
                     onDecreaseIndent = onDecreaseIndent,
                     onInsertDivider = onInsertDivider,
                     onToggleCheckbox = onToggleCheckbox,
+                    onTransform = onTransform,
+                    onTransformEnabled = onTransformEnabled,
                     canIncreaseIndent = canIncreaseIndent,
                     canDecreaseIndent = canDecreaseIndent,
                     isCheckboxActive = isCheckboxActive,

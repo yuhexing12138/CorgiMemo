@@ -137,7 +137,15 @@ fun RichTextFormatToolbar(
     onAlignCenter: () -> Unit = {},
     onAlignRight: () -> Unit = {},
     onInsertLink: () -> Unit = {},
-    onToggleCodeSpan: () -> Unit = {}
+    onToggleCodeSpan: () -> Unit = {},
+    /**
+     * 块类型转换/插入（BlockNote 迁移 P1-S10 补充）：
+     * action = heading1/heading2/heading3/quote/codeBlock/table/pageBreak。
+     * Compose 模式（useBlockNote=false）传空实现即可——按钮由调用方置灰。
+     */
+    onTransform: (String) -> Unit = {},
+    /** 块类型按钮可用性（BlockNote 模式 true；Compose 模式 false 置灰） */
+    onTransformEnabled: Boolean = false
 ) {
     /** 加粗字重菜单的展开状态（纯 UI 局部状态，置于函数体顶层，不在条件分支内） */
     var boldExpanded by remember { mutableStateOf(false) }
@@ -345,7 +353,7 @@ fun RichTextFormatToolbar(
 
         ToolbarDivider()
 
-        /** ====== 第四组：高级（链接 + 代码块） ====== */
+        /** ====== 第四组：高级（链接 + 代码 span） ====== */
         FormatButtonGroup {
             FormatIconButton(
                 imageVector = Icons.Default.Link,
@@ -357,7 +365,38 @@ fun RichTextFormatToolbar(
                 imageVector = Icons.Default.Code,
                 isActive = state.isCodeSpan,
                 onClick = onToggleCodeSpan,
-                contentDescription = "代码块"
+                contentDescription = "代码样式"
+            )
+        }
+
+        ToolbarDivider()
+
+        /**
+         * ====== 第五组：块类型（BlockNote 迁移 P1-S10 补充） ======
+         *
+         * 对齐 WebView「+ 菜单」的插入/转换能力：H1/H2/H3、引用、整块代码、表格、页分隔。
+         * 经 [onTransform] 下发 action 到编辑器（BlockNote 模式 = Bridge format("transform")；
+         * Compose 模式 = 空实现，按钮置灰）。
+         */
+        FormatButtonGroup {
+            FormatTextButton("H1", isActive = false, onClick = { onTransform("heading1") }, contentDescription = "标题 1", enabled = onTransformEnabled)
+            FormatTextButton("H2", isActive = false, onClick = { onTransform("heading2") }, contentDescription = "标题 2", enabled = onTransformEnabled)
+            FormatTextButton("H3", isActive = false, onClick = { onTransform("heading3") }, contentDescription = "标题 3", enabled = onTransformEnabled)
+            FormatTextButton("❝", isActive = false, onClick = { onTransform("quote") }, contentDescription = "引用", enabled = onTransformEnabled)
+            FormatTextButton("{ }", isActive = false, onClick = { onTransform("codeBlock") }, contentDescription = "代码块", enabled = onTransformEnabled)
+            FormatIconButton(
+                imageVector = Icons.Default.TableChart,
+                isActive = false,
+                onClick = { onTransform("table") },
+                contentDescription = "表格",
+                enabled = onTransformEnabled
+            )
+            FormatIconButton(
+                imageVector = LucideIcons.FilePlus,
+                isActive = false,
+                onClick = { onTransform("pageBreak") },
+                contentDescription = "页分隔",
+                enabled = onTransformEnabled
             )
         }
     }
@@ -434,6 +473,38 @@ private fun FormatIconButton(
             contentDescription = contentDescription,
             tint = tint,
             modifier = Modifier.size(22.dp)
+        )
+    }
+}
+
+/**
+ * 文字标签格式按钮（BlockNote 迁移 P1-S10 补充）：H1/H2/H3、引用等以文字为图标的按钮。
+ * 样式与 [FormatIconButton] 一致（40dp 点击区、22dp 内容、激活/禁用视觉同款）。
+ */
+@Composable
+private fun FormatTextButton(
+    label: String,
+    isActive: Boolean,
+    onClick: () -> Unit,
+    contentDescription: String,
+    enabled: Boolean = true,
+) {
+    val tint = when {
+        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+        isActive -> Color(0xFFFF9A5C)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(40.dp)
+    ) {
+        Text(
+            text = label,
+            color = tint,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1
         )
     }
 }

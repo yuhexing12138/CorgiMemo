@@ -41,7 +41,18 @@ export type DownMessage =
   /** 图片插入（v1.3：原页面相册/相机选图后经桥插入光标处；path 为本地绝对路径） */
   | { type: "insertImage"; path: string }
   /** 分割线插入（v1.3：原页面分割线按钮经桥在光标处插入） */
-  | { type: "insertDivider" };
+  | { type: "insertDivider" }
+  /**
+   * 格式命令（v1.4：底部格式工具栏按钮经桥作用于当前选区/光标块）。
+   * action 取值：
+   * - bold / italic / underline / strike / codeSpan（toggleStyles 行内格式）
+   * - fontSize / textColor（value = "18px" / "#ff0000" 或 "default"=清除）
+   * - bulletList / numberedList / checkList / paragraph（光标块类型切换）
+   * - indent / outdent（嵌套层级 ±1）
+   * - alignLeft / alignCenter / alignRight（光标块对齐）
+   * - transform（value = heading1/2/3、quote、codeBlock、table、pageBreak——块类型转换/插入）
+   */
+  | { type: "format"; action: string; value?: string };
 
 /** 上行消息（JS → Kotlin） */
 export type UpMessage =

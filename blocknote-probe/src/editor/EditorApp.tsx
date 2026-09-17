@@ -30,6 +30,13 @@ function getMdLoader(): any {
   return mdLoaderEditor;
 }
 
+/** 光标块类型切换（已是目标类型则退回普通段落）——列表/任务按钮的 toggle 语义 */
+function toggleBlockType(ed: any, type: string): void {
+  const { block } = ed.getTextCursorPosition();
+  const target = block.type === type ? "paragraph" : type;
+  ed.updateBlock(block, { type: target });
+}
+
 /** 字号循环序列（S8）：点击依次加大，末档点击清除 */
 const FONT_SIZE_CYCLE = ["14px", "16px", "18px", "20px", "24px", "28px", "32px"];
 /** 文字颜色循环序列（S8）：BlockNote 内置 textColor 值名 */
@@ -251,6 +258,127 @@ export default function EditorApp() {
           if (ed) {
             const cursor = ed.getTextCursorPosition();
             ed.insertBlocks([{ type: "divider", props: { style: "solid" } }], cursor.block, "after");
+          }
+          break;
+        }
+        case "format": {
+          // v1.4：底部格式工具栏桥接（作用于当前选区/光标块）
+          const ed = editorRef.current;
+          const action = (msg as any).action as string;
+          const value = (msg as any).value as string | undefined;
+          if (!ed || !action) break;
+          switch (action) {
+            case "bold":
+              ed.toggleStyles({ bold: true });
+              break;
+            case "italic":
+              ed.toggleStyles({ italic: true });
+              break;
+            case "underline":
+              ed.toggleStyles({ underline: true });
+              break;
+            case "strike":
+              ed.toggleStyles({ strike: true });
+              break;
+            case "fontSize":
+              // value = "18px"（px 字面量），"default" / 空清除
+              if (value && value !== "default") ed.addStyles({ fontSize: value });
+              else ed.removeStyles({ fontSize: "16px" });
+              break;
+            case "textColor":
+              // value = "#rrggbb"（自由值）或 "default"=清除
+              if (value && value !== "default") ed.addStyles({ textColor: value });
+              else ed.removeStyles({ textColor: "default" });
+              break;
+            case "bulletList":
+              toggleBlockType(ed, "bulletListItem");
+              break;
+            case "numberedList":
+              toggleBlockType(ed, "numberedListItem");
+              break;
+            case "checkList":
+              toggleBlockType(ed, "checkListItem");
+              break;
+            case "indent":
+              ed.nestBlock();
+              break;
+            case "outdent":
+              ed.unnestBlock();
+              break;
+            case "alignLeft":
+            case "alignCenter":
+            case "alignRight": {
+              // 对齐 = 光标块 textAlignment prop（P1：当前块级；跨多块选区转换留 P2）
+              const alignMap: Record<string, string> = {
+                alignLeft: "left",
+                alignCenter: "center",
+                alignRight: "right",
+              };
+              const { block } = ed.getTextCursorPosition();
+              ed.updateBlock(block, {
+                props: { textAlignment: alignMap[action] },
+              } as any);
+              break;
+            }
+            case "codeSpan":
+              ed.toggleStyles({ code: true });
+              break;
+            case "transform":
+              // S10 补充：块类型转换/插入（+ 菜单同款能力进工具栏）
+              switch (value) {
+                case "heading1":
+                case "heading2":
+                case "heading3": {
+                  const level = Number(value.slice(-1));
+                  const { block } = ed.getTextCursorPosition();
+                  const targetType =
+                    block.type === "heading" &&
+                    (block.props as any).level === level
+                      ? "paragraph"
+                      : "heading";
+                  ed.updateBlock(block, {
+                    type: targetType,
+                    props: { level },
+                  } as any);
+                  break;
+                }
+                case "quote": {
+                  const { block } = ed.getTextCursorPosition();
+                  const targetType = block.type === "quote" ? "paragraph" : "quote";
+                  ed.updateBlock(block, { type: targetType } as any);
+                  break;
+                }
+                case "codeBlock": {
+                  const { block } = ed.getTextCursorPosition();
+                  const targetType =
+                    block.type === "codeBlock" ? "paragraph" : "codeBlock";
+                  ed.updateBlock(block, { type: targetType } as any);
+                  break;
+                }
+                case "table":
+                  ed.insertBlocks(
+                    [
+                      {
+                        type: "table",
+                        content: {
+                          type: "tableContent",
+                          rows: [{ cells: ["", "", ""] }, { cells: ["", "", ""] }],
+                        },
+                      },
+                    ],
+                    ed.getTextCursorPosition().block,
+                    "after"
+                  );
+                  break;
+                case "pageBreak":
+                  ed.insertBlocks(
+                    [{ type: "pageBreak" }],
+                    ed.getTextCursorPosition().block,
+                    "after"
+                  );
+                  break;
+              }
+              break;
           }
           break;
         }
