@@ -154,6 +154,10 @@ fun InspirationEditBottomBar(
     onTransformParagraph: () -> Unit = {},
     /** 块类型按钮可用性（BlockNote 模式 true，Compose 模式 false 置灰） */
     onTransformEnabled: Boolean = false,
+    /** BlockNote 迁移（P1.5）：颜色按钮打开色板对话框 */
+    onOpenColorStyleDialog: () -> Unit = {},
+    /** 色板对话框显隐（受控态） */
+    showColorStyleDialog: Boolean = false,
     /** BlockNote 迁移（P1.5）：媒体插入请求（"image"/"video"/"audio"/"file" → 宿主选择器） */
     onInsertMedia: (String) -> Unit = {},
     /** BlockNote 迁移（P1.5）：打开表情选择面板 */
@@ -224,6 +228,9 @@ fun InspirationEditBottomBar(
                     onTransformParagraph = onTransformParagraph,
                     onTransformEnabled = onTransformEnabled,
                     onInsertMedia = onInsertMedia,
+                    onOpenEmojiPicker = onOpenEmojiPicker,
+                    onOpenColorStyleDialog = onOpenColorStyleDialog,
+                    showColorStyleDialog = showColorStyleDialog,
                     onOpenEmojiPicker = onOpenEmojiPicker,
                     boldSingleTier = boldSingleTier,
                     canIncreaseIndent = canIncreaseIndent,

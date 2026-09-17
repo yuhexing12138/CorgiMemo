@@ -1669,11 +1669,6 @@ fun InspirationEditScreen(
                     if (useBlockNoteEditor) showColorStyleDialog = true
                 },
                 showColorStyleDialog = showColorStyleDialog,
-                useBlockNoteEditor = useBlockNoteEditor,
-                onBackgroundColor = { hex ->
-                    /** BlockNote 迁移（P1.5）：背景色色板 → format backgroundColor 下发 */
-                    if (useBlockNoteEditor) blockNoteController.format("backgroundColor", hex)
-                },
                 onOpenEmojiPicker = {
                     if (!isLocked) blockNoteController.openEmojiPicker()
                 },
