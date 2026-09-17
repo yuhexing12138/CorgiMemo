@@ -231,7 +231,6 @@ fun InspirationEditBottomBar(
                     onOpenEmojiPicker = onOpenEmojiPicker,
                     onOpenColorStyleDialog = onOpenColorStyleDialog,
                     showColorStyleDialog = showColorStyleDialog,
-                    onOpenEmojiPicker = onOpenEmojiPicker,
                     boldSingleTier = boldSingleTier,
                     canIncreaseIndent = canIncreaseIndent,
                     canDecreaseIndent = canDecreaseIndent,
