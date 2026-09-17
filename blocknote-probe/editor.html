@@ -4,6 +4,19 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>BlockNote 编辑器</title>
+    <!--
+      首帧防闪白（v1.9）：JS 尚未挂载时先铺宿主主题的暖米色底
+      （= 亮色主题 background #FFFBF5），避免 WebView 白屏一闪。
+      React 挂载后由 EditorApp 的 applyEditorBackground 立即接管为实际主题色。
+    -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #fffbf5;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

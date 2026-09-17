@@ -2,7 +2,15 @@
 body {
   margin: 0;
   font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
-  background: #f5f5f7;
+  /**
+   * ⚠️ 背景色不在此处写死（v1.9）。
+   *
+   * 本文件被 `editor/EditorApp.tsx` 一并 import，若这里固定 `#f5f5f7`，
+   * 正式编辑器的 WebView 底色就会被探针页的灰底污染，与宿主主题背景不一致。
+   * 现改为交由 JS 按主题注入（`EditorApp.tsx` 的 applyEditorBackground），
+   * 浏览器直接打开探针页时由 `html` 的默认白底兜底。
+   */
+  background: transparent;
 }
 
 .probe-page {

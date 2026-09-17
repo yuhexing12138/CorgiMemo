@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -96,6 +97,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -1712,13 +1714,39 @@ fun InspirationEditScreen(
              * - 数据链路：changed 防抖 markdown → viewModel.setContentFormat（isDirty 置脏，
              *   复用原保存流程）；载入由 load()（contentLoaded 门控，见顶部 LaunchedEffect）；
              * - #标签 / @提及 建议弹层由 JS 侧编辑器的 trigger 菜单承担（宿主侧不再订阅）。
+             *
+             * v2026-09-17 修复（占满编辑区 + 背景色对齐主题）：
+             * 1. **背景色**：`backgroundColor` 传 `contentBackgroundColor`——即外层 Column
+             *    实际铺的那层色。用户未自选时该值为 `Color.Transparent`，此处换算成主题
+             *    `background`（暖米色 #FFFBF5 / 暗色 #1A0F08），保证 WebView 内部
+             *    `.bn-editor` 与 body 与页面同色，消除"画中画"白底圆角框。
+             * 2. **高度**：外层 Column 是 `verticalScroll`，其子项高度约束被改成 Infinity，
+             *    导致 WebView 只能按内容高撑开（内容少时塌成几行，下方大片空白其实不属于
+             *    编辑器）。此处加 `heightIn(min = ...)` 保底：取屏高的 62%，与旧 Compose
+             *    版 `BodyBlocksEditor` 的可用书写区高度量级一致，避免塌陷。
+             *    高度仍随内容增长（min 不封顶），滚动仍由外层 Column 承担。
              */
+            val configuration = LocalConfiguration.current
+            /** 屏高 62% 作为编辑区最小高度（旋转时 screenHeightDp 变化 → remember 自动重算） */
+            val editorMinHeight = remember(configuration.screenHeightDp) {
+                (configuration.screenHeightDp * 0.62f).dp
+            }
+            /** 未自选背景色（Transparent）时回落主题 background，避免下行透明导致白底 */
+            val editorBackgroundColor = if (contentBackgroundColor == Color.Transparent) {
+                MaterialTheme.colorScheme.background
+            } else {
+                contentBackgroundColor
+            }
+
             BlockNoteEditorWebView(
                 controller = blockNoteController,
                 onMarkdownChanged = { md ->
                     viewModel.setContentFormat(md)
                 },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = editorMinHeight),
+                backgroundColor = editorBackgroundColor
             )
 
             /**

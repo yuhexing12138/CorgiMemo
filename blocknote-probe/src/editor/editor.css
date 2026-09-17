@@ -1,7 +1,53 @@
 .editor-page {
-  max-width: 780px;
-  margin: 0 auto;
-  padding: 8px 12px 16px;
+  /**
+   * 全宽铺满（v1.9）：原为桌面端居中窄栏（max-width: 780px + margin: 0 auto），
+   * 手机上虽然 780px 不生效，但 auto 边距与固定 padding 仍会吃掉宽度。
+   * 改为 100% 宽 + 仅保留极小水平呼吸位（宿主自身已有 8dp padding）。
+   */
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 0 16px;
+  /**
+   * 背景跟随主题（v1.9）：与 body / .bn-editor 同色，
+   * 避免 padding 区域透出 WebView 默认白底形成色带。
+   */
+  background-color: var(--editor-bg, #ffffff);
+}
+
+/**
+ * 抵消 BlockNote 默认的侧边菜单留白（v1.9）
+ *
+ * @blocknote/core 的 `.bn-editor` 带 `padding-inline: 54px`——那是给块左侧
+ * 的 `+` / `⋮⋮` 手柄预留的绘制位。桌面端编辑器是居中窄栏（780px），54px 占比不大；
+ * 但手机全宽（约 360dp）下左右各 54px 等于吞掉近 30% 可用宽度，
+ * 表现为"明显没占满"。
+ *
+ * ⚠️ 置 0 后侧边菜单在块左缘可能溢出/被裁，需真机确认；
+ *    若被裁，退为 `padding-inline: 16px` + `.bn-side-menu { transform: translateX(-16px) }`。
+ */
+.bn-editor {
+  padding-inline: 0 !important;
+}
+
+/**
+ * `.bn-editor` 圆角归零（v1.9）
+ *
+ * 该圆角本是"居中卡片"语义。全宽铺满后，同色背景上仍会残留圆角边界痕迹
+ * （深色模式下尤其明显），故一并去掉。
+ */
+.bn-editor {
+  border-radius: 0 !important;
+}
+
+/**
+ * 编辑器本体背景跟随主题（v1.9）
+ *
+ * BlockNote 官方变量 `--bn-colors-editor-background` 由 JS 侧按宿主主题注入
+ * （见 EditorApp.tsx 的 useEffect）；此处只做兜底声明，保证变量缺失时
+ * 也跟随 `--editor-bg` 而不是回落到纯白。
+ */
+.bn-editor {
+  background-color: var(--bn-colors-editor-background, var(--editor-bg, #ffffff));
 }
 
 .editor-loading {

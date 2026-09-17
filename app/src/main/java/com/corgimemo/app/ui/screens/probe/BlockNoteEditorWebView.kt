@@ -24,11 +24,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.isSpecified
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.viewinterop.AndroidView
 import com.corgimemo.app.ui.theme.FontCatalog
 import com.corgimemo.app.ui.theme.ThemeManager
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.roundToInt
 
 private const val TAG = "BlockNoteEditor"
 private const val FONT_HOST = "corgimemo.local"
@@ -127,9 +131,12 @@ class BlockNoteBridgeController {
         enqueueCommand(msg)
     }
 
-    /** 主题下行（深浅 + 主色） */
-    fun setTheme(dark: Boolean, primary: String) {
-        val theme = JSONObject().put("dark", dark).put("primary", primary)
+    /** 主题下行（深浅 + 主色 + 编辑区背景色，v1.9 增 background） */
+    fun setTheme(dark: Boolean, primary: String, background: String) {
+        val theme = JSONObject()
+            .put("dark", dark)
+            .put("primary", primary)
+            .put("background", background)
         enqueueCommand(JSONObject().put("type", "setTheme").put("theme", theme))
     }
 
@@ -220,12 +227,17 @@ class BlockNoteBridgeController {
  * - 撤销/重做/保存：controller 命令
  * - 主题：跟随 App 主题（ThemeManager 深浅 + 六色主色，变化自动下行）
  * - 字体：fonts 清单下行 + shouldInterceptRequest 字体流（res/font 单份存储）
+ *
+ * @param backgroundColor 宿主编辑区实际背景色（v1.9）：由宿主下行到 JS，
+ *   让 WebView 内部 `.bn-editor` 与 body 与宿主主题背景一致，消除"画中画"白底框；
+ *   同时作为 WebView 自身底色兜底，避免首帧未绘制时透出色差。
  */
 @Composable
 fun BlockNoteEditorWebView(
     controller: BlockNoteBridgeController,
     onMarkdownChanged: (String) -> Unit,
     modifier: Modifier = Modifier,
+    backgroundColor: Color = Color.Unspecified,
 ) {
     val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
 
@@ -238,9 +250,16 @@ fun BlockNoteEditorWebView(
         else -> isSystemInDarkTheme()
     }
     val primaryHex = primaryColorHex(themeColor)
+    /** 编辑区背景色（v1.9）：未指定时按深浅回落 BlockNote 默认（白 / #1f1f1f） */
+    val effectiveBackground = if (backgroundColor.isSpecified) {
+        backgroundColor
+    } else {
+        if (isDark) Color(0xFF1F1F1F) else Color.White
+    }
+    val backgroundHex = composeColorToHex(effectiveBackground)
 
-    LaunchedEffect(isDark, primaryHex) {
-        controller.setTheme(isDark, primaryHex)
+    LaunchedEffect(isDark, primaryHex, backgroundHex) {
+        controller.setTheme(isDark, primaryHex, backgroundHex)
     }
 
     // onMarkdownChanged 回调更新（保持最新 lambda 引用）
@@ -248,12 +267,20 @@ fun BlockNoteEditorWebView(
         controller.onMarkdownChanged = onMarkdownChanged
     }
 
-    Box(modifier = modifier.fillMaxSize().imePadding()) {
+    /**
+     * 外层 Box 不追加 `fillMaxSize()`（v1.9）：
+     * 宿主在 `verticalScroll` 容器内会通过 `modifier` 传 `heightIn(min=...)`，
+     * 若此处再 `fillMaxSize()`，在无限高约束下会覆盖宿主的高度意图，导致
+     * WebView 塌成内容高。改为仅 `fillMaxWidth()` 让宿主的高度约束生效。
+     */
+    Box(modifier = modifier.fillMaxWidth().imePadding()) {
         AndroidView(
             factory = { appContext ->
-                createEditorWebView(appContext, controller)
+                createEditorWebView(appContext, controller, effectiveBackground)
             },
             onRelease = { controller.webView = null },
+            /** 主题背景变化时同步刷新 WebView 底色（v1.9） */
+            update = { wv -> wv.setBackgroundColor(effectiveBackground.toArgb()) },
             modifier = Modifier.fillMaxSize()
         )
         // appContext 仅用于 WebView 工厂上下文语义校验（编译引用保留）
@@ -261,6 +288,15 @@ fun BlockNoteEditorWebView(
         appContext
     }
 }
+
+/** Compose Color → "#RRGGBB"（忽略 alpha；与 InspirationEditScreen 的同名工具语义一致） */
+private fun composeColorToHex(c: Color): String = String.format(
+    java.util.Locale.US,
+    "#%02X%02X%02X",
+    (c.red * 255).roundToInt(),
+    (c.green * 255).roundToInt(),
+    (c.blue * 255).roundToInt()
+)
 
 private fun primaryColorHex(key: String): String = when (key) {
     "pink" -> "#FFB5C2"
@@ -278,11 +314,17 @@ private fun sendDown(webView: WebView?, msg: JSONObject) {
     wv.evaluateJavascript("window.BlockNoteEditorHost.onMessage(${msg})", null)
 }
 
-/** 创建编辑器 WebView：Bridge 注入 + 字体流拦截 + 错误日志 */
+/**
+ * 创建编辑器 WebView：Bridge 注入 + 字体流拦截 + 错误日志
+ *
+ * @param backgroundColor 编辑区背景色（v1.9）：作为 WebView 自身底色，
+ *   在 JS 首帧绘制前即生效，避免透出宿主内容区颜色造成闪白。
+ */
 @SuppressLint("SetJavaScriptEnabled")
 private fun createEditorWebView(
     context: Context,
-    controller: BlockNoteBridgeController
+    controller: BlockNoteBridgeController,
+    backgroundColor: Color
 ): WebView {
     val appContext = context.applicationContext
 
@@ -291,6 +333,8 @@ private fun createEditorWebView(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         )
+        /** 底色兜底（v1.9）：JS 侧还会覆盖 body / .bn-editor，此处保证首帧不闪 */
+        setBackgroundColor(backgroundColor.toArgb())
         settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true

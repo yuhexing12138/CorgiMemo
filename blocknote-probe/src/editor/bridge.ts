@@ -10,12 +10,23 @@
  * 仅把「是否可撤销/可重做」的布尔态经 undoState 上行供宿主按钮置灰（v1.7）。
  */
 
-/** 主题载荷（P0：深浅态 + 主色；P1 扩展六色主题） */
+/** 主题载荷（P0：深浅态 + 主色；P1 扩展六色主题；v1.9 增背景色） */
 export type ThemePayload = {
   /** 深色模式 */
   dark: boolean;
   /** 主题主色（hex，如 "#1976d2"） */
   primary: string;
+  /**
+   * 宿主编辑区背景色（hex，如 "#FFFBF5"；v1.9）
+   *
+   * BlockNote 的 `.bn-editor` 默认铺 `--bn-colors-editor-background`（亮色 #fff、
+   * 暗色 #1f1f1f），与宿主主题背景不一致时会形成"画中画"的白底圆角框。
+   * 宿主把编辑区实际背景色下行到这里，JS 侧同时覆盖：
+   * ① `--bn-colors-editor-background`（编辑器本体）② `body`（WebView 底色）。
+   *
+   * 缺省（旧版宿主未下发）时回落 white / #1f1f1f，保持向后兼容。
+   */
+  background?: string;
 };
 
 /** 下行消息（Kotlin → JS） */

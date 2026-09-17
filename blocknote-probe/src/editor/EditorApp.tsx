@@ -533,6 +533,35 @@ function EditorCore(props: {
     applyFontFaces(props.fontWeights);
   }, [props.fontWeights]);
 
+  /**
+   * 编辑区背景色（v1.9）
+   *
+   * 宿主下发的 `theme.background` 优先；缺省（旧版宿主未下发 / 探针页）时按深浅回落
+   * ——亮色 white、暗色 #1f1f1f，即 BlockNote 自身的默认值，保持向后兼容。
+   */
+  const editorBackground =
+    props.theme.background ?? (props.theme.dark ? "#1f1f1f" : "#ffffff");
+
+  /**
+   * 应用编辑区背景色（v1.9）
+   *
+   * BlockNote 的 `.bn-editor` 默认铺 `--bn-colors-editor-background`（亮色 #fff、
+   * 暗色 #1f1f1f），而 WebView 的 `body` 默认也是白色——与宿主主题背景（暖米色）不一致时
+   * 会形成"白底圆角卡片"的画中画观感。这里把同一背景色写入三处消除色差：
+   * ① `--bn-colors-editor-background`：BlockNote 官方变量，`.bn-editor` 直接消费
+   * ② `html` / `body` 的 `background-color`：WebView 自身底色，未铺到的地方不留白
+   * ③ 外层 `.editor-page` 容器：由下方内联 style 的 `--editor-bg` 驱动（见 editor.css）
+   *
+   * 依赖 [editorBackground]，主题（含背景色）变化时重新应用。
+   */
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--bn-colors-editor-background", editorBackground);
+    root.style.backgroundColor = editorBackground;
+    document.body.style.backgroundColor = editorBackground;
+    document.body.style.margin = "0";
+  }, [editorBackground]);
+
   const editor = useCreateBlockNote({
     schema: editorSchema as any,
     initialContent: props.initialBlocks,
@@ -558,7 +587,7 @@ function EditorCore(props: {
       style={{
         ["--content-font" as any]: contentFont,
         ["--editor-primary" as any]: props.theme.primary,
-        ["--editor-bg" as any]: props.theme.dark ? "#1e1e1e" : "#ffffff",
+        ["--editor-bg" as any]: editorBackground,
         ["--editor-fg" as any]: props.theme.dark ? "#e0e0e0" : "#333333",
         ["--editor-border" as any]: props.theme.dark ? "#444444" : "#cccccc",
       }}
