@@ -177,13 +177,13 @@ import kotlin.math.roundToInt
  * 路线 4 不再涉及内联渲染与 ▢ 占位字符，故整段删除。
  */
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class, ExperimentalRichTextApi::class)
 /**
  * BlockNote 迁移（P1.5）：正文编辑器替换开关（编译期灰度）。
  * 置 false 一行即回退 Compose BodyBlocksEditor。
  */
 private const val USE_BLOCKNOTE_EDITOR = true
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class, ExperimentalRichTextApi::class)
 @Composable
 fun InspirationEditScreen(
     navController: NavController,
