@@ -399,6 +399,12 @@ export default function EditorApp() {
                   ed.updateBlock(block, { type: targetType } as any);
                   break;
                 }
+                case "paragraph": {
+                  // + 菜单 Paragraph：光标块转普通段落（toggle 语义）
+                  const { block } = ed.getTextCursorPosition();
+                  ed.updateBlock(block, { type: "paragraph" } as any);
+                  break;
+                }
                 case "codeBlock": {
                   const { block } = ed.getTextCursorPosition();
                   const targetType =

@@ -148,8 +148,10 @@ fun InspirationEditBottomBar(
     onInsertDivider: () -> Unit = {},
     /** 复选框回调（v2026-09-07）：透传给 [RichTextFormatToolbar]，聚焦块切换复选框属性 */
     onToggleCheckbox: () -> Unit = {},
-    /** BlockNote 迁移（P1-S10）：块类型转换/插入（heading1-3/quote/codeBlock/table/pageBreak），透传格式工具栏 */
+    /** BlockNote 迁移（P1-S10）：块类型转换/插入（heading1-3/quote/codeBlock/table/pageBreak/paragraph），透传格式工具栏 */
     onTransform: (String) -> Unit = {},
+    /** 普通段落转换（BlockNote 模式专用） */
+    onTransformParagraph: () -> Unit = {},
     /** 块类型按钮可用性（BlockNote 模式 true，Compose 模式 false 置灰） */
     onTransformEnabled: Boolean = false,
     /** BlockNote 迁移（P1.5）：媒体插入请求（"image"/"video"/"audio"/"file" → 宿主选择器） */
@@ -219,6 +221,7 @@ fun InspirationEditBottomBar(
                     onInsertDivider = onInsertDivider,
                     onToggleCheckbox = onToggleCheckbox,
                     onTransform = onTransform,
+                    onTransformParagraph = onTransformParagraph,
                     onTransformEnabled = onTransformEnabled,
                     onInsertMedia = onInsertMedia,
                     onOpenEmojiPicker = onOpenEmojiPicker,

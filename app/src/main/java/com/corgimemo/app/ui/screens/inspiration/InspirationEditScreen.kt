@@ -1642,6 +1642,11 @@ fun InspirationEditScreen(
                         blockNoteController.format("transform", action)
                     }
                 },
+                onTransformParagraph = {
+                    if (useBlockNoteEditor) {
+                        blockNoteController.format("transform", "paragraph")
+                    }
+                },
                 onTransformEnabled = useBlockNoteEditor,
                 boldSingleTier = useBlockNoteEditor,
                 onInsertMedia = { kind ->

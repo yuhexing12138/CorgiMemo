@@ -149,10 +149,12 @@ fun RichTextFormatToolbar(
     onToggleCodeSpan: () -> Unit = {},
     /**
      * 块类型转换/插入（BlockNote 迁移 P1-S10 补充）：
-     * action = heading1/heading2/heading3/quote/codeBlock/table/pageBreak。
+     * action = heading1/heading2/heading3/quote/codeBlock/table/pageBreak/paragraph。
      * Compose 模式（useBlockNote=false）传空实现即可——按钮由调用方置灰。
      */
     onTransform: (String) -> Unit = {},
+    /** 普通段落转换（+ 菜单 Paragraph；BlockNote 模式专用） */
+    onTransformParagraph: () -> Unit = {},
     /** 块类型按钮可用性（BlockNote 模式 true；Compose 模式 false 置灰） */
     onTransformEnabled: Boolean = false,
     /** BlockNote 迁移（P1.5）：媒体插入请求（"image"/"video"/"audio"/"file" → 宿主选择器） */
@@ -314,37 +316,52 @@ fun RichTextFormatToolbar(
 
         ToolbarDivider()
 
-        /** ====== 第四组：Basic blocks（+ 菜单 Basic blocks 分类） ====== */
+        /** ====== 第四组：Basic blocks（+ 菜单 Basic blocks 分类；图标与 + 菜单同款并按其顺序排列） ====== */
         FormatButtonGroup {
-            /**
-             * 复选框（v2026-09-07 新增，位于无序列表左侧，按需求图一）：
-             * Lucide「SquareCheck」（方框内对勾描边图标，与组内 Lucide 图标统一）。
-             * 点击把聚焦块转换为复选框块（行首出现复选框标识，可点击勾选），
-             * 聚焦块已是复选框时再点转回普通块；激活态 = 聚焦块为复选框块。
-             */
-            FormatIconButton(
-                imageVector = LucideIcons.SquareCheck,
-                isActive = isCheckboxActive,
-                onClick = onToggleCheckbox,
-                contentDescription = "复选框"
-            )
-            FormatIconButton(
-                imageVector = Icons.AutoMirrored.Filled.FormatListBulleted,
-                isActive = state.isUnorderedList,
-                onClick = onInsertUnorderedList,
-                contentDescription = "无序列表"
-            )
-            FormatIconButton(
-                imageVector = Icons.Default.FormatListNumbered,
+            /** Numbered List（+ 菜单同款 RiListOrdered；激活态跟随光标块类型） */
+            RiFormatButton(
+                "RiListOrdered",
                 isActive = state.isOrderedList,
                 onClick = onInsertOrderedList,
                 contentDescription = "有序列表"
             )
+            /** Bullet List */
+            RiFormatButton(
+                "RiListUnordered",
+                isActive = state.isUnorderedList,
+                onClick = onInsertUnorderedList,
+                contentDescription = "无序列表"
+            )
+            /** Check List（复用原复选框回调与激活态） */
+            RiFormatButton(
+                "RiListCheck3",
+                isActive = isCheckboxActive,
+                onClick = onToggleCheckbox,
+                contentDescription = "任务列表"
+            )
+            /** Paragraph（+ 菜单 Paragraph；BlockNote 模式转普通段落） */
+            RiFormatButton(
+                "RiText",
+                onClick = onTransformParagraph,
+                contentDescription = "普通段落",
+                enabled = onTransformEnabled
+            )
+            /** Code Block（整块代码，toggle 语义） */
+            RiFormatButton(
+                "RiCodeBlock",
+                onClick = { onTransform("codeBlock") },
+                contentDescription = "代码块",
+                enabled = onTransformEnabled
+            )
+            /** Divider（分割线：插入后点击可切样式） */
+            RiFormatButton(
+                "RiSubtractLine",
+                onClick = onInsertDivider,
+                contentDescription = "分割线"
+            )
             /**
-             * 增加/减少缩进（v2026-09-05 新增，紧邻有序列表右侧，图标与 UI 原型一致）：
-             * 列表行做层级缩进（每级视觉 ≈ 两字符，可连续叠加），普通文本行点「增加缩进」
-             * 自动转列表项；无激活态（操作型按钮）。到边界时置灰禁用（视觉降级）：
-             * 增加缩进在列表到顶（6 级）后置灰，减少缩进在非列表行置灰。
+             * 增加/减少缩进（v2026-09-05）：列表行做层级缩进（可连续叠加），普通文本行
+             * 点「增加缩进」自动转列表项；边界时置灰禁用。
              */
             FormatIconButton(
                 imageVector = Icons.Default.FormatIndentIncrease,
@@ -360,25 +377,11 @@ fun RichTextFormatToolbar(
                 onClick = onDecreaseIndent,
                 contentDescription = "减少缩进"
             )
-            /**
-             * 插入分割线（v2026-09-07 新增，紧邻「减少缩进」右侧）：
-             * 在聚焦 Text 块光标处拆块插入分割线（`---` 独占段，可撤销/可删除）。
-             * Lucide「SeparatorHorizontal」图标（描边风格与组内 Lucide 图标统一）；
-             * 无激活态（操作型按钮）。
-             */
-            FormatIconButton(
-                imageVector = LucideIcons.SeparatorHorizontal,
-                isActive = false,
-                onClick = onInsertDivider,
-                contentDescription = "分割线"
-            )
-            /** 引用（+ 菜单 Quote） */
+            /** Quote（+ 菜单 Quote） */
             RiFormatButton("RiQuoteText", onClick = { onTransform("quote") }, contentDescription = "引用", enabled = onTransformEnabled)
-            /** 折叠列表（+ 菜单 Toggle List） */
+            /** Toggle List（+ 菜单 Toggle List） */
             RiFormatButton("RiPlayList2Fill", onClick = { onTransform("toggleList") }, contentDescription = "折叠列表", enabled = onTransformEnabled)
-            /** 整块代码（+ 菜单 Code Block） */
-            RiFormatButton("RiCodeBlock", onClick = { onTransform("codeBlock") }, contentDescription = "代码块", enabled = onTransformEnabled)
-            /** 分页（+ 菜单 Page Break） */
+            /** Page Break（+ 菜单 Page Break） */
             RiFormatButton("RiFile2Line", onClick = { onTransform("pageBreak") }, contentDescription = "分页", enabled = onTransformEnabled)
         }
 
