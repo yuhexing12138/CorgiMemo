@@ -1,10 +1,21 @@
 package com.corgimemo.app.ui.screens.inspiration.components
 
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.unit.dp
 import com.corgimemo.app.ui.model.ContentBlock
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.paragraph.type.OrderedListStyleType
@@ -3548,3 +3559,60 @@ class BodyBlocksController(
  * [com.corgimemo.app.viewmodel.InspirationEditViewModel] 持有（屏幕旋转不丢
  * 命令栈与块内 history），Screen 直接读 `viewModel.bodyBlocks`。
  */
+
+// ==================== 分割线绘制工具（编辑页/阅读态共用） ====================
+
+/**
+ * 虚线绘制（v2026-09-11 样式切换）：沿水平中线画 6dp 划 / 4dp 空的虚线段，
+ * [strokeWidth] 为线厚。**编辑页与阅读态共用**（[DividerLine] /
+ * InspirationViewCard），保证两处视觉一致。
+ *
+ * BlockNote 迁移（2026-09-17）后编辑页不再使用，仅保留供
+ * [com.corgimemo.app.ui.screens.inspiration.components.InspirationViewCard]
+ * 阅读态渲染虚线分割线。
+ */
+internal fun DrawScope.drawDashedDivider(size: Size, color: Color, strokeWidth: Float) {
+    /** 虚线节奏：6dp 实段 + 4dp 空档（视觉密度与 Ellipsis 图标的点距近似） */
+    val dash = 6.dp.toPx()
+    val gap = 4.dp.toPx()
+    val y = size.height / 2
+    drawLine(
+        color = color,
+        start = Offset(0f, y),
+        end = Offset(size.width, y),
+        strokeWidth = strokeWidth,
+        pathEffect = PathEffect.dashPathEffect(floatArrayOf(dash, gap)),
+    )
+}
+
+/**
+ * 波浪线绘制（v2026-09-11 样式切换）：沿水平中线画振幅 2dp、波长 10dp 的
+ * 二次贝塞尔波浪（上下半波交替、圆头收尾）。**编辑页与阅读态共用**——
+ * 波形几何与描边宽度解耦，增厚只改 [strokeWidth]。
+ *
+ * BlockNote 迁移（2026-09-17）后编辑页不再使用，仅保留供
+ * [com.corgimemo.app.ui.screens.inspiration.components.InspirationViewCard]
+ * 阅读态渲染波浪分割线。
+ */
+internal fun DrawScope.drawWavyDivider(size: Size, color: Color, strokeWidth: Float) {
+    val halfWave = 10.dp.toPx() / 2   /** 半波长（每段二次贝塞尔横跨的距离） */
+    val amplitude = 2.dp.toPx()       /** 振幅（控制点偏离中线的距离） */
+    val y = size.height / 2
+    val path = Path()
+    path.moveTo(0f, y)
+    var x = 0f
+    var up = true
+    /** 逐半波推进：上拱/下拱交替，最后不足半波的残段收在中线上 */
+    while (x < size.width) {
+        val endX = (x + halfWave).coerceAtMost(size.width)
+        val ctrlY = y + if (up) -amplitude else amplitude
+        path.quadraticBezierTo(x + halfWave / 2, ctrlY, endX, y)
+        x = endX
+        up = !up
+    }
+    drawPath(
+        path = path,
+        color = color,
+        style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+    )
+}

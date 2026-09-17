@@ -61,9 +61,20 @@
 - Pager 阈值：横屏 0.08，竖屏 0.35。顶栏 `ChromeTopGapFromStatusBar=12.dp`。`VoicePreviewDialog` 与本页共用 `findDialogWindow()`。
 
 ## BlockNote WebView 编辑器（迁移 P1.5+）
-- 资源：`app/src/main/assets/blocknote-web/editor/editor.html`（1.8MB `viteSingleFile` 内联单文件，`file:///android_asset/...`）。
+- 资源：`app/src/main/assets/blocknote-web/editor/editor.html`（1.88MB `viteSingleFile` 内联单文件，`file:///android_asset/...`）。
   **源码在 `blocknote-probe/src/editor/`，改完必须 `cd blocknote-probe && npm run build:editor` 才生效**（输出目录写在 `vite.editor.config.ts`）。
+  ⚠️ 自 v1.8 起 `:app:buildBlockNoteEditor` 已把该构建接入 Gradle（`merge*Assets` 依赖它，带增量），
+  `assembleDebug/Release` 会**自动**带上最新产物；手动强制重建用 `--rerun-tasks`。
   同名 `BlockNoteEditorScreen.kt` 是独立探针页，与灵感编辑页共用的 `BlockNoteEditorWebView.kt` 是两套实现，勿混。
+- ⚠️⚠️ **「JS 改了但真机没生效」第一反应就是产物没重建**（2026-09-17 实测踩坑）：
+  **Gradle 把 `assets/` 当静态资源原样打包，绝不触发 npm/vite 构建** —— 只重编 App 完全无效，用户已因此踩过一次。
+  - 快速判据：`git log -1 -- <源码>` vs `git log -1 -- <editor.html>`，产物提交时间落后 = 没重建。
+  - 清除判据：grep **`editor-toolbar`**（className 字符串不被压缩）；**不要 grep 组件名**（`AutoRepeatButton` 已被压成短名如 `YC`，会漏判）。
+  - ⚠️ 产物 diff 显示「73 增 73 删」是**假象**：vite 每次构建重排压缩短变量名（`WR`→`GR`），语义等价。
+    **绝不能用 diff 行数判断产物是否刷新，要用关键字计数**（`undoState`/`canUndo`/`canRedo` 应为 1/3/3）。
+  - 仍不生效再排 WebView 缓存 → 卸载重装或清应用数据。
+- **构建指纹（v1.8）**：vite `define` 注入 `__BUILD_FINGERPRINT__`（`<构建时间> <commit 短hash><-dirty?>`），
+  随 `ready` 上行，宿主打 logcat `ready received | build=...`。**排查产物新鲜度直接看这行**，不必再比 git 时间。
 - Bridge：下行 `evaluateJavascript("window.BlockNoteEditorHost.onMessage(<json>)")`；上行 `AndroidBridge.postMessage(json)`（匿名对象，只这一个方法）。
   协议见 `docs/bridge-protocol.md`。上行 `ready`/`changed`/`error`/`undoState`。
 - BlockNote 版本 0.52.1。**`BlockNoteEditor` 没有 transaction 事件**（`extends EventEmitter<{create: void}>` 仅 `create`）。
@@ -71,9 +82,34 @@
   使 `exec()` 走 `canExec()` **只判定不 dispatch**，不污染历史栈。别读 `_tiptapEditor`（私有字段）、别扫自定义调用点。
 - **v1.7（2026-09-17）**：JS 侧自绘的 `.editor-toolbar`「↺ 撤销/↻ 重做」胶囊按钮（`AutoRepeatButton`）**已删除**；
   唯一入口是宿主顶栏 `InspirationEditScreen` 的 ↶/↷ 图标按钮，可用态经 `undoState` → `BlockNoteBridgeController.canUndo/canRedo`（mutableStateOf）驱动置灰。
-  原「长按连发」未在 Compose 侧复刻。**BlockNote 官方从无撤销/重做 UI，`BlockNoteView` 没有关闭它的配置——只能删自绘代码。**
+  **BlockNote 官方从无撤销/重做 UI，`BlockNoteView` 没有关闭它的配置——只能删自绘代码。**
+- **v1.8 长按连发**：`ui/components/LongPressRepeatIconButton.kt` 导出
+  ① `Modifier.longPressRepeat(onAction, enabled, canRepeat)` —— 手势+节拍本体（按下即执行一次 → 450ms 后每 150ms；见底 `canRepeat=false` 即停）；
+  ② `LongPressRepeatIconButton(...)` —— 它的薄封装。
+  已接入：顶栏撤销/重做、格式栏 **Nest/UnNest**（`canRepeat` 复用 `canIncreaseIndent/canDecreaseIndent`）。
+  ⚠️ 缩进两键顺带从「始终可点」改为跟随 `enabled` 置灰（用户确认的行为变更）。
+  字号不接入——它是 8 档点选面板，无连按语义。新增连发按钮只需给 `RiFormatButton` 传 `canRepeat`。
 
 ## 工具/协作教训
 - ⚠️ 连续 2 次「猜测→改码→失败」后，停止猜测、加埋点取真实数据。
 - **同一文件多次 Edit 必须串行**（并行写竞态）。
 - 提交：中文提交信息，Write 写临时文件后提交再删除。
+
+### ⚠️ 删文件/裁 import 的隐身依赖（2026-09-17 实测踩坑，一次翻车 20+ 错误）
+**靠「符号名 grep/词频」判断 import 是否可删，方法论上必然出错**——Kotlin 存在**无名字依赖**：
+1. **委托操作符 `by`**：`var x by mutableStateOf(0)` 隐式调用 `getValue`/`setValue` 扩展，源码里这两个名字**一次都不出现**。
+   误删 → 报 `Type 'MutableState<T>' has no method 'getValue'/'setValue' ... cannot serve as a delegate`，
+   还**级联**出十几处假象错误 `Cannot infer type for T/R`（真正根因只有这一个，别去逐个查级联点）。
+   同类：`by lazy`（`getValue`）、`by remember`、`Delegates.observable`。
+2. **跨文件 `internal` 顶层函数/扩展**：如 `internal fun DrawScope.drawDashedDivider(...)` 定义在 A 文件、
+   被 B 文件**同包无 import 调用**。删 A 文件 → B 报 `Unresolved reference`（B 的 import 列表里没有它，扫 B 查不出）。
+3. **`LocalXxx` 组合局部变量**：如 `val textToolbar = LocalTextToolbar.current`，即使调用点只剩 `.hide()` 也仍需 `LocalTextToolbar` import。
+4. **`import X as Y` 别名**：以**别名**（而非原名）被引用，按原名 grep 会漏。
+
+**正确姿势（按序执行）**：
+- 裁 import 前，**先按 `by ` 反查全文**（`grep -n "by mutableStateOf\|by lazy\|by remember"`），命中文件必留 `getValue`/`setValue`。
+- **删任何文件/大段代码后，必须反向全项目 grep 被删文件里的顶层声明名**（`internal`/`public` 函数、类、常量），
+  而不是只 grep 文件名。尤其是 `internal fun ...Scope.xxx` 这类扩展。
+- 最终以**编译**为准，静态分析只能缩小范围（本项目约定不主动编译 → 至少把上述三类逐条排查干净再交付）。
+- 反向验证：扫出「大写开头但未 import 也未本地声明」的符号清单，逐个确认来源，比逐个 import 更能抓漏。
+

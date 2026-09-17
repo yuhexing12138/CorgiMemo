@@ -90,6 +90,9 @@ scripts/capture_heap_on_leak.sh
 .workbuddy/tmp/
 # tmp* 通配：会话级临时目录全覆盖（tmp_androidfont / tmp_lookup / tmp_src 等，含未来新增）
 .workbuddy/tmp*/
+# tmp_* 通配：会话级临时**文件**（如 tmp_commit_msg.txt / tmp_diff_*.txt）。
+# 注意上面的 tmp*/ 只匹配目录、匹配不到文件，故需单独一条
+.workbuddy/tmp_*
 
 # ============================================================
 # 编辑会话事故备份与临时提交信息文件（恢复完成后即无用，不入库）
@@ -98,3 +101,16 @@ scripts/capture_heap_on_leak.sh
 *.splitbak2
 COMMIT_MSG.tmp
 temp_commit_msg.txt
+
+# ============================================================
+# BlockNote 探针工程（blocknote-probe）临时产物
+# 说明：正式编辑器产物 assets/blocknote-web/editor/editor.html **需要入库**
+#      （它是运行期资源，且由 :app:buildBlockNoteEditor 自动重建）；
+#      以下仅为开发期临时件，不入库。
+# ============================================================
+# vite 每次启动生成的配置快照（文件名带时间戳，属噪声）
+blocknote-probe/vite.config.ts.timestamp-*
+# 探针页构建产物与截图（exploreProbe 的本地调试输出）
+blocknote-probe/probe-result.png
+app/src/main/assets/blocknote-probe/
+app/src/main/assets/blocknote-web/probe/
