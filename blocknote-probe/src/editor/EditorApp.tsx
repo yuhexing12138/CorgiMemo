@@ -323,6 +323,11 @@ export default function EditorApp() {
               if (value && value !== "default") ed.addStyles({ textColor: value });
               else ed.removeStyles({ textColor: "default" });
               break;
+            case "backgroundColor":
+              // v1.6：背景色（ColorStyleButton 同款能力；default=清除）
+              if (value && value !== "default") ed.addStyles({ backgroundColor: value });
+              else ed.removeStyles({ backgroundColor: "default" });
+              break;
             case "bulletList":
               toggleBlockType(ed, "bulletListItem");
               break;

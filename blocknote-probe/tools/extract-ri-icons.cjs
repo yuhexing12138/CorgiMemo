@@ -33,6 +33,8 @@ const WANT = [
   ["file", "RiFile2Line"],
   ["emoji", "RiEmotionFill"],
   ["paragraph", "RiText"],
+  ["nest", "RiIndentIncrease"],
+  ["unnest", "RiIndentDecrease"],
 ];
 
 /** Kotlin 字符串字面量转义（\、"、$ 模板符） */

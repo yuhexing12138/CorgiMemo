@@ -11,6 +11,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -218,6 +219,8 @@ fun InspirationEditScreen(
     /** BlockNote 模式链接对话框（P1.5 浮层桥接：🔗 按钮 → URL 输入 → format createLink） */
     var showLinkDialog by remember { mutableStateOf(false) }
     var linkDialogUrl by remember { mutableStateOf("https://") }
+    /** BlockNote 模式色板对话框（P1.5 浮层桥接：颜色按钮 → 文字/背景色网格） */
+    var showColorStyleDialog by remember { mutableStateOf(false) }
 
     // 内容就绪（编辑模式 loadInspiration 完成 / 新建模式立即）→ 装载 WebView 编辑器（仅一次）
     androidx.compose.runtime.LaunchedEffect(contentLoaded) {
@@ -1661,6 +1664,16 @@ fun InspirationEditScreen(
                         "file" -> mediaFileLauncher.launch("*/*")
                     }
                 },
+                onOpenColorStyleDialog = {
+                    /** BlockNote 模式：颜色按钮 → 打开文字/背景色板对话框 */
+                    if (useBlockNoteEditor) showColorStyleDialog = true
+                },
+                showColorStyleDialog = showColorStyleDialog,
+                useBlockNoteEditor = useBlockNoteEditor,
+                onBackgroundColor = { hex ->
+                    /** BlockNote 迁移（P1.5）：背景色色板 → format backgroundColor 下发 */
+                    if (useBlockNoteEditor) blockNoteController.format("backgroundColor", hex)
+                },
                 onOpenEmojiPicker = {
                     if (!isLocked) blockNoteController.openEmojiPicker()
                 },
@@ -2290,6 +2303,87 @@ fun InspirationEditScreen(
                     dismissButton = {
                         TextButton(onClick = { showLinkDialog = false }) {
                             Text("取消")
+                        }
+                    }
+                )
+            }
+
+            /**
+             * BlockNote 模式（P1.5）：颜色色板对话框——
+             * 浮层 ColorStyleButton 桥接：上排文字色、下排背景色，点击即下发 format 命令。
+             */
+            if (showColorStyleDialog) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { showColorStyleDialog = false },
+                    title = { Text("颜色") },
+                    text = {
+                        Column {
+                            Text("文字颜色", style = MaterialTheme.typography.bodySmall)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf(
+                                    "" to "默认",
+                                    "#e03131" to null,
+                                    "#e8590c" to null,
+                                    "#2f9e44" to null,
+                                    "#1971c2" to null,
+                                    "#ae3ec9" to null
+                                ).forEach { (hex, _) ->
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .background(
+                                                if (hex.isEmpty()) MaterialTheme.colorScheme.onSurface
+                                                else androidx.compose.ui.graphics.Color(
+                                                    AndroidColor.parseColor(hex)
+                                                )
+                                            )
+                                            .clickable {
+                                                blockNoteController.format(
+                                                    "textColor",
+                                                    if (hex.isEmpty()) "default" else hex
+                                                )
+                                                showColorStyleDialog = false
+                                            }
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("背景颜色", style = MaterialTheme.typography.bodySmall)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf(
+                                    "" to "默认",
+                                    "#ffc9c9" to null,
+                                    "#ffd8a8" to null,
+                                    "#b2f2bb" to null,
+                                    "#d0ebff" to null,
+                                    "#eebefa" to null
+                                ).forEach { (hex, _) ->
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .background(
+                                                if (hex.isEmpty()) MaterialTheme.colorScheme.surface
+                                                else androidx.compose.ui.graphics.Color(
+                                                    AndroidColor.parseColor(hex)
+                                                )
+                                            )
+                                            .clickable {
+                                                blockNoteController.format(
+                                                    "backgroundColor",
+                                                    if (hex.isEmpty()) "default" else hex
+                                                )
+                                                showColorStyleDialog = false
+                                            }
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showColorStyleDialog = false }) {
+                            Text("关闭")
                         }
                     }
                 )

@@ -155,12 +155,28 @@ fun RichTextFormatToolbar(
     onTransform: (String) -> Unit = {},
     /** 普通段落转换（+ 菜单 Paragraph；BlockNote 模式专用） */
     onTransformParagraph: () -> Unit = {},
+    /** 颜色按钮打开色板对话框（浮层 ColorStyleButton 桥接） */
+    onOpenColorStyleDialog: () -> Unit = {},
+    /** 显示色板对话框（受控态，由宿主持有） */
+    showColorStyleDialog: Boolean = false,
+    /** BlockNote 模式（嵌套±直接 nest，Compose 模式缩进递增） */
+    useBlockNoteEditor: Boolean = false,
+    /** 普通段落转换（+ 菜单 Paragraph；BlockNote 模式专用） */
+    onTransformParagraph: () -> Unit = {},
     /** 块类型按钮可用性（BlockNote 模式 true；Compose 模式 false 置灰） */
     onTransformEnabled: Boolean = false,
     /** BlockNote 迁移（P1.5）：媒体插入请求（"image"/"video"/"audio"/"file" → 宿主选择器） */
     onInsertMedia: (String) -> Unit = {},
     /** BlockNote 迁移（P1.5）：打开表情选择面板 */
-    onOpenEmojiPicker: () -> Unit = {}
+    onOpenEmojiPicker: () -> Unit = {},
+    /** BlockNote 迁移（P1.5）：颜色按钮打开色板对话框 */
+    onOpenColorStyleDialog: () -> Unit = {},
+    /** 色板对话框显隐（受控态） */
+    showColorStyleDialog: Boolean = false,
+    /** BlockNote 模式（嵌套±直接 nest，Compose 模式缩进递增） */
+    useBlockNoteEditor: Boolean = false,
+    /** 背景色下发（色板选背景色 → format backgroundColor） */
+    onBackgroundColor: (String) -> Unit = {}
 ) {
     /** 加粗字重菜单的展开状态（纯 UI 局部状态，置于函数体顶层，不在条件分支内） */
     var boldExpanded by remember { mutableStateOf(false) }
@@ -410,7 +426,7 @@ fun RichTextFormatToolbar(
         }
         ToolbarDivider()
 
-        /** ====== 第八组：对齐方式（Compose 原功能保留） ====== */
+        /** ====== 第八组：浮层格式区（FormattingToolbar 桥接：对齐×3 + 链接对话框） ====== */
         FormatButtonGroup {
             FormatIconButton(
                 imageVector = Icons.AutoMirrored.Filled.FormatAlignLeft,
@@ -429,6 +445,55 @@ fun RichTextFormatToolbar(
                 isActive = false,
                 onClick = onAlignRight,
                 contentDescription = "右对齐"
+            )
+            /** 插入链接（BlockNote 模式弹 URL 对话框 → format createLink） */
+            FormatIconButton(
+                imageVector = Icons.Default.Link,
+                isActive = state.isLink,
+                onClick = onInsertLink,
+                contentDescription = "插入链接"
+            )
+            /** ====== 浮层格式区（FormattingToolbar 同序）：对齐×3 / 颜色 / 嵌套± ====== */
+            FormatIconButton(
+                imageVector = Icons.AutoMirrored.Filled.FormatAlignLeft,
+                isActive = false,
+                onClick = onAlignLeft,
+                contentDescription = "左对齐"
+            )
+            FormatIconButton(
+                imageVector = Icons.Default.FormatAlignCenter,
+                isActive = false,
+                onClick = onAlignCenter,
+                contentDescription = "居中对齐"
+            )
+            FormatIconButton(
+                imageVector = Icons.AutoMirrored.Filled.FormatAlignRight,
+                isActive = false,
+                onClick = onAlignRight,
+                contentDescription = "右对齐"
+            )
+            /** 颜色按钮（浮层 ColorStyleButton 同位）：打开文字/背景色板对话框 */
+            FormatIconButton(
+                imageVector = Icons.Default.FormatColorText,
+                isActive = showColorStyleDialog,
+                onClick = onOpenColorStyleDialog,
+                contentDescription = "颜色"
+            )
+            /** 嵌套 +1（浮层 NestBlockButton 同位；BlockNote 模式 nest，Compose 模式缩进+1） */
+            FormatIconButton(
+                imageVector = Icons.Default.FormatIndentIncrease,
+                isActive = false,
+                enabled = !useBlockNoteEditor || onTransformEnabled,
+                onClick = { if (useBlockNoteEditor) blockNoteController.format("indent") else onIncreaseIndent() },
+                contentDescription = "增加缩进"
+            )
+            /** 嵌套 −1（浮层 UnNestBlockButton 同位） */
+            FormatIconButton(
+                imageVector = Icons.Default.FormatIndentDecrease,
+                isActive = false,
+                enabled = !useBlockNoteEditor || onTransformEnabled,
+                onClick = { if (useBlockNoteEditor) blockNoteController.format("outdent") else onDecreaseIndent() },
+                contentDescription = "减少缩进"
             )
         }
     }

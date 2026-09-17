@@ -138,6 +138,18 @@ object BlockNotePlusMenuIcons {
         ))
     }
 
+    val RiIndentIncrease: RiIconDef by lazy {
+        RiIconDef(24f, listOf(
+            "M3 4H21V6H3V4ZM3 19H21V21H3V19ZM11 14H21V16H11V14ZM11 9H21V11H11V9ZM7 12.5L3 16V9L7 12.5Z"
+        ))
+    }
+
+    val RiIndentDecrease: RiIconDef by lazy {
+        RiIconDef(24f, listOf(
+            "M3 4H21V6H3V4ZM3 19H21V21H3V19ZM11 14H21V16H11V14ZM11 9H21V11H11V9ZM3 12.5L7 9V16L3 12.5Z"
+        ))
+    }
+
     /** id → 图标定义（id 即 + 菜单 key） */
     private val defs: Map<String, RiIconDef> = mapOf(
             "RiH1" to RiIconDef(24f, listOf(
@@ -199,6 +211,12 @@ object BlockNotePlusMenuIcons {
             )),
             "RiText" to RiIconDef(24f, listOf(
                 "M13 6V21H11V6H5V4H19V6H13Z"
+            )),
+            "RiIndentIncrease" to RiIconDef(24f, listOf(
+                "M3 4H21V6H3V4ZM3 19H21V21H3V19ZM11 14H21V16H11V14ZM11 9H21V11H11V9ZM7 12.5L3 16V9L7 12.5Z"
+            )),
+            "RiIndentDecrease" to RiIconDef(24f, listOf(
+                "M3 4H21V6H3V4ZM3 19H21V21H3V19ZM11 14H21V16H11V14ZM11 9H21V11H11V9ZM3 12.5L7 9V16L3 12.5Z"
             ))
     )
 
