@@ -1002,7 +1002,19 @@ function EditorCore(props: {
       };
       const onDocScroll = () => {
         const now = performance.now();
-        if (now - lastScrollLog < 40) return; // 节流 40ms
+        /**
+         * v1.11.9 防御性校准：非手势、非 rAF 运行、且越过手势静默窗（500ms）
+         * 的滚动 → kick rAF 做一次「光标可见性」校准。
+         * - 目标是 clamp 语义：光标可见则收敛退出（**零动作**）——WebView 若
+         *   因「聚焦输入框保持可见」自动滚回，我们校准时通常已是可见态，
+         *   目标一致不产生拉锯
+         * - 手势与惯性滚动（touching=true，或 touchend 后 500ms 内）不校准，
+         *   用户的阅读滚动不被干扰
+         */
+        if (!running && !touching && now - lastTouchEnd > 500) {
+          kickScrollFollow();
+        }
+        if (now - lastScrollLog < 40) return; // 节流（仅限埋点上报）
         lastScrollLog = now;
         sendUp({
           type: "diagnostic",

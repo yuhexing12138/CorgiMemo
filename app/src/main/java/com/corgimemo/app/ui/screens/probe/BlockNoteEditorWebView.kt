@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.View
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceError
@@ -506,6 +507,12 @@ private fun createEditorWebView(
         )
         /** 底色兜底（v1.9）：JS 侧还会覆盖 body / .bn-editor，此处保证首帧不闪 */
         setBackgroundColor(backgroundColor.toArgb())
+        /**
+         * 禁用 overscroll 拉伸（v1.11.9）：Android 12+ 的 WebView overscroll
+         * 是 stretch 效果——滑到内容顶/底时整页被拉伸回弹，观感为「页面上下
+         * 跳跃」的候选成因之一。禁用只移除这层视觉装饰，滚动与边界行为不变。
+         */
+        overScrollMode = View.OVER_SCROLL_NEVER
         settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
