@@ -138,3 +138,27 @@
    每帧都重启动画——动画从未跑完即被取消，收敛不可预期（真机实测：滑到底
    场景侥幸收敛 +277dp，滑到中间场景只滚了 11% 即停，光标不可见）。
    滚动跟随已改由 EditorApp 的 rAF 指数逼近实现（帧率级、永远收敛）。 */
+
+/**
+ * v2026-09-18：编辑器首部留白归零（对齐宿主 Compose 的 6.dp 等距）。
+ *
+ * 背景：灵感编辑页「标题↔日期行↔WebView」三段垂直可见空白需精确相等（均为 6.dp）。
+ * - 标题↔日期行的 6.dp 由 Compose 的 `Spacer(6.dp)` 承担（标题框 contentPadding bottom 已归零）；
+ * - 日期行↔WebView 的 6.dp 同样由 Compose 的 `Spacer(6.dp)` 承担，
+ *   但 BlockNote 默认会在编辑器首块上方额外留白（来源：`.bn-block-content { padding: 3px 0 }` 的首块上内边距、
+ *   `.bn-editor` 在部分主题下可能的顶部呼吸位），若不归零，日期行到首块文本的可见空白会 > 6.dp。
+ *
+ * 修法：
+ * 1. `.bn-editor { padding-top: 0 !important }` —— 兜底清零编辑器容器顶部内边距
+ *    （`.bn-editor{padding:0}` 已把四向置 0，这里显式锁定 top 防止后续规则意外引入）；
+ * 2. 首个 `.bn-block-content` 的上内边距归零 —— 消除首块与编辑器顶边的 3px 间隙，
+ *    使「WebView 框顶 → 首块文本上沿」= 0，整段可见空白严格 = 宿主 Spacer 的 6.dp。
+ *
+ * ⚠️ WebView 内 CSS px 即 Android dp（viewport scale=1），故 0px = 0.dp，无需密度换算。
+ */
+.bn-editor {
+  padding-top: 0 !important;
+}
+.bn-block-outer:first-child > .bn-block > .bn-block-content {
+  padding-top: 0 !important;
+}

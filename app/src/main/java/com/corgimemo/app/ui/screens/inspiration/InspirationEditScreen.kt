@@ -1809,7 +1809,8 @@ fun InspirationEditScreen(
                 InspirationTextUtils.countInspirationContentChars(content)
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            /** v2026-09-18：标题 → 日期行 之间 6.dp 等距（与「日期行→WebView」一致） */
+            Spacer(modifier = Modifier.height(6.dp))
 
             /** 时间戳 + 字数行（中间用竖线分隔，与参考图一致） */
             Row(
@@ -1839,7 +1840,12 @@ fun InspirationEditScreen(
                 )
             }
 
-            // v2026-09-11 懒插入改版 → BlockNote 迁移后：页顶间距由 WebView 编辑器自身首部留白承担。
+            /** v2026-09-18：日期行 → WebView 之间 6.dp 等距（与「标题→日期行」一致）。
+             *  编辑器首部留白已在 editor.css 压到 0，此处 Spacer 即最终可见空白。 */
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // v2026-09-18 修订：日期行↔WebView 的间距改由上方宿主 Compose 的 6.dp Spacer 承担，
+            // 不再依赖 WebView 编辑器自身首部留白（已在 editor.css 归零），避免两段距离来源不一致。
 
             /** ===== 正文内容编辑器区域（BlockNote WebView） ===== */
 

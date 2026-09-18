@@ -1,211 +1,70 @@
 # CorgiMemo 项目长期记忆
 
 ## 项目约定与工具链
-- **不主动编译**（除明确要求）；**无 BuildConfig**（版本走 `getPackageInfo().versionName`）。
-- 依赖签名核对：技能 `gradle-cache-source-lookup`（`find_sources_jar.py --class <裸类名>` / `extract_source.py`）。
-- 检索 `.workbuddy`/`.gradle`：Glob `path` 放绝对路径，`pattern` 只写相对通配。
-- 本机坑：PowerShell stdout 可能被吞 → 重定向落盘再 Read，或优先 Read/Glob/Grep；
-  Bash 工具 `ls/head/find/grep/wc` 全 Exit 127 → 用绝对路径调 python；
-  `rm` 被 safe-delete 拦截 → `[System.IO.File]::Delete()`。
+- 不主动编译（除明确要求）；无 BuildConfig（版本走 getPackageInfo().versionName）。
+- 依赖签名核对：技能 gradle-cache-source-lookup（find_sources_jar.py --class <裸类名> / extract_source.py）。
+- 检索 .workbuddy/.gradle：Glob path 放绝对路径，pattern 只写相对通配。
+- 本机坑：PowerShell stdout 可能被吞→重定向落盘再 Read 或优先 Read/Glob/Grep；Bash 的 ls/head/find/grep/wc 全 Exit 127→用绝对路径调 python；rm 被 safe-delete 拦截→[System.IO.File]::Delete()。
 - 设计稿 Ardot fileId 707225018209249。
-- ⚠️ **顶层扩展属性的包归属最容易猜错**：`Color.isSpecified` 在 `androidx.compose.ui.graphics`
-  （**不是** `ui.unit`）；`TextUnit.isSpecified` 才在 `ui.unit`。判据：`inline val X.isY` 的 import 包
-  = 其声明文件的 `package`，**与类型名无关**。
+- 顶层扩展属性包归属：Color.isSpecified 在 androidx.compose.ui.graphics（非 ui.unit）；TextUnit.isSpecified 在 ui.unit。判据：inline val X.isY 的 import 包=其声明文件 package，与类型名无关。
 
 ## 字体体系
-- 9 OFL 中文 + 3 拉丁；`FontCatalog`/`FontManager`/`buildTypography`，默认=系统默认。
-- **预览铁律**：统一 `FontPreviewEngine`（有界池+位图 LruCache），**禁用 `ResourcesCompat.getFont`/`Text(fontFamily)` 批量渲染**（全局缓存驻留→OOM）。
-- 合成族按字重 `combinedFamilyFonts`（`Typeface.Builder(latin).addCustomFallback(cjk)`）。
-  作用域解耦：设置字体管 App chrome；用户内容走 `ContentFontManager`+`LocalContentTypography`。
+- 9 OFL 中文+3 拉丁；FontCatalog/FontManager/buildTypography，默认=系统默认。
+- 预览铁律：统一 FontPreviewEngine（有界池+位图 LruCache），禁用 ResourcesCompat.getFont/Text(fontFamily) 批量渲染（驻留→OOM）。
+- 合成族按字重 combinedFamilyFonts（Typeface.Builder(latin).addCustomFallback(cjk)）；用户内容走 ContentFontManager+LocalContentTypography。
 
-## 主题色（`ui/theme/Color.kt`）
-- 六色主题（orange/pink/green/blue/purple/brown），`getColorScheme(themeColor, darkTheme)`。
-- 亮色 `background` = 暖米色系（orange `#FFFBF5`），`surface` = `Color.White`；暗色 `background` 各异。
-- ⚠️ **内容区背景 ≠ 主题 background**。`InspirationEditScreen` 收敛为三个语义显式的值：
-  `userPickedBackgroundColor`（只答"用户选了什么"）/ `contentBackgroundColor`（**唯一真值**：实际生效色，
-  Transparent → 主题 background 回落，用于**告知子组件**）/ `contentBackgroundPaint`（绘制层真值，
-  用于宿主 Column `.background()`，让主题背景可透出）。**别用一个变量兼两种含义**（会漂移）。
+## 主题色（ui/theme/Color.kt）
+- 六色主题；亮色 background=暖米色 #FFFBF5，surface=White；暗色各异。
+- 内容区背景收敛三语义：userPickedBackgroundColor（用户选了什么）/ contentBackgroundColor（唯一真值，Transparent→主题 background 回落，告知子组件）/ contentBackgroundPaint（绘制层真值，宿主 Column .background()）。别用一个变量兼两义（会漂移）。
 
-## 编辑态块（路线 4）
-- `BodyBlocksEditor` UI 已下线（正文改 BlockNote WebView）；`BodyBlocksController` 仅保留**数据层**
-  （图片备注/缩放持久化、旧数据媒体迁移、语音 token、图片删除、`focusedOrFirstTextState` 激活态回显）。
-- **新增 sealed 块子类必须全项目 Grep `is BodyBlock.` 补穷尽 when**。
-- 非文本块点选铁律：**焦点必须留在 Text 块**（cursorColor=Transparent），夺焦点=软键盘消失。
-- 复选框 `checked:Boolean?`；GFM 前缀只在块边界处理、绝不进 RichTextState；缩进=布局级（`indentLevel` 1..6 + EM 前缀）。
+## 编辑态块 / 图片 / TaskList
+- BodyBlocksEditor UI 已下线，正文改 BlockNote WebView；BodyBlocksController 仅保留数据层。
+- 新增 sealed 块子类必须全项目 Grep `is BodyBlock.` 补穷尽 when。
+- 非文本块点选：焦点必须留 Text 块（cursorColor=Transparent），夺焦点=软键盘消失。
+- 图片块：撑满=fillMaxWidth+aspectRatio(真实比例)；ImageAspectRatioCache 防塌陷；选中工具栏必须 Popup 独立窗口（focusable=false, clippingEnabled=false）；图片间必须空 Text 块（EMPTY_BLOCK_PLACEHOLDER，判空用 isBlank()）；载体空块 isImageSeparator 一旦有内容即清标记。
+- 分割线五按钮工具条 256dp；DividerStyle↔markdown "---"/"--- dashed"/"--- wavy"。
+- TaskList 行级（v2026-09-16 定稿）：单段落+段内 \n；checked=行0，checkedLines=行≥1；命中=行首；withCheckedLines 换新实例（deepCopy 带行级状态）；reconcileCheckedLines 行数变清 checkedLines（行0保留）后必恢复 textRange；parser 编码逐行前缀、连续同层级并段续行。
 
-### 图片块
-- 撑满=fillMaxWidth+aspectRatio(真实比例)；进程级 `ImageAspectRatioCache` 防重载高度塌陷；ReorderableColumn 必须传块 id 做 itemKey。
-- **选中工具栏必须 Popup 独立窗口**（focusable=false, clippingEnabled=false）；退场动画需延迟 ≥动画时长再卸载。
-- 图片间必须空 Text 块；空块序列化 `EMPTY_BLOCK_PLACEHOLDER`（NBSP，**判空用 `isBlank()`**）。
-- **载体空块不变量**：`BodyBlock.Text.isImageSeparator`；合法位置=「紧邻至少一个不可输入块且不与另一载体相邻」；
-  并排⇒整串全灭→补插收敛。⚠️ 身份与内容绑定：一旦有内容即刻清标记（`demoteImageSeparatorIfFilled()`）。
-- **分割线五按钮工具条**：虚线/波浪/上插/下插/删除，宽 256dp。`DividerStyle` ↔ markdown
-  `"---"`/`"--- dashed"`/`"--- wavy"`（`parseDividerStyle` 严格全段匹配）。
-  `afterCommandMutation` 会清点选态 → toggle 内先存 tapX、命令后立即恢复。
-
-### TaskList 行级渲染（v2026-09-16 定稿，f631159..f386b1e）
-- **结构**：单段落 + 段内 `\n`（方案 D）；`checked`=行 0，`checkedLines: Map<Int,Boolean>`=行 ≥1。
-- **渲染**：`ModifierExt` 对 CheckBox 传**段落全 range**；`drawCustomStyle` 按 `\n` 分行（行盒=`getBoundingBoxes(lineStart,+1)`）。
-- **命中**：命中=**行首**（段首或前字符 `\n`）；翻转走 `withCheckedLines` **换新实例**（deepCopy 必须带行级状态）。
-- **对账**：`reconcileCheckedLines`——行数变⇒清 checkedLines（行 0 保留）；重建 marker 后**必须立即恢复 textRange**。
-- **parser 往返**：编码逐行前缀；解码连续**同层级**任务行并段续行；普通列表项行恢复分段。
-- 已知取舍：增删 `\n` 清行级状态；段末空行不画框；跨行样式被前缀截断。
-
-## 块级拖拽重排（自维护 fork）
-- `ui/components/reorderable/BlocksReorderableList.kt`（fork 自 `sh.calvin.reorderable:3.1.0`）。
-  唯一改动：`settle()` 改「抓快照→立即 onSettle→滑行交 `BlocksGlideController` 接续」。
-- **拖拽期间绝不能改列表**（库 intervals 定长）。`itemKey` 身兼组合身份锚定+滑行归属+zIndex。
+## 块级拖拽（自维护 fork BlocksReorderableList.kt）
+- settle() 改「抓快照→立即 onSettle→滑行交 BlocksGlideController」；拖拽期间绝不能改列表（库 intervals 定长）；itemKey 身兼身份锚定+滑行归属+zIndex。
 
 ## 视觉/渲染教训
-- **alpha 动画必裁布局边界外绘制** → 悬浮元素不要挂 shadow/dropShadow（被切）；定版用 1dp 黑 25% 外边框。
-- `Modifier.shadow` 在 scale+alpha 动画中出方角阴影。`animateContentSize` 内部 `clipToBounds()` 持续裁剪。
-- ⚠️⚠️ **无限高约束会"穿透多层"逐级吞掉宿主意图**：`host(verticalScroll) → 外层Box → 内层AndroidView`
-  这种嵌套里，只要**任意一层**写着 `fillMaxSize()`，该层在无限高下解不出有限高度 → 退化为"按子内容包装"
-  → 把外层顶到内容高 → 宿主 `heightIn(min)` 被**静默吞掉**（不报错）。
-  **判据**：宿主传了 `heightIn(min)` 但视觉没生效 → 逐层 grep `fillMaxSize`，全改 `fillMaxWidth()`。
-  自维护组件「不 fill 高度」的约定**要在每一层都写**，只写外层无效（真机实测）。
+- alpha 动画必裁边界外绘制→悬浮元素不要挂 shadow/dropShadow（被切），定版用 1dp 黑25% 外边框；Modifier.shadow 在 scale+alpha 出方角阴影；animateContentSize 内部 clipToBounds() 持续裁剪。
+- 无限高约束穿透多层吞宿主意图：host(verticalScroll)→Box→AndroidView 任一层 fillMaxSize 即在无限高解不出有限高→heightIn(min) 被静默吞。判据：heightIn(min) 没生效→逐层 grep fillMaxSize 全改 fillMaxWidth()，约定要在每一层都写。
 
 ## ⚠️ Compose 高频陷阱
-- **`remember { }` 的 calculation lambda 不是 `@Composable`**：里面读 `MaterialTheme.colorScheme.*` /
-  `LocalXxx.current` → 报 `@Composable invocations can only happen from...`。
-  **迷惑点：key 位置合法**（`remember(MaterialTheme.colorScheme.background) { ... }` 能编过，key 在组合期求值），
-  只有**大括号内**非法。修法：把组合读取提到 `remember` 外存成局部变量。
-  同类：`derivedStateOf { }` 的 lambda、`LaunchedEffect { }` 里读组合属性（能编过但语义错——不随主题重组）。
-- **`remember(key)` 的 key 不要传"每次重组都是新实例"的对象**（新建 lambda、`listOf(...)`）→ 缓存永久失效。
+- remember{} 的 calculation lambda 不是 @Composable，里面读 MaterialTheme.colorScheme.* / LocalXxx.current 报错；key 位置合法（组合期求值），只有大括号内非法→把组合读取提到 remember 外。derivedStateOf / LaunchedEffect 里读组合属性能编过但语义错（不随主题重组）。
+- remember(key) 的 key 不要传每次重组新实例对象（新建 lambda/listOf）→缓存永久失效。
 
-## 图片附件页（`InspirationImageGallery`）
-- `MainActivity` 已声明 `configChanges`（不含 uiMode）→ 旋转不重建，改 `requestedOrientation`。
-- ⚠️ **缩放与翻页按指针数分流**：双指始终缩放并 consume；单指仅 `scale>1f` 时 consume 用于平移，否则放行 Pager。
-- **缩放锚点**：`offset_new = d − (d − offset_old)×ratio`；回弹=scale+offset 同一 progress；区间 0.6~4f。
-- ⚠️ **越界=实时跟手翻页+兜底橡皮筋**：边界位移 1:1 喂 `pagerState.dispatchRawDelta`，吃不下才橡皮筋（≤72dp）。
-  `pan` 直接累加，**绝不再加「上一帧派发量」**（正反馈死锁）；结算目标页用**本页索引 `page`** 而非 `currentPage`。
-- ⚠️ **缩放期间绝不夹紧边界**（缩小必越界，否则锚点白算）；手势结束再做「越界收回」。
-- **窗口/insets**：`LocalView.current` 在 Dialog content 非 `DialogLayout` → 沿父链 `findDialogWindow()`（tailrec）。
-  系统栏：竖屏始终显示，横屏双通道 hide。边距 300ms 补间。Pager 阈值：横屏 0.08，竖屏 0.35。
+## 图片附件页（InspirationImageGallery）
+- MainActivity configChanges（不含 uiMode）→旋转不重建，改 requestedOrientation。
+- 缩放/翻页按指针数分流：双指始终缩放并 consume；单指仅 scale>1f 时 consume 平移否则放行 Pager。
+- 缩放锚点 offset_new = d−(d−offset_old)×ratio；越界=实时跟手翻页+兜底橡皮筋（≤72dp），pan 直接累加绝不再加上一帧派发量；缩放期间绝不夹紧边界；手势结束才收回。
+- 窗口/insets：LocalView.current 非 DialogLayout→findDialogWindow()（tailrec）；系统栏竖屏常显横屏双通道 hide；Pager 阈值横屏0.08 竖屏0.35。
 
 ## BlockNote WebView 编辑器（迁移 P1.5+）
-- 资源 `app/src/main/assets/blocknote-web/editor/editor.html`（`viteSingleFile` 内联单文件 ~1.88MB）。
-  **源码在 `blocknote-probe/src/editor/`，改完必须重建**。自 v1.8 起 `:app:buildBlockNoteEditor` 已接入 Gradle
-  （`merge*Assets` 依赖它，带增量），`assembleDebug/Release` 自动带最新产物。
-  手动重建：`cd blocknote-probe && npm run build:editor`。同名 `BlockNoteEditorScreen.kt` 是独立探针页，
-  与灵感编辑页共用的 `BlockNoteEditorWebView.kt` 是两套实现，**勿混**。
-- ⚠️⚠️ **「JS 改了但真机没生效」第一反应就是产物没重建**（Gradle 把 assets 当静态资源，不触发 npm/vite）。
-  - 判据：`git log -1 -- <源码>` vs `git log -1 -- <产物>`，产物落后=没重建。
-  - ⚠️ 产物 diff 显示「N 增 N 删」是**假象**（vite 重排压缩短变量名）。**绝不用 diff 行数判断，要用关键字计数**。
-  - 仍不生效再排 WebView 缓存 → 卸载重装或清应用数据。
-- **构建指纹（v1.8）**：vite `define` 注入 `__BUILD_FINGERPRINT__`（`<构建时间> <commit 短hash><-dirty?>`），
-  随 `ready` 上行，宿主打 logcat `ready received | build=...`。**排查产物新鲜度直接看这行**。
-- Bridge：下行 `evaluateJavascript("window.BlockNoteEditorHost.onMessage(<json>)")`；
-  上行 `AndroidBridge.postMessage(json)`。协议见 `docs/bridge-protocol.md`（`ready`/`changed`/`error`/`undoState`）。
-- BlockNote 版本 0.52.1。**`BlockNoteEditor` 没有 transaction 事件**（`extends EventEmitter<{create: void}>`）。
-- ⚠️⚠️ **撤销/重做可用态只能用 `editor.canExec(command)`——`editor.can` 不存在！**
-  `BlockNoteEditor` 原型上只有 `exec` / `canExec`，`StateManager.can(cb)` **从未转发到 editor**。
-  任何 `editor.can(x)` 都是运行时 `TypeError: editor.can is not a function`（v1.7→v1.10 按钮恒灰的真根因）。
-  正确写法：`editor.canExec(getExtension("yUndo") ?? getExtension("history")) 的 undoCommand/redoCommand`
-  —— `canExec` 内部以 `dispatch === undefined` 调命令，**只判定不 dispatch**，不污染历史栈。
-  ⚠️ 命令必须从扩展取，**不能传 `editor.undo`**（丢 `this`）也**不能传 `@tiptap/pm/history` 的裸 `undo`**
-  （`can(cb)` 是无参 `cb()`，state 为 undefined → `historyKey.getState(undefined)` 抛错）。
-  **别读 `_tiptapEditor`**。`canExec` 在 `editor.transact()` 回调内会抛。
-- **v1.7**：JS 侧自绘撤销/重做按钮已删除；唯一入口是宿主顶栏图标按钮，可用态经 `undoState` 驱动置灰。
-  **BlockNote 官方从无撤销/重做 UI，`BlockNoteView` 没有关闭它的配置——只能删自绘代码。**
-- **v1.8 长按连发**：`ui/components/LongPressRepeatIconButton.kt` 导出
-  `Modifier.longPressRepeat(onAction, enabled, canRepeat)` 与 `LongPressRepeatIconButton(...)` 薄封装。
-  已接入：顶栏撤销/重做、格式栏 Nest/UnNest。新增连发按钮只需给 `RiFormatButton` 传 `canRepeat`。
-
-### ⚠️ BlockNote 官方样式约束（v1.9 实测，改前必看）
-- `.bn-editor { padding-inline: 54px }`（`@blocknote/core`）——给侧边 `+`/`⋮⋮` 手柄留的**绘制位**。
-  桌面端窄栏（780px）不明显；**手机全宽下左右各 54px ≈ 吞掉 30%，且右侧那 54px 无任何功能**。
-- ⚠️⚠️ **侧边菜单几何约束（v1.11 读源码确证，改 padding 前必看）**：
-  菜单 = `AddBlockButton`+`DragHandleButton`，`gap={0}`，每按钮 `MantineActionIcon size={24}`
-  → **总宽 48px**（官方 54 = 48 + 6 间隙，正好吻合）。
-  它是 Floating UI 浮层（`placement:"left-start"`，portal 到 `.bn-root`，在 `.bn-editor` **之外**），
-  **右边缘紧贴块内容左边缘**再向左延伸，故 `菜单左边缘 = padding-left − W`，
-  **可见条件 `padding-left ≥ W`**。
-  → `padding-inline: 0` 会让菜单整体落到视口左侧之外（**v1.9 的真实回归，真机已复现**）；
-  `16px + translateX(-16px)` 之类"退路"更糟（完全不可见）——**勿再采用**。
-  留白过小还会连带裁掉嵌套列表竖线（`left:-20px`）与 toggle 添加按钮（`margin-left:22px`）。
-- **v1.11 → v1.11.5 演进**（最终状态，2026-09-18）：
-  - v1.11：`+` 删除，`⋮⋮` 保留（当时以为拖拽可用），点击菜单 4 项移入工具栏，留白 24px；
-  - **v1.11.5：`⋮⋮` 手柄也整体删除（`sideMenu={false}`，不再自渲染任何实例）**。
-    **根因（重要，别再犯）**：真机反馈"按住无法拖拽"→ 排查确认 BlockNote 的块拖拽
-    **纯用 HTML5 原生 Drag & Drop**（`SideMenu.ts` 只有 dragstart/dragover/drop/dragend
-    + dataTransfer，**零 touch 处理**），而 **HTML5 DnD 在 Android WebView / iOS Safari
-    的触摸下根本不触发**（W3C 把 drag 事件定义为鼠标驱动行为）——手柄在手机上注定拖不动，
-    留着只会误导。旁证：OpenProject 的集成评估明确记录
-    "Blocknote has some features that have to be disabled in mobile (drag-and-drop, toolbar)"。
-    **块移动改由工具栏「上移/下移」承担**（`editor.moveBlocksUp/Down()`，
-    不传参取选区首/末块或光标块，支持多选与嵌套；到首/末块安全 no-op，
-    但 API 不暴露"能否移动"的判定，故按钮不置灰）。
-  - 留白随之下调：`padding-inline: var(--bn-editor-gutter, 20px) !important`
-    （**左右同值**，保证文本两侧到屏幕距离一致；20px 是嵌套列表缩进线 `left:-20px`
-    的下限，不能再小）。
-  - 实现细节详见 `docs/bridge-protocol.md` v1.11.5 与方案文档 §3.8/§3.10。
-  - 另：`setBlockColor` 写**块 props**，与 `format` 的 `textColor`（行内 span）是**不同维度**。
-- ⚠️ 保留的历史教训（**若日后恢复侧边菜单，以下三条必看**）：
-  ①几何约束：菜单是 Floating UI 浮层（portal 到 `.bn-root`，在 `.bn-editor` 之外），
-  `菜单左边缘 = padding-left − W`，**`padding-left ≥ W` 才可见**（v1.9 的"手柄被裁"
-  就是违反了它）；②自定义菜单必须复用官方 `SideMenu` 容器（自绘会因 `data-block-type`
-  /`data-level` 缺失而在大块上垂直错位）；③禁用点击菜单须传 `dragHandleMenu={() => null}`
-  （内部是 `|| DragHandleMenu`，不传会回落官方菜单）。
-- ⚠️⚠️ **CSS 变量「就近取值」——设在 `<html>` 上会被库的同名定义盖掉（2026-09-18 实测）**：
-  BlockNote 官方在 **`.bn-root`** 上定义了一整套变量（`--bn-colors-editor-background: #fff`，
-  暗色分支 `#1f1f1f` 单独声明）。v1.9 却把同名变量设在 `documentElement`（`<html>`）上 →
-  `.bn-root` 离 `.bn-editor` **更近**，其值直接胜出，**编辑器背景始终纯白**。
-  更坑的是外层 CSS 写了 `var(--bn-colors-editor-background, var(--editor-bg))`，
-  那个 fallback **永远不执行**（前一变量总有值）→ 看不出异常。
-  修法（v1.11.4）：CSS 在 `.bn-root, .bn-root[data-color-scheme="dark"]` 上**带 `!important` 重新声明**
-  （必须含暗色分支，官方对暗色单独定义过）；JS 侧同时用
-  `document.querySelectorAll('.bn-root').forEach(el => el.style.setProperty(k, v, 'important'))`
-  写到真值位置。**通用规则：覆盖库的 CSS 变量前，先在产物里搜 `.bn-xxx{--var` 找到它到底定义在哪个选择器上。**
-
-- `.bn-editor { border-radius: 0 !important }`（圆角是"居中卡片"语义，全宽下不需要）；
-  另需把 `html` / `body` 的 `background-color` 也设为宿主背景色（WebView 自身底色，
-  未铺到的地方不留白）——上述几处合起来才彻底消除"画中画"。
-- `.editor-page` 原有 `max-width: 780px; margin: 0 auto` 属桌面窄栏写法，移动端全宽须去掉。
-- 探针页 `src/probe.css` 的 `body { background: #f5f5f7 }` **会被 EditorApp 一并 import** → 必须改 `transparent`。
-- **首帧防闪白**：`editor.html` 的 `<head>` 内联 `html,body { background-color: #fffbf5 }`，React 挂载后 JS 接管。
-- **`ThemePayload` 自 v1.9 增可选 `background?: string`**；缺省时 JS 回落 `white`/`#1f1f1f`，向后兼容旧宿主。
+- 产物 app/src/main/assets/blocknote-web/editor/editor.html（viteSingleFile 内联 ~1.88MB）；源码 blocknote-probe/src/editor/，改完必须重建。自 v1.8 :app:buildBlockNoteEditor 接入 Gradle（merge*Assets 依赖，带增量），assembleDebug/Release 自动带最新产物；手动 cd blocknote-probe && npm run build:editor。BlockNoteEditorScreen.kt（探针）与 BlockNoteEditorWebView.kt（共用）勿混。
+- ⚠️ 「JS 改了真机没生效」第一反应=产物没重建。判据：git log -1 比对源码 vs 产物；产物 diff「N增N删」是假象（vite 重排短变量名），绝不用 diff 行数判断，用关键字计数；仍不生效再排 WebView 缓存（卸载重装/清数据）。
+- 构建指纹 __BUILD_FINGERPRINT__ 随 ready 上行，logcat `ready received | build=...` 查新鲜度。
+- Bridge：下行 evaluateJavascript("window.BlockNoteEditorHost.onMessage(<json>)");上行 AndroidBridge.postMessage(json)；协议 docs/bridge-protocol.md（ready/changed/error/undoState）。
+- ⚠️ 撤销/重做可用态只能用 editor.canExec(command)——editor.can 不存在（v1.7→v1.10 按钮恒灰真根因）。命令必须从扩展取（getExtension("yUndo")??getExtension("history") 的 undoCommand/redoCommand），不能传 editor.undo（丢 this）也不能传 @tiptap/pm/history 裸 undo；别读 _tiptapEditor；canExec 在 editor.transact() 内会抛。
+- 样式约束（最终态，改前必看）：
+  - padding-inline 用 var(--bn-editor-gutter,20px)!important（左右同值；20px 是嵌套列表竖线 left:-20px 下限）；右侧 54px 官方手柄位在手机全宽浪费，sideMenu={false} 整体删除（BlockNote 块拖拽纯 HTML5 DnD，Android WebView 触摸不触发→手机拖不动，改工具栏上移/下移）。
+  - ⚠️ CSS 变量就近取值：库在 .bn-root 定义 --bn-colors-*，设在 <html> 会被盖掉→编辑器背景始终纯白。修法：在 .bn-root（含暗色分支）带 !important 重声明 + JS querySelectorAll('.bn-root').forEach setProperty(k,v,'important')。通用规则：覆盖库 CSS 变量前先在产物搜 `.bn-xxx{--var` 找定义选择器。
+  - .bn-editor border-radius:0；html/body background 也设宿主背景消除画中画；.editor-page 去 max-width/margin auto；探针 src/probe.css body 背景须改 transparent；首帧防闪白 html,body 内联 background。
+  - 编辑器首部留白：.bn-editor{padding:0}，首块 .bn-block-content{padding:3px 0} 上 3px；宿主用 Compose Spacer 控制间距时需在 editor.css 把首部压 0 才能精确等距（v2026-09-18 灵感编辑页标题/日期行/WebView 三段 6.dp 等距即此做法）。
 
 ## 工具/协作教训
-- ⚠️ **不要在未验证「方法是否存在」的前提下论证它的语义**（2026-09-17 实测翻车）：
-  花力气论证 `can(cb)` 的参数语义，却没跑一句 `grep 'public can' <库文件>`。
-  **遇到「API 看起来应该有但没反应」，第一步查它在不在，而不是猜它怎么工作。**
-- ⚠️ **`catch { return; }` 是隐形杀手**：任何「静默失败 + 上层无从感知」的 catch 都应至少上行一次诊断。
-- 连续 2 次「猜测→改码→失败」后，停止猜测、加埋点取真实数据。
-- **同一文件多次 Edit 必须串行**（并行写竞态）。
-- 提交：中文提交信息，Write 写临时文件后提交再删除。
+- 遇「API 看起来应该有但没反应」先查它在不在（grep public xxx），别论证语义。
+- catch{return} 是隐形杀手：静默失败至少上行一次诊断。
+- 连续 2 次猜测→改码→失败，停猜加埋点取真实数据。
+- 同一文件多次 Edit 必须串行（并行写竞态）。
+- 提交：中文提交信息，Write 临时文件→提交→删除。
 
-- ⚠️ **宿主 `heightIn(min)` 只撑 WebView，撑不到 `.bn-editor`（v1.11.6 修）**：
-  BlockNote 未给 `.bn-editor` 任何 `min-height` —— 它的高度**完全由内容决定**
-  （空文档仅 1 个空块 ≈ 30dp = 16px × 行高 1.5 + `.bn-block-content` 上下各 3px）。
-  而宿主给 WebView 设了 `heightIn(min = 屏高 × 0.62)`。两者不一致时，
-  WebView 内、编辑器盒子**之外**的那片区域点击**不会聚焦光标**（"死区"）。
-  修法：宿主把同一数值经 `setEditorMinHeight`（单位 dp）下发，JS 写入
-  `--bn-editor-min-height`，由 `.bn-editor { min-height: ... !important }` 消费。
-  **不要用 `62vh`** —— 本项目 WebView 高度随内容增长、可能撑出屏幕（外层 Column 滚动），
-  `vh` 语义不直观；用宿主下发的确定值才可预测（1 CSS px = 1 dp，`initial-scale=1.0`）。
+## ⚠️ 验证边界（2026-09-18）
+- 产物关键字计数只证"字符串在文件里"不证"浏览器用得上"；涉及变量/样式/覆盖是否生效，必须真机/浏览器读 computed style 才算验过。
+- 逐像素分析截图是定位渲染问题的可靠手段（pillow 扫描非背景像素得边界/颜色，实测像素÷已知 dp 反推 density 交叉验证）；目测与纯推算只能给方向。
 
-### ⚠️ 验证方式的边界（2026-09-18 教训）
-- **「产物关键字计数」只证明"字符串在文件里"，不证明"浏览器用得上"**。
-  本次 `.bn-editor` 背景色 bug 用计数查过两次都显示正常（`#FFFBF5` 计数 = 1），
-  但运行时根本没生效（CSS 变量被 `.bn-root` 的官方定义盖掉）。
-  **凡涉及「变量 / 样式 / 覆盖是否真的生效」的修复，必须在真机或浏览器读 computed style 才算验过。**
-- **逐像素分析截图**是定位渲染类问题的可靠手段（本次"白条"与"边距不对称"的真因都这么查出来的）：
-  `pillow` 解析图片 → 逐行/逐列扫描「非背景色 / 深色」像素 → 得到元素边界与颜色；
-  再用「实测像素 ÷ 已知 dp 值」反推 density 做**交叉验证**（本次由正文左距 77px/32dp 反推出
-  屏幕 ≈ 360dp、密度 2.4，与整屏宽 864px 自洽）。**目测与纯推算只能给方向、不能给结论。**
-
-### ⚠️ 删文件/裁 import 的隐身依赖（2026-09-17 实测，一次翻车 20+ 错误）
-**靠「符号名 grep/词频」判断 import 是否可删，方法论上必然出错**——Kotlin 存在**无名字依赖**：
-1. **委托操作符 `by`**：`var x by mutableStateOf(0)` 隐式调用 `getValue`/`setValue`，源码里这两个名字**一次都不出现**。
-   误删 → 报 `MutableState<T> has no method 'getValue'/'setValue'`，还**级联**出十几处假象错误
-   `Cannot infer type for T/R`（真根因只有这一个，别逐个查级联点）。同类：`by lazy`、`by remember`、`Delegates.observable`。
-2. **跨文件 `internal` 顶层函数/扩展**：如 `internal fun DrawScope.drawDashedDivider(...)` 定义在 A 文件、
-   被 B 文件**同包无 import 调用**。删 A → B 报 `Unresolved reference`（B 的 import 列表里没有它）。
-3. **`LocalXxx` 组合局部变量**：即使调用点只剩 `.hide()` 也仍需该 import。
-4. **`import X as Y` 别名**：以**别名**被引用，按原名 grep 会漏。
-
-**正确姿势**：裁 import 前先按 `by ` 反查全文（`grep -n "by mutableStateOf\|by lazy\|by remember"`），
-命中文件必留 `getValue`/`setValue`；**删任何文件/大段代码后必须反向全项目 grep 被删文件里的顶层声明名**
-（尤其 `internal fun ...Scope.xxx`），而非只 grep 文件名；最终以**编译**为准，
-静态分析只能缩小范围（可扫「大写开头但未 import 也未本地声明」的符号逐个确认来源）。
+## ⚠️ 删文件/裁 import 的隐身依赖
+- 靠符号名 grep/词频判 import 可删必然出错——Kotlin 无名字依赖：①by 委托（mutableStateOf/lazy/remember/Delegates.observable）隐式 getValue/setValue，误删级联十几处假象错误；②跨文件 internal 顶层函数/扩展（同包无 import 调用）；③LocalXxx 组合局部变量（只剩 .hide() 也需 import）；④import X as Y 别名按原名 grep 漏。
+- 正确姿势：裁 import 前按 `by ` 反查全文；删文件/大段代码后反向全项目 grep 被删文件顶层声明名（尤其 internal fun ...Scope.xxx）；最终以编译为准。
