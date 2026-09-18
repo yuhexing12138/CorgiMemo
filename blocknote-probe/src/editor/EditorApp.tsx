@@ -873,17 +873,30 @@ function EditorCore(props: {
      * 动画期间连续触发无害：选区已可见时 PM 不产生滚动。
      */
     useEffect(() => {
+      let timer: number | undefined;
       const scrollSelectionIntoView = () => {
         const view = editor.prosemirrorView;
         if (!view) return;
         view.dispatch(view.state.tr.scrollIntoView());
       };
+      /**
+       * 防抖 ~200ms：键盘弹出/收起是 ~300ms 的高度动画，`visualViewport` 的
+       * resize 会**逐帧**触发（每 10-30ms 一次）。若每帧都执行 scrollIntoView，
+       * PM 的滚动（瞬时完成）会变成"逐帧追跳"——视觉上断断续续。
+       * 防抖到动画结束后只执行一次，配合 `html { scroll-behavior: smooth }`
+       * （editor.css）即为一次平滑滚动。
+       */
+      const onResize = () => {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(scrollSelectionIntoView, 200);
+      };
       const vv = window.visualViewport;
-      vv?.addEventListener("resize", scrollSelectionIntoView);
-      window.addEventListener("resize", scrollSelectionIntoView);
+      vv?.addEventListener("resize", onResize);
+      window.addEventListener("resize", onResize);
       return () => {
-        vv?.removeEventListener("resize", scrollSelectionIntoView);
-        window.removeEventListener("resize", scrollSelectionIntoView);
+        window.clearTimeout(timer);
+        vv?.removeEventListener("resize", onResize);
+        window.removeEventListener("resize", onResize);
       };
     }, []);
 

@@ -132,3 +132,15 @@
   width: 100% !important;
   height: auto !important;
 }
+
+/* v1.11.9：编辑区编程滚动改为平滑动画。
+   WebView 内内容溢出时的滚动容器是 html（documentElement）——
+   `scroll-behavior: smooth` 让一切编程滚动（ProseMirror 的
+   scrollIntoView、scrollTo 等）都走平滑动画而非瞬时跳变。
+   最直接的受益场景：键盘弹出 → WebView 收缩 → PM 把光标滚回可见区
+   （EditorApp 的 visualViewport resize 处理），有此属性后为一次平滑滚动，
+   无此属性则为一次瞬跳。
+   兼容性：Chromium 61+，与本项目依赖的 :has（Chromium 105+）同一底线之上。 */
+html {
+  scroll-behavior: smooth;
+}
