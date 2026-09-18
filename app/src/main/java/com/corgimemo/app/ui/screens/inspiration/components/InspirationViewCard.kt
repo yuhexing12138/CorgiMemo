@@ -138,8 +138,14 @@ fun InspirationViewCard(
     // - 改为直接使用父级传入的 [imagePaths] 参数
     // - 因 imagePaths 已是 List<String>，无需再解析
     // 缓存：字数（v2026-07-31 改造：只统计正文字符数，不含标题/标签/关联）
-    val charCount = remember(inspiration.id, inspiration.content) {
-        InspirationTextUtils.countInspirationContentChars(inspiration.content)
+    // v2026-09-18 修复「统计不到字数」：纯文本 content 在 BlockNote 路径下可能为空/旧值，
+    // 故为空时退化从 contentFormat(Markdown) 抽取纯文本计数，使历史卡片无需重新保存即显示正确字数。
+    val bodyPlainText = remember(inspiration.id, inspiration.content, inspiration.contentFormat) {
+        if (inspiration.content.isNotBlank()) inspiration.content
+        else InspirationTextUtils.markdownToPlainText(inspiration.contentFormat)
+    }
+    val charCount = remember(inspiration.id, bodyPlainText) {
+        InspirationTextUtils.countInspirationContentChars(bodyPlainText)
     }
     // 缓存：格式化日期
     val formattedDate = remember(inspiration.createdAt) {

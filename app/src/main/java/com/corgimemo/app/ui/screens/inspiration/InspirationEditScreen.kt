@@ -88,8 +88,6 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.style.LineHeightStyle
-import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.input.key.Key /** 标题回车拦截：Key.Enter / Key.NumPadEnter（v2026-09-15）*/
 import androidx.compose.ui.input.key.KeyEventType /** 标题回车拦截：只处理 KeyDown（v2026-09-15）*/
 import androidx.compose.ui.input.key.key
@@ -1752,18 +1750,8 @@ fun InspirationEditScreen(
                     )
                 },
                 readOnly = isLocked,
-                /**
-                 * v2026-09-18：标题文字上下贴边（`Trim.Both` 裁剪额外行高、`includeFontPadding=false`
-                 * 去掉 Android 字体上下内边距），使「标题文字下沿 → 标题框底边」≈ 0，
-                 * 配合下方 6.dp Spacer 让「标题 → 日期行」可见空白逼近 6.dp。
-                 */
                 textStyle = LocalContentTypography.current.headlineMedium.copy(
-                    color = MaterialTheme.colorScheme.onSurface,
-                    lineHeightStyle = LineHeightStyle(
-                        alignment = LineHeightStyle.Alignment.Center,
-                        trim = LineHeightStyle.Trim.Both
-                    ),
-                    platformStyle = PlatformTextStyle(includeFontPadding = false)
+                    color = MaterialTheme.colorScheme.onSurface
                 ),
                 colors = RichTextEditorDefaults.richTextEditorColors(
                     /** 容器背景透明，跟随全局主题色 */
@@ -1824,19 +1812,6 @@ fun InspirationEditScreen(
             /** v2026-09-18：标题 → 日期行 之间 6.dp 等距（与「日期行→WebView」一致） */
             Spacer(modifier = Modifier.height(6.dp))
 
-            /**
-             * v2026-09-18：日期行文字上下贴边（`Trim.Both` + `includeFontPadding=false`），
-             * 使「日期行文字上/下沿 → 行边界」≈ 0，配合上下两个 6.dp Spacer 让
-             * 「标题→日期行」「日期行→WebView」可见空白都逼近 6.dp。
-             */
-            val dateLineTextStyle = androidx.compose.ui.text.TextStyle(
-                lineHeightStyle = LineHeightStyle(
-                    alignment = LineHeightStyle.Alignment.Center,
-                    trim = LineHeightStyle.Trim.Both
-                ),
-                platformStyle = PlatformTextStyle(includeFontPadding = false)
-            )
-
             /** 时间戳 + 字数行（中间用竖线分隔，与参考图一致） */
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1846,8 +1821,7 @@ fun InspirationEditScreen(
                     text = timestampText,
                     fontSize = 12.sp,
                     color = Color(0xFF999999),
-                    letterSpacing = 0.5.sp,
-                    style = dateLineTextStyle
+                    letterSpacing = 0.5.sp
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 /** 竖线分隔符（颜色比文字略浅，宽度 1dp） */
@@ -1862,8 +1836,7 @@ fun InspirationEditScreen(
                     text = "${contentCharCount}字",
                     fontSize = 12.sp,
                     color = Color(0xFF999999),
-                    letterSpacing = 0.5.sp,
-                    style = dateLineTextStyle
+                    letterSpacing = 0.5.sp
                 )
             }
 
@@ -1907,7 +1880,11 @@ fun InspirationEditScreen(
             BlockNoteEditorWebView(
                 controller = blockNoteController,
                 onMarkdownChanged = { md ->
+                    // v2026-09-18 修复「编辑页统计不到字数」：BlockNote 只回写 contentFormat，
+                    // 需同步把 Markdown 转为纯文本写入 content，编辑页字数行才能实时更新、
+                    // 且保存时写入数据库的 content 才与正文一致。
                     viewModel.setContentFormat(md)
+                    viewModel.setContent(InspirationTextUtils.markdownToPlainText(md))
                 },
                 modifier = Modifier
                     .fillMaxWidth()

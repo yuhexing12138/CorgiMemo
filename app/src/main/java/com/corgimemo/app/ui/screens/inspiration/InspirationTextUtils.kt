@@ -2,6 +2,7 @@
 package com.corgimemo.app.ui.screens.inspiration
 
 import com.corgimemo.app.data.model.Inspiration
+import com.corgimemo.app.util.MarkdownParser
 import org.json.JSONArray
 
 /**
@@ -73,6 +74,52 @@ object InspirationTextUtils {
     fun countInspirationContentChars(content: String): Int {
         // 直接对原文去除所有空白字符后计数，不展开任何标签
         return content.count { !it.isWhitespace() }
+    }
+
+    /**
+     * 将 BlockNote 导出的 Markdown 转换为纯文本（用于字数统计 / 搜索 / 列表摘要）
+     *
+     * **背景**：灵感正文现已统一以 `contentFormat`(Markdown) 存储，编辑态由 BlockNote WebView
+     * 承载。原先字数统计依赖的 [Inspiration.content]（纯文本）在新流程下不会被 BlockNote 回写，
+     * 导致编辑页与详情页都"统计不到字数"。本方法从 Markdown 抽取可读文字，
+     * 作为 [Inspiration.content] 的等价来源。
+     *
+     * **剥离规则**（去除 Markdown 语法、只留可见文字）：
+     * - 图片 `![alt](path)` → 移除（图片不计入字数）
+     * - 内联媒体 / 标签 token：`#标签` / `@提及` / `🎤语音` / 旧图（`trigger:xxx`）→ 整段移除
+     *   （正文计数不含标签 / 提及，与 [countInspirationContentChars] 口径一致）
+     * - 普通链接 `[文字](url)` → 保留「文字」
+     * - 引用符 `>` → 移除
+     * - 其余行内 / 块级标记（粗体 `**`、斜体 `*`、删除线 `~~`、标题 `#`、列表 / 待办符号）
+     *   交给 [MarkdownParser.stripMarkdown] 去除
+     *
+     * 各移除处统一用空格占位，避免相邻词被拼成一团。
+     *
+     * @param markdown 正文 Markdown 字符串
+     * @return 去除所有 Markdown 语法后的纯文本（空白由调用方去除）
+     */
+    fun markdownToPlainText(markdown: String): String {
+        // 空文本直接返回，避免无谓的正则开销
+        if (markdown.isBlank()) return ""
+        var text = markdown
+        // 1) 图片（不计入字数）
+        text = text.replace(Regex("""!\[[^\]]*\]\([^)]*\)"""), " ")
+        // 2) 内联媒体 / 标签 token：整段移除
+        text = text.replace(Regex("""\[#[^]]*\]\(trigger:hashtag:[^)]*\)"""), " ")
+        text = text.replace(Regex("""\[@[^]]*\]\(trigger:mention:[^)]*\)"""), " ")
+        text = text.replace(Regex("""\[[^\]]*\]\(trigger:voice:[^)]*\)"""), " ")
+        text = text.replace(Regex("""\[[^\]]*\]\(trigger:image:[^)]*\)"""), " ")
+        // 3) 普通链接 [文字](url) → 保留「文字」
+        text = text.replace(Regex("""\[([^\]]*)\]\([^)]*\)"""), "$1")
+        // 4) 引用符（stripMarkdown 不处理，单独去除）
+        text = text.replace(Regex("""(?m)^\s*>\s?"""), "")
+        // 5) 标题（覆盖 stripMarkdown 仅支持 1~4 级的限制，深标题 5~6 级也去除）
+        text = text.replace(Regex("""(?m)^\s{0,3}#{1,6}\s+"""), "")
+        // 6) 分割线 --- / *** / ___（stripMarkdown 不处理，单独去除）
+        text = text.replace(Regex("""(?m)^\s*([-*_])(\s*\1){2,}\s*$"""), " ")
+        // 7) 其余 Markdown 标记（粗斜体 / 删除线 / 列表 / 待办）
+        text = MarkdownParser.stripMarkdown(text)
+        return text
     }
 
     /**
