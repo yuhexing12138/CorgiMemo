@@ -1,0 +1,247 @@
+﻿
+09-18 14:34:14.584 10290 10290 D BlockNoteEditor: diag | ime bottom=9px (3.2727273.dp)
+09-18 14:34:14.594 10290 10290 D BlockNoteEditor: diag | ime bottom=36px (13.090909.dp)
+09-18 14:34:14.599 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1674px = 608.7273dp
+09-18 14:34:14.605 10290 10290 D BlockNoteEditor: diag | ime bottom=75px (27.272728.dp)
+09-18 14:34:14.605 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=608 visualViewportH=608.727294921875"})
+09-18 14:34:14.605 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=608 visualViewportH=608.727294921875
+09-18 14:34:14.606 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=608 visualViewportH=608.727294921875"})
+09-18 14:34:14.606 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=608 visualViewportH=608.727294921875
+09-18 14:34:14.609 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1629px = 592.36365dp
+09-18 14:34:14.614 10290 10290 D BlockNoteEditor: diag | ime bottom=120px (43.636364.dp)
+09-18 14:34:14.616 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=592 visualViewportH=592.3636474609375"})
+09-18 14:34:14.617 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=592 visualViewportH=592.3636474609375
+09-18 14:34:14.619 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=592 visualViewportH=592.3636474609375"})
+09-18 14:34:14.619 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=592 visualViewportH=592.3636474609375
+09-18 14:34:14.620 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1579px = 574.1818dp
+09-18 14:34:14.624 10290 10290 D BlockNoteEditor: diag | ime bottom=170px (61.81818.dp)
+09-18 14:34:14.626 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=574 visualViewportH=574.1818237304688"})
+09-18 14:34:14.626 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=574 visualViewportH=574.1818237304688
+09-18 14:34:14.627 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=574 visualViewportH=574.1818237304688"})
+09-18 14:34:14.627 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=574 visualViewportH=574.1818237304688
+09-18 14:34:14.630 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1527px = 555.2727dp
+09-18 14:34:14.635 10290 10290 D BlockNoteEditor: diag | ime bottom=222px (80.72727.dp)
+09-18 14:34:14.637 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=555 visualViewportH=555.272705078125"})
+09-18 14:34:14.637 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=555 visualViewportH=555.272705078125
+09-18 14:34:14.637 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=555 visualViewportH=555.272705078125"})
+09-18 14:34:14.637 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=555 visualViewportH=555.272705078125
+09-18 14:34:14.640 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1475px = 536.36365dp
+09-18 14:34:14.647 10290 10290 D BlockNoteEditor: diag | ime bottom=274px (99.63636.dp)
+09-18 14:34:14.651 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1425px = 518.1818dp
+09-18 14:34:14.655 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=518 visualViewportH=518.1818237304688"})
+09-18 14:34:14.655 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=518 visualViewportH=518.1818237304688
+09-18 14:34:14.656 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=518 visualViewportH=518.1818237304688"})
+09-18 14:34:14.656 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=518 visualViewportH=518.1818237304688
+09-18 14:34:14.656 10290 10290 D BlockNoteEditor: diag | ime bottom=324px (117.818184.dp)
+09-18 14:34:14.662 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1376px = 500.36365dp
+09-18 14:34:14.667 10290 10290 D BlockNoteEditor: diag | ime bottom=373px (135.63637.dp)
+09-18 14:34:14.669 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=500 visualViewportH=500.3636474609375"})
+09-18 14:34:14.669 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=500 visualViewportH=500.3636474609375
+09-18 14:34:14.669 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=500 visualViewportH=500.3636474609375"})
+09-18 14:34:14.669 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=500 visualViewportH=500.3636474609375
+09-18 14:34:14.673 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1330px = 483.63635dp
+09-18 14:34:14.678 10290 10290 D BlockNoteEditor: diag | ime bottom=419px (152.36363.dp)
+09-18 14:34:14.687 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1287px = 468.0dp
+09-18 14:34:14.691 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=468 visualViewportH=468"})
+09-18 14:34:14.691 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=468 visualViewportH=468
+09-18 14:34:14.691 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=468 visualViewportH=468"})
+09-18 14:34:14.691 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=468 visualViewportH=468
+09-18 14:34:14.692 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1248px = 453.81818dp
+09-18 14:34:14.697 10290 10290 D BlockNoteEditor: diag | ime bottom=462px (168.0.dp)
+09-18 14:34:14.705 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=454 visualViewportH=453.81817626953125"})
+09-18 14:34:14.706 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=454 visualViewportH=453.81817626953125
+09-18 14:34:14.706 10290 10290 D BlockNoteEditor: diag | ime bottom=501px (182.18182.dp)
+09-18 14:34:14.706 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=454 visualViewportH=453.81817626953125"})
+09-18 14:34:14.706 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=454 visualViewportH=453.81817626953125
+09-18 14:34:14.709 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1211px = 440.36365dp
+09-18 14:34:14.715 10290 10290 D BlockNoteEditor: diag | ime bottom=538px (195.63637.dp)
+09-18 14:34:14.722 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1178px = 428.36365dp
+09-18 14:34:14.726 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=428 visualViewportH=428.3636474609375"})
+09-18 14:34:14.727 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=428 visualViewportH=428.3636474609375
+09-18 14:34:14.727 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=428 visualViewportH=428.3636474609375"})
+09-18 14:34:14.727 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=428 visualViewportH=428.3636474609375
+09-18 14:34:14.728 10290 10290 D BlockNoteEditor: diag | ime bottom=571px (207.63637.dp)
+09-18 14:34:14.733 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1148px = 417.45456dp
+09-18 14:34:14.738 10290 10290 D BlockNoteEditor: diag | ime bottom=601px (218.54546.dp)
+09-18 14:34:14.739 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=417 visualViewportH=417.4545593261719"})
+09-18 14:34:14.739 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=417 visualViewportH=417.4545593261719
+09-18 14:34:14.740 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=417 visualViewportH=417.4545593261719"})
+09-18 14:34:14.740 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=417 visualViewportH=417.4545593261719
+09-18 14:34:14.743 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1120px = 407.27274dp
+09-18 14:34:14.748 10290 10290 D BlockNoteEditor: diag | ime bottom=629px (228.72728.dp)
+09-18 14:34:14.750 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=407 visualViewportH=407.2727355957031"})
+09-18 14:34:14.750 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=407 visualViewportH=407.2727355957031
+09-18 14:34:14.750 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=407 visualViewportH=407.2727355957031"})
+09-18 14:34:14.750 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=407 visualViewportH=407.2727355957031
+09-18 14:34:14.754 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1096px = 398.54544dp
+09-18 14:34:14.760 10290 10290 D BlockNoteEditor: diag | ime bottom=653px (237.45454.dp)
+09-18 14:34:14.764 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1074px = 390.54544dp
+09-18 14:34:14.769 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=390 visualViewportH=390.5454406738281"})
+09-18 14:34:14.769 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=390 visualViewportH=390.5454406738281
+09-18 14:34:14.769 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=390 visualViewportH=390.5454406738281"})
+09-18 14:34:14.769 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=390 visualViewportH=390.5454406738281
+09-18 14:34:14.770 10290 10290 D BlockNoteEditor: diag | ime bottom=675px (245.45454.dp)
+09-18 14:34:14.774 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1054px = 383.27274dp
+09-18 14:34:14.781 10290 10290 D BlockNoteEditor: diag | ime bottom=695px (252.72728.dp)
+09-18 14:34:14.781 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=383 visualViewportH=383.2727355957031"})
+09-18 14:34:14.781 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=383 visualViewportH=383.2727355957031
+09-18 14:34:14.782 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=383 visualViewportH=383.2727355957031"})
+09-18 14:34:14.782 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=383 visualViewportH=383.2727355957031
+09-18 14:34:14.785 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1037px = 377.0909dp
+09-18 14:34:14.794 10290 10290 D BlockNoteEditor: diag | ime bottom=712px (258.9091.dp)
+09-18 14:34:14.795 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=377 visualViewportH=377.0909118652344"})
+09-18 14:34:14.795 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=377 visualViewportH=377.0909118652344
+09-18 14:34:14.796 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=377 visualViewportH=377.0909118652344"})
+09-18 14:34:14.796 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=377 visualViewportH=377.0909118652344
+09-18 14:34:14.799 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1021px = 371.27274dp
+09-18 14:34:14.805 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1007px = 366.18182dp
+09-18 14:34:14.810 10290 10290 D BlockNoteEditor: diag | ime bottom=728px (264.72726.dp)
+09-18 14:34:14.813 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=366 visualViewportH=366.18182373046875"})
+09-18 14:34:14.813 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=366 visualViewportH=366.18182373046875
+09-18 14:34:14.813 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=366 visualViewportH=366.18182373046875"})
+09-18 14:34:14.813 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=366 visualViewportH=366.18182373046875
+09-18 14:34:14.820 10290 10290 D BlockNoteEditor: diag | ime bottom=742px (269.81818.dp)
+09-18 14:34:14.826 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x995px = 361.81818dp
+09-18 14:34:14.832 10290 10290 D BlockNoteEditor: diag | ime bottom=754px (274.18182.dp)
+09-18 14:34:14.832 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=362 visualViewportH=361.81817626953125"})
+09-18 14:34:14.832 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=362 visualViewportH=361.81817626953125
+09-18 14:34:14.832 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=362 visualViewportH=361.81817626953125"})
+09-18 14:34:14.832 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=362 visualViewportH=361.81817626953125
+09-18 14:34:14.837 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x985px = 358.18182dp
+09-18 14:34:14.842 10290 10290 D BlockNoteEditor: diag | ime bottom=764px (277.81818.dp)
+09-18 14:34:14.844 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=358 visualViewportH=358.18182373046875"})
+09-18 14:34:14.844 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=358 visualViewportH=358.18182373046875
+09-18 14:34:14.845 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=358 visualViewportH=358.18182373046875"})
+09-18 14:34:14.845 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=358 visualViewportH=358.18182373046875
+09-18 14:34:14.848 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x975px = 354.54544dp
+09-18 14:34:14.853 10290 10290 D BlockNoteEditor: diag | ime bottom=774px (281.45456.dp)
+09-18 14:34:14.855 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=354 visualViewportH=354.5454406738281"})
+09-18 14:34:14.855 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=354 visualViewportH=354.5454406738281
+09-18 14:34:14.856 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=354 visualViewportH=354.5454406738281"})
+09-18 14:34:14.856 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=354 visualViewportH=354.5454406738281
+09-18 14:34:14.859 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x967px = 351.63635dp
+09-18 14:34:14.864 10290 10290 D BlockNoteEditor: diag | ime bottom=782px (284.36365.dp)
+09-18 14:34:14.866 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=351 visualViewportH=351.6363525390625"})
+09-18 14:34:14.866 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=351 visualViewportH=351.6363525390625
+09-18 14:34:14.866 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=351 visualViewportH=351.6363525390625"})
+09-18 14:34:14.866 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=351 visualViewportH=351.6363525390625
+09-18 14:34:14.869 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x960px = 349.0909dp
+09-18 14:34:14.874 10290 10290 D BlockNoteEditor: diag | ime bottom=789px (286.9091.dp)
+09-18 14:34:14.875 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=349 visualViewportH=349.0909118652344"})
+09-18 14:34:14.875 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=349 visualViewportH=349.0909118652344
+09-18 14:34:14.876 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=349 visualViewportH=349.0909118652344"})
+09-18 14:34:14.876 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=349 visualViewportH=349.0909118652344
+09-18 14:34:14.879 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x954px = 346.9091dp
+09-18 14:34:14.884 10290 10290 D BlockNoteEditor: diag | ime bottom=795px (289.0909.dp)
+09-18 14:34:14.886 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=347 visualViewportH=346.9090881347656"})
+09-18 14:34:14.886 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=347 visualViewportH=346.9090881347656
+09-18 14:34:14.886 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=347 visualViewportH=346.9090881347656"})
+09-18 14:34:14.886 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=347 visualViewportH=346.9090881347656
+09-18 14:34:14.889 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x948px = 344.72726dp
+09-18 14:34:14.894 10290 10290 D BlockNoteEditor: diag | ime bottom=801px (291.27274.dp)
+09-18 14:34:14.899 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=344 visualViewportH=344.7272644042969"})
+09-18 14:34:14.899 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=344 visualViewportH=344.7272644042969
+09-18 14:34:14.899 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=344 visualViewportH=344.7272644042969"})
+09-18 14:34:14.899 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=344 visualViewportH=344.7272644042969
+09-18 14:34:14.903 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x944px = 343.27274dp
+09-18 14:34:14.908 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x939px = 341.45456dp
+09-18 14:34:14.913 10290 10290 D BlockNoteEditor: diag | ime bottom=805px (292.72726.dp)
+09-18 14:34:14.914 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=341 visualViewportH=341.4545593261719"})
+09-18 14:34:14.915 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=341 visualViewportH=341.4545593261719
+09-18 14:34:14.915 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=341 visualViewportH=341.4545593261719"})
+09-18 14:34:14.915 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=341 visualViewportH=341.4545593261719
+09-18 14:34:14.921 10290 10290 D BlockNoteEditor: diag | ime bottom=810px (294.54544.dp)
+09-18 14:34:14.926 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x936px = 340.36365dp
+09-18 14:34:14.932 10290 10290 D BlockNoteEditor: diag | ime bottom=813px (295.63635.dp)
+09-18 14:34:14.934 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=340 visualViewportH=340.3636474609375"})
+09-18 14:34:14.934 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=340 visualViewportH=340.3636474609375
+09-18 14:34:14.934 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=340 visualViewportH=340.3636474609375"})
+09-18 14:34:14.934 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=340 visualViewportH=340.3636474609375
+09-18 14:34:14.938 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x933px = 339.27274dp
+09-18 14:34:14.943 10290 10290 D BlockNoteEditor: diag | ime bottom=816px (296.72726.dp)
+09-18 14:34:14.944 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=339 visualViewportH=339.2727355957031"})
+09-18 14:34:14.944 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=339 visualViewportH=339.2727355957031
+09-18 14:34:14.945 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=339 visualViewportH=339.2727355957031"})
+09-18 14:34:14.945 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=339 visualViewportH=339.2727355957031
+09-18 14:34:14.948 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x930px = 338.18182dp
+09-18 14:34:14.954 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=338 visualViewportH=338.18182373046875"})
+09-18 14:34:14.954 10290 10290 D BlockNoteEditor: diag | ime bottom=819px (297.81818.dp)
+09-18 14:34:14.954 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=338 visualViewportH=338.18182373046875
+09-18 14:34:14.955 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=338 visualViewportH=338.18182373046875"})
+09-18 14:34:14.955 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=338 visualViewportH=338.18182373046875
+09-18 14:34:14.958 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x928px = 337.45456dp
+09-18 14:34:14.965 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=337 visualViewportH=337.4545593261719"})
+09-18 14:34:14.965 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=337 visualViewportH=337.4545593261719
+09-18 14:34:14.965 10290 10290 D BlockNoteEditor: diag | ime bottom=821px (298.54544.dp)
+09-18 14:34:14.966 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=337 visualViewportH=337.4545593261719"})
+09-18 14:34:14.966 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=337 visualViewportH=337.4545593261719
+09-18 14:34:14.970 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x926px = 336.72726dp
+09-18 14:34:14.975 10290 10290 D BlockNoteEditor: diag | ime bottom=823px (299.27274.dp)
+09-18 14:34:14.977 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=336 visualViewportH=336.7272644042969"})
+09-18 14:34:14.977 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=336 visualViewportH=336.7272644042969
+09-18 14:34:14.978 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=336 visualViewportH=336.7272644042969"})
+09-18 14:34:14.978 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=336 visualViewportH=336.7272644042969
+09-18 14:34:14.981 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x924px = 336.0dp
+09-18 14:34:14.986 10290 10290 D BlockNoteEditor: diag | ime bottom=825px (300.0.dp)
+09-18 14:34:14.988 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=336 visualViewportH=336"})
+09-18 14:34:14.988 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=336 visualViewportH=336
+09-18 14:34:14.989 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=336 visualViewportH=336"})
+09-18 14:34:14.989 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=336 visualViewportH=336
+09-18 14:34:14.992 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x922px = 335.27274dp
+09-18 14:34:14.997 10290 10290 D BlockNoteEditor: diag | ime bottom=827px (300.72726.dp)
+09-18 14:34:15.002 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=335 visualViewportH=335.2727355957031"})
+09-18 14:34:15.002 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=335 visualViewportH=335.2727355957031
+09-18 14:34:15.003 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=335 visualViewportH=335.2727355957031"})
+09-18 14:34:15.003 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=335 visualViewportH=335.2727355957031
+09-18 14:34:15.006 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x921px = 334.9091dp
+09-18 14:34:15.012 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x920px = 334.54544dp
+09-18 14:34:15.016 10290 10290 D BlockNoteEditor: diag | ime bottom=828px (301.0909.dp)
+09-18 14:34:15.018 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=334 visualViewportH=334.5454406738281"})
+09-18 14:34:15.018 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=334 visualViewportH=334.5454406738281
+09-18 14:34:15.018 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=334 visualViewportH=334.5454406738281"})
+09-18 14:34:15.018 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=334 visualViewportH=334.5454406738281
+09-18 14:34:15.024 10290 10290 D BlockNoteEditor: diag | ime bottom=829px (301.45456.dp)
+09-18 14:34:15.029 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x919px = 334.18182dp
+09-18 14:34:15.034 10290 10290 D BlockNoteEditor: diag | ime bottom=830px (301.81818.dp)
+09-18 14:34:15.035 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=334 visualViewportH=334.18182373046875"})
+09-18 14:34:15.035 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=334 visualViewportH=334.18182373046875
+09-18 14:34:15.036 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=334 visualViewportH=334.18182373046875"})
+09-18 14:34:15.036 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=334 visualViewportH=334.18182373046875
+09-18 14:34:15.040 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x918px = 333.81818dp
+09-18 14:34:15.045 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=334 visualViewportH=333.81817626953125"})
+09-18 14:34:15.045 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=334 visualViewportH=333.81817626953125
+09-18 14:34:15.046 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=334 visualViewportH=333.81817626953125"})
+09-18 14:34:15.046 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=334 visualViewportH=333.81817626953125
+09-18 14:34:15.046 10290 10290 D BlockNoteEditor: diag | ime bottom=831px (302.18182.dp)
+09-18 14:34:15.057 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x917px = 333.45456dp
+09-18 14:34:15.062 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=333 visualViewportH=333.4545593261719"})
+09-18 14:34:15.062 10290 10290 D BlockNoteEditor: diag | ime bottom=832px (302.54544.dp)
+09-18 14:34:15.062 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=333 visualViewportH=333.4545593261719
+09-18 14:34:15.062 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=333 visualViewportH=333.4545593261719"})
+09-18 14:34:15.062 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=333 visualViewportH=333.4545593261719
+09-18 14:34:15.065 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x916px = 333.0909dp
+09-18 14:34:15.075 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=333 visualViewportH=333.0909118652344"})
+09-18 14:34:15.075 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=333 visualViewportH=333.0909118652344
+09-18 14:34:15.075 10290 10290 D BlockNoteEditor: diag | ime bottom=833px (302.9091.dp)
+09-18 14:34:15.075 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=333 visualViewportH=333.0909118652344"})
+09-18 14:34:15.076 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=333 visualViewportH=333.0909118652344
+09-18 14:34:15.103 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x915px = 332.72726dp
+09-18 14:34:15.109 10290 10290 D BlockNoteEditor: diag | ime bottom=834px (303.27274.dp)
+09-18 14:34:15.116 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=332 visualViewportH=332.7272644042969"})
+09-18 14:34:15.116 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=332 visualViewportH=332.7272644042969
+09-18 14:34:15.117 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=332 visualViewportH=332.7272644042969"})
+09-18 14:34:15.117 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=332 visualViewportH=332.7272644042969
+09-18 14:34:15.171 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x914px = 332.36365dp
+09-18 14:34:15.176 10290 10290 D BlockNoteEditor: diag | ime bottom=835px (303.63635.dp)
+09-18 14:34:15.178 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=332 visualViewportH=332.3636474609375"})
+09-18 14:34:15.178 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=332 visualViewportH=332.3636474609375
+09-18 14:34:15.179 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=332 visualViewportH=332.3636474609375"})
+09-18 14:34:15.179 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=332 visualViewportH=332.3636474609375
+09-18 14:34:15.182 10290 10290 D BlockNoteEditor: diag | webview onSizeChanged: 1036x913px = 332.0dp
+09-18 14:34:15.189 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=332 visualViewportH=332"})
+09-18 14:34:15.189 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=332 visualViewportH=332
+09-18 14:34:15.189 10290 10290 D BlockNoteEditor: diag | ime bottom=836px (304.0.dp)
+09-18 14:34:15.189 10290 22278 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=332 visualViewportH=332"})
+09-18 14:34:15.189 10290 22278 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=332 visualViewportH=332
+
+
