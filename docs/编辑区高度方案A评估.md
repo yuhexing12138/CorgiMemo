@@ -19,6 +19,14 @@
 
 方案 A 的真实改动很小（内容区只有 4 个子元素），主要成本转为**真机验证**。
 
+### 实施状态：✅ 已落地（2026-09-18）
+
+- `d070cad6` 死代码清理：`editorViewportBounds` + 3 个孤立 import
+- `4f320648` 方案 A：去掉 `verticalScroll`，WebView 改 `weight(1f)` +
+  `onSizeChanged` 下发实测高度；移除 `contentScrollState`、`editorMinHeight`
+
+待真机验证项见 §5，其中**"标题/日期行固定不滚"**是需要用户最终确认的 UX 变化。
+
 ---
 
 ## 二、现状（改动前）
