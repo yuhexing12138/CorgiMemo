@@ -137,10 +137,20 @@
   （它算 `data-block-type`/`data-level` 供样式表对齐块高，自绘会让手柄在标题/图片上**垂直错位**）；
   ③禁用点击菜单须传 `dragHandleMenu={() => null}`（内部是 `|| DragHandleMenu`，不传会回落官方菜单）。
   另：`setBlockColor` 写**块 props**，与 `format` 的 `textColor`（行内 span）是**不同维度**。
-- `.bn-editor { background-color: var(--bn-colors-editor-background) }`（`@blocknote/react`），默认亮 `#ffffff` /
-  暗 `#1f1f1f` → 与宿主暖米色不一致时形成"白底圆角卡片"画中画。修复：JS 侧
-  `documentElement.style.setProperty('--bn-colors-editor-background', bg)` + `html/body` 底色 +
-  `.bn-editor { border-radius: 0 !important }`（圆角是"居中卡片"语义，全宽下不需要）。
+- ⚠️⚠️ **CSS 变量「就近取值」——设在 `<html>` 上会被库的同名定义盖掉（2026-09-18 实测）**：
+  BlockNote 官方在 **`.bn-root`** 上定义了一整套变量（`--bn-colors-editor-background: #fff`，
+  暗色分支 `#1f1f1f` 单独声明）。v1.9 却把同名变量设在 `documentElement`（`<html>`）上 →
+  `.bn-root` 离 `.bn-editor` **更近**，其值直接胜出，**编辑器背景始终纯白**。
+  更坑的是外层 CSS 写了 `var(--bn-colors-editor-background, var(--editor-bg))`，
+  那个 fallback **永远不执行**（前一变量总有值）→ 看不出异常。
+  修法（v1.11.4）：CSS 在 `.bn-root, .bn-root[data-color-scheme="dark"]` 上**带 `!important` 重新声明**
+  （必须含暗色分支，官方对暗色单独定义过）；JS 侧同时用
+  `document.querySelectorAll('.bn-root').forEach(el => el.style.setProperty(k, v, 'important'))`
+  写到真值位置。**通用规则：覆盖库的 CSS 变量前，先在产物里搜 `.bn-xxx{--var` 找到它到底定义在哪个选择器上。**
+
+- `.bn-editor { border-radius: 0 !important }`（圆角是"居中卡片"语义，全宽下不需要）；
+  另需把 `html` / `body` 的 `background-color` 也设为宿主背景色（WebView 自身底色，
+  未铺到的地方不留白）——上述几处合起来才彻底消除"画中画"。
 - `.editor-page` 原有 `max-width: 780px; margin: 0 auto` 属桌面窄栏写法，移动端全宽须去掉。
 - 探针页 `src/probe.css` 的 `body { background: #f5f5f7 }` **会被 EditorApp 一并 import** → 必须改 `transparent`。
 - **首帧防闪白**：`editor.html` 的 `<head>` 内联 `html,body { background-color: #fffbf5 }`，React 挂载后 JS 接管。
@@ -154,6 +164,16 @@
 - 连续 2 次「猜测→改码→失败」后，停止猜测、加埋点取真实数据。
 - **同一文件多次 Edit 必须串行**（并行写竞态）。
 - 提交：中文提交信息，Write 写临时文件后提交再删除。
+
+### ⚠️ 验证方式的边界（2026-09-18 教训）
+- **「产物关键字计数」只证明"字符串在文件里"，不证明"浏览器用得上"**。
+  本次 `.bn-editor` 背景色 bug 用计数查过两次都显示正常（`#FFFBF5` 计数 = 1），
+  但运行时根本没生效（CSS 变量被 `.bn-root` 的官方定义盖掉）。
+  **凡涉及「变量 / 样式 / 覆盖是否真的生效」的修复，必须在真机或浏览器读 computed style 才算验过。**
+- **逐像素分析截图**是定位渲染类问题的可靠手段（本次"白条"与"边距不对称"的真因都这么查出来的）：
+  `pillow` 解析图片 → 逐行/逐列扫描「非背景色 / 深色」像素 → 得到元素边界与颜色；
+  再用「实测像素 ÷ 已知 dp 值」反推 density 做**交叉验证**（本次由正文左距 77px/32dp 反推出
+  屏幕 ≈ 360dp、密度 2.4，与整屏宽 864px 自洽）。**目测与纯推算只能给方向、不能给结论。**
 
 ### ⚠️ 删文件/裁 import 的隐身依赖（2026-09-17 实测，一次翻车 20+ 错误）
 **靠「符号名 grep/词频」判断 import 是否可删，方法论上必然出错**——Kotlin 存在**无名字依赖**：

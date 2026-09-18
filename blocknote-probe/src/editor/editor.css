@@ -68,9 +68,31 @@
 /**
  * 编辑器本体背景跟随主题（v1.9）
  *
- * BlockNote 官方变量 `--bn-colors-editor-background` 由 JS 侧按宿主主题注入
- * （见 EditorApp.tsx 的 useEffect）；此处只做兜底声明，保证变量缺失时
- * 也跟随 `--editor-bg` 而不是回落到纯白。
+ * ⚠️⚠️ 官方在 `.bn-root` 上定义了整套颜色变量，其中就包含：
+ *     `.bn-root { --bn-colors-editor-background: #fff }`        （亮色）
+ *     `.bn-root[data-color-scheme="dark"] { ... : #1f1f1f }`    （暗色）
+ * 而 v1.9 的做法是把同名变量设在 `<html>` 上（`documentElement.style`）。
+ * **CSS 变量就近取值**——`.bn-root` 离 `.bn-editor` 更近，其默认值直接盖过
+ * `<html>` 上的值，于是 `.bn-editor` 始终是纯白（暗色下 #1f1f1f），
+ * 与主题暖米色形成"画中画"白条（真机截图中表现为文字所在处一条白色横带）。
+ *
+ * v1.9 当时没发现的原因：只验证了「产物里含 #FFFBF5 字符串」，
+ * **没验证运行时是否真的生效**——产物里有 ≠ 浏览器用得上。
+ *
+ * 修法（v1.11.4）：在 `.bn-root` 上重新声明该变量，并**显式覆盖暗色分支**
+ * （官方对暗色单独定义过，若只覆盖亮色，暗色主题仍会回落到 #1f1f1f）。
+ * 值取自 `--editor-bg`（宿主注入的编辑区实际背景色，定义在 `.editor-page` 上）。
+ */
+.bn-root,
+.bn-root[data-color-scheme="dark"] {
+  --bn-colors-editor-background: var(--editor-bg, #ffffff) !important;
+}
+
+/**
+ * `.bn-editor` 背景兜底
+ *
+ * 正常情况下 `--bn-colors-editor-background` 已由上方规则（或 JS 侧）写成主题背景色；
+ * 此处保证该变量**整个缺失**时也跟随 `--editor-bg`，而不是回落到纯白。
  */
 .bn-editor {
   background-color: var(--bn-colors-editor-background, var(--editor-bg, #ffffff));

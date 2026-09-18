@@ -793,23 +793,39 @@ function EditorCore(props: {
     props.theme.background ?? (props.theme.dark ? "#1f1f1f" : "#ffffff");
 
   /**
-   * 应用编辑区背景色（v1.9）
+   * 应用编辑区背景色（v1.9 引入 → v1.11.4 修复）
    *
-   * BlockNote 的 `.bn-editor` 默认铺 `--bn-colors-editor-background`（亮色 #fff、
-   * 暗色 #1f1f1f），而 WebView 的 `body` 默认也是白色——与宿主主题背景（暖米色）不一致时
-   * 会形成"白底圆角卡片"的画中画观感。这里把同一背景色写入三处消除色差：
+   * 目标是让 `.bn-editor` 的背景与宿主主题背景一致（暖米色），消除"白底画中画"。
+   * 同一背景色写入三处：
    * ① `--bn-colors-editor-background`：BlockNote 官方变量，`.bn-editor` 直接消费
    * ② `html` / `body` 的 `background-color`：WebView 自身底色，未铺到的地方不留白
-   * ③ 外层 `.editor-page` 容器：由下方内联 style 的 `--editor-bg` 驱动（见 editor.css）
+   * ③ 外层 `.editor-page` 容器：由内联 style 的 `--editor-bg` 驱动（见 editor.css）
+   *
+   * ⚠️⚠️ v1.9 的 bug：① 被写到了 `<html>` 上，但官方在 `.bn-root` 里定义过同名变量
+   *（亮色 `#fff` / 暗色 `#1f1f1f`）。**CSS 变量就近取值**——`.bn-root` 离 `.bn-editor`
+   * 更近，其默认值直接盖过 `<html>` 上的值，于是 `.bn-editor` 始终是纯白。
+   * 现改为写到**所有 `.bn-root` 元素**上，并用 `"important"` 优先级
+   *（editor.css 里也有同值声明作兜底；两者同值时以 inline 的 important 为准）。
+   *
+   * ⚠️ 验证方式提醒：此问题**用「产物关键字计数」查不出来**（产物里一直含 #FFFBF5），
+   * 必须在真机/浏览器里读 `.bn-editor` 的 computed background-color 才算验过。
    *
    * 依赖 [editorBackground]，主题（含背景色）变化时重新应用。
    */
   useEffect(() => {
-    const root = document.documentElement;
-    root.style.setProperty("--bn-colors-editor-background", editorBackground);
-    root.style.backgroundColor = editorBackground;
+    document.documentElement.style.backgroundColor = editorBackground;
     document.body.style.backgroundColor = editorBackground;
     document.body.style.margin = "0";
+
+    /**
+     * 官方变量的**真值位置**是 `.bn-root`（BlockNoteView 渲染的容器，可能有多个：
+     * 外层 `.bn-container.bn-root` 与 portalElement 都带这个类）。
+     * 逐个写入而不是只写 `<html>`，正是 v1.11.4 修复的核心。
+     * BlockNoteView 是子组件，其 DOM 在本 effect 执行前已提交，故此处能查到。
+     */
+    document.querySelectorAll<HTMLElement>(".bn-root").forEach((el) => {
+      el.style.setProperty("--bn-colors-editor-background", editorBackground, "important");
+    });
   }, [editorBackground]);
 
   const editor = useCreateBlockNote({

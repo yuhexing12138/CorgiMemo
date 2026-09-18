@@ -315,6 +315,67 @@ val contentBackgroundPaint = userPickedBackgroundColor  // 绘制层真值："�
 `deleteBlock` / `setBlockColor` / `setTableHeader`；可用态与回显由上行 `blockState` 驱动，
 判定口径**照抄官方** `BlockColorsItem` / `TableHeadersItem`，避免"官方能点、桥过来却置灰"。
 
+### 3.9 ⚠️ 背景色修复其实**未生效**（v1.11.4 修复，2026-09-18）
+
+**发现经过**：用户上传真机截图问「为什么右边边距看着大」。用程序逐像素分析截图时，
+意外发现在正文位置有一块 **830×128 的纯白 `(255,255,255)`** 矩形，
+而主题背景是暖米色 `(255,251,245)`——**§3.6 那次背景色收敛并没有真正生效**。
+
+**它是什么**：该矩形无圆角（我们的 `border-radius: 0 !important` 生效了）、
+宽度正好等于 WebView 宽、高度等于内容高 → 即 **`.bn-editor` 自身**。
+因为 `.bn-editor` 高度只由内容决定（约 2 行 = 128px），
+所以它表现为文字处的一条白色横带，其余区域被 `html/body` / `.editor-page` 的米色盖住，
+**很容易被误认为是"输入区域的强调色"**——这也是它长期没被发现的原因。
+
+**根因**（读官方 CSS 确证）：
+
+```css
+/* @blocknote/react 对 .bn-root 的默认定义 */
+.bn-root { --bn-colors-editor-background: #fff }          /* 亮色 */
+.bn-root[data-color-scheme="dark"] { ...: #1f1f1f }       /* 暗色 */
+```
+
+而 §3.6 把同名变量设在了 `<html>` 上（`documentElement.style`）。
+**CSS 变量就近取值**——`.bn-root` 是 `.bn-editor` 更近的祖先，
+它的默认值直接盖过了 `<html>` 上的值。
+而我们的 `.bn-editor { background-color: var(--bn-colors-editor-background, var(--editor-bg)) }`
+里那个 fallback `var(--editor-bg)` **永远不会被执行**（前一个变量总有值）。
+
+**修法（双保险）**：
+
+```css
+/* editor.css：在真值位置重新声明，并显式覆盖暗色分支
+   （官方对暗色单独定义过，只覆盖亮色则暗色主题仍会回落 #1f1f1f） */
+.bn-root,
+.bn-root[data-color-scheme="dark"] {
+  --bn-colors-editor-background: var(--editor-bg, #ffffff) !important;
+}
+```
+
+```ts
+// EditorApp.tsx：写到所有 .bn-root 元素（而不是无效的 <html>），用 "important" 优先级
+document.querySelectorAll<HTMLElement>(".bn-root").forEach((el) => {
+  el.style.setProperty("--bn-colors-editor-background", editorBackground, "important");
+});
+```
+
+> ⚠️⚠️ **验证方式的教训（重要）**：本次问题**用「产物关键字计数」完全查不出来**
+> ——产物里一直含 `#FFFBF5`，计数始终是 1，看着"没问题"。
+> **凡涉及「变量 / 样式是否真的生效」的修复，必须在真机或浏览器读 computed style 才算验过。**
+> 「产物里有这个字符串」与「浏览器用得上它」是两件不同的事。
+> （同理，本次"边距不对称"的排查也是靠**逐像素分析截图**才定位到真因的，
+> 目测与推算都只能给方向、不能给结论。）
+
+**排查副产品**：顺带量化了内容区各元素的左边距（由截图实测反推，屏幕 ≈ 360dp / 密度 2.4）：
+
+| 元素 | 左边距 | 构成 |
+| --- | --- | --- |
+| 标题行 | 8.7dp | 仅 Column 的 `padding(horizontal = 8.dp)` |
+| 日期行 | 8.3dp | 同上 |
+| 正文行 | 30.3dp | 8dp + `.bn-editor` 的 24px |
+
+→ 即**标题与正文左边缘本就相差约 24dp**（既有不一致，本轮未改，用户选择维持现状）。
+
 ## 四、改动文件清单
 
 | 文件 | 改动 |

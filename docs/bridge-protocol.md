@@ -146,3 +146,15 @@ adb logcat -s BlockNoteEditor:V | grep "ready received"
   故工具栏另加 `enabled = !isLocked`（整条 38% 不透明度 + `PointerEventPass.Initial`
   阶段的指针拦截）——用 `Initial` 而非 `Main` 是因为 `Initial` 阶段事件**由父流向子**，
   父级先 consume 才能拦住子按钮；`Main` 阶段子按钮早已处理完。
+- v1.11.4（2026-09-18，**修复实现，协议无变化**）：修正 `setTheme.background` **运行时未生效**。
+  `setTheme` 下发的 `background` 本意是让 `.bn-editor` 与宿主主题同色（v1.9），
+  但 JS 侧把 `--bn-colors-editor-background` 设在了 `<html>` 上，
+  而 **BlockNote 官方在 `.bn-root` 里定义过同名变量**（亮 `#fff` / 暗 `#1f1f1f`）——
+  **CSS 变量就近取值**，`.bn-root` 离 `.bn-editor` 更近，其默认值直接盖过 `<html>` 的值，
+  于是编辑器背景始终是纯白（真机截图中表现为文字处一条白色横带）。
+  修法：CSS 在 `.bn-root`（含暗色分支）重新声明该变量为 `var(--editor-bg)`，
+  JS 侧同时写到所有 `.bn-root` 元素（`"important"` 优先级）。**协议字段与形状无变化**。
+
+  > ⚠️ **验证方式教训**：此问题**用「产物关键字计数」查不出来**（产物里一直含 `#FFFBF5`）。
+  > 凡涉及「变量/样式是否真的生效」的修复，必须在真机或浏览器里读 **computed style** 才算验过
+  > ——「产物里有这个字符串」与「浏览器用得上它」是两件事。
