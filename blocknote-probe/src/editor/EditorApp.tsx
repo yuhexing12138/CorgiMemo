@@ -337,6 +337,11 @@ export default function EditorApp() {
          */
         case "setEditorMinHeight":
           setEditorMinHeight(msg.height);
+          // v1.11.7 诊断：命令是否抵达 JS（与宿主 logcat 的 down(setEditorMinHeight) 配对排查）
+          sendUp({
+            type: "diagnostic",
+            message: `setEditorMinHeight received: ${msg.height}`,
+          });
           break;
         case "requestSave":
           pushChanged();
@@ -831,10 +836,29 @@ function EditorCore(props: {
     editable: !props.readOnly,
   });
 
-  useEffect(() => {
-    props.onReady(editor);
-    // 初次挂载后上报一次可用态（初始内容装载本身不产生可撤销历史，通常为 false/false）
-    props.onUndoStateChange();
+    /**
+     * v1.11.7 诊断：回传编辑区的真实几何，用于排查"点击正文下方空白不聚焦"。
+     *
+     * 同时上报三个值，任一环出问题都能一眼定位：
+     * - `prop`：宿主下发、经 React 传到 CSS 变量的值
+     * - `computed`：浏览器实际解析出的 `min-height`（CSS 变量没注入时这里会是 0px）
+     * - `offsetH`：元素实际渲染高度（min-height 没生效时这里仍是内容高 ≈ 30）
+     */
+    useEffect(() => {
+      const el = document.querySelector(".bn-editor") as HTMLElement | null;
+      sendUp({
+        type: "diagnostic",
+        message:
+          `editor geom | prop=${props.minHeight}px` +
+          ` computedMinHeight=${el ? getComputedStyle(el).minHeight : "n/a"}` +
+          ` offsetH=${el?.offsetHeight ?? -1}`,
+      });
+    }, [props.minHeight]);
+
+    useEffect(() => {
+      props.onReady(editor);
+      // 初次挂载后上报一次可用态（初始内容装载本身不产生可撤销历史，通常为 false/false）
+      props.onUndoStateChange();
     // v1.11：同时上报一次当前块状态，避免宿主工具栏的按钮在首次点击前处于无状态
     props.onBlockStateChange();
     // eslint-disable-next-line react-hooks/exhaustive-deps

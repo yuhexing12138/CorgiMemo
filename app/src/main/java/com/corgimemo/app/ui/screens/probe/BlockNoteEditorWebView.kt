@@ -358,6 +358,14 @@ class BlockNoteBridgeController {
                     )
                     mainHandler.post { blockState = st }
                 }
+                "diagnostic" ->
+                    /**
+                     * v1.11.7：JS 主动回传的运行时观测值（CSS 变量、computed style、
+                     * 元素实际高度等）。**只打 log，不做任何 UI 反应**——
+                     * WebView 内部的这些真值在 Kotlin 侧无法直接观测，以往只能靠猜。
+                     * 排查命令用：`adb logcat -s BlockNoteEditor:V | grep -E "diag|down\("`
+                     */
+                    Log.d(TAG, "diag | ${msg.optString("message")}")
                 "error" -> Log.e(TAG, "js error: ${msg.optString("message")}")
             }
         } catch (e: Exception) {

@@ -176,7 +176,18 @@ export type UpMessage =
       /** 表格当前是否有标题列（非表格恒 false） */
       isHeaderCol: boolean;
     }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  /**
+   * 诊断信息上行（v1.11.7）：仅用于 logcat 排错，**不参与业务逻辑**。
+   *
+   * 存在的理由：WebView 侧的很多运行时真值（CSS 变量是否注入、min-height 是否生效、
+   * 元素实际高度）在 Kotlin 侧完全看不到，只能靠猜。有了这条通道，JS 可主动回传，
+   * 宿主以 `BlockNoteEditor` tag 打进 logcat。
+   *
+   * ⚠️ 与 `error` 的区别：`error` 表示**异常**（宿主可能据此提示用户）；
+   * `diagnostic` 只是**观测值**，宿主只打 log，不做任何 UI 反应。
+   */
+  | { type: "diagnostic"; message: string };
 
 declare global {
   interface Window {

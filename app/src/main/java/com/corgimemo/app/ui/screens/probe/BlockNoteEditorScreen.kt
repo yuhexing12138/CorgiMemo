@@ -285,6 +285,10 @@ private fun createEditorWebView(
                                         "canToggleHeader=${msg.optBoolean("canToggleHeader")}"
                                 )
                             }
+                            "diagnostic" -> {
+                                // v1.11.7：JS 回传的运行时观测值，仅供 logcat 排错
+                                Log.d(TAG, "diag | ${msg.optString("message")}")
+                            }
                             "error" -> Log.e(
                                 "BlockNoteEditor",
                                 "js error: ${msg.optString("message")}"
