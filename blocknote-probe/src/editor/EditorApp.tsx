@@ -918,6 +918,7 @@ function EditorCore(props: {
        */
       let raf = 0;
       let running = false;
+      let prevDiff = 0;
       const step = () => {
         const view = editor.prosemirrorView;
         const doc = document.documentElement;
@@ -945,6 +946,18 @@ function EditorCore(props: {
             target = Math.round(caretTop + doc.scrollTop);
           }
           const diff = target - doc.scrollTop;
+          /**
+           * 诊断（临时）：滚动方向翻转 = rAF 自身振荡的直接证据。
+           * 门限 |diff|>8 过滤收敛末尾 ±1 的数值抖动。
+           */
+          if (
+            prevDiff !== 0 &&
+            Math.sign(diff) !== Math.sign(prevDiff) &&
+            Math.abs(diff) > 8
+          ) {
+            report("flip");
+          }
+          prevDiff = diff;
           if (Math.abs(diff) <= 1) {
             doc.scrollTop = target;
             running = false;
@@ -970,10 +983,47 @@ function EditorCore(props: {
       window.addEventListener("resize", onResize);
       /** 键盘动画稳定后补一条终态 */
       const settleTimer = window.setTimeout(() => report("settled"), 1500);
+      /**
+       * 诊断（临时）：区分滚动来源，定位「滑动时页面上下反复跳跃」。
+       * - touching=true 时段内的 scroll = 用户手势
+       * - touching=false 且 rafRunning=false 的 scroll = **WebView 自动滚回
+       *   聚焦光标**的实锤（既非用户、也非我们的 rAF）
+       * - rafRunning=true 的 scroll = 我们 rAF 写入（正常跟随）
+       */
+      let touching = false;
+      let lastTouchEnd = 0;
+      let lastScrollLog = 0;
+      const onTouchStart = () => {
+        touching = true;
+      };
+      const onTouchEnd = () => {
+        touching = false;
+        lastTouchEnd = performance.now();
+      };
+      const onDocScroll = () => {
+        const now = performance.now();
+        if (now - lastScrollLog < 40) return; // 节流 40ms
+        lastScrollLog = now;
+        sendUp({
+          type: "diagnostic",
+          message:
+            `scrollObserved[top=${Math.round(document.documentElement.scrollTop)}` +
+            ` rafRunning=${running} touching=${touching}` +
+            ` sinceTouchEnd=${Math.round(now - lastTouchEnd)}]`,
+        });
+      };
+      document.addEventListener("touchstart", onTouchStart, { passive: true });
+      document.addEventListener("touchend", onTouchEnd, { passive: true });
+      document.documentElement.addEventListener("scroll", onDocScroll, {
+        passive: true,
+      });
       return () => {
+        window.clearTimeout(settleTimer);
+        document.removeEventListener("touchstart", onTouchStart);
+        document.removeEventListener("touchend", onTouchEnd);
+        document.documentElement.removeEventListener("scroll", onDocScroll);
         cancelAnimationFrame(raf);
         running = false;
-        window.clearTimeout(settleTimer);
         vv?.removeEventListener("resize", onResize);
         window.removeEventListener("resize", onResize);
       };
