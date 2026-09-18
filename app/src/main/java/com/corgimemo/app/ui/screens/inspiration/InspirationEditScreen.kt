@@ -31,9 +31,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Mic
@@ -94,7 +92,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -1509,25 +1507,17 @@ fun InspirationEditScreen(
             )
         }
     ) { innerPadding ->
-        /** 内容区滚动状态（v2026-09-09 提出：滚动开始即退出图片/分割线选中态） */
-        val contentScrollState = rememberScrollState()
-
-        /**
-         * 滚动开始 → 清除块选中态（v2026-09-09）：图片/分割线高亮与悬浮工具栏
-         * 随滚动立即消失——滚动时图片位置在变，工具栏会遮挡内容或悬在空中。
-         * isScrollInProgress 覆盖手指拖动与惯性滑动全程，滚动停止自动复位。
-         */
-        LaunchedEffect(contentScrollState.isScrollInProgress) {
-            if (contentScrollState.isScrollInProgress) {
-                bodyBlocks.clearBlockSelection()
-            }
-        }
-
         /**
          * 内容区布局：单层Column，Modifier顺序决定背景范围。
          * - background 在 horizontal padding 之前 → 用户自选背景色铺满全宽无空隙
          * - 默认不绘制（[contentBackgroundPaint] = Transparent），让页面主题背景透出
          * - 不使用 Box 包裹 → 避免触摸事件被外层拦截导致编辑器无法输入
+         *
+         * **v1.11.8（方案 A）**：本 Column **不再使用 `verticalScroll`** ——
+         * 改为"标题/日期行固定 + 正文 WebView 用 `weight(1f)` 占满剩余空间、滚动由
+         * WebView 内部承担"。这样编辑区高度 = **视口真实剩余高度**，
+         * 取代原先 `屏高 × 62%` 的经验值，且软键盘弹出时随 `innerPadding` 自动收缩。
+         * 详见 `docs/编辑区高度方案A评估.md`。
          *
          * ⚠️ 此处铺的是 [contentBackgroundPaint]（"要不要真铺"），**不是**
          * [contentBackgroundColor]（"实际生效色"）——后者已把 Transparent 回落成主题
@@ -1541,8 +1531,7 @@ fun InspirationEditScreen(
                 /** 背景色铺满全宽（在内容padding之前设置） */
                 .background(contentBackgroundPaint)
                 /** 内容区内边距在背景之后，不影响背景范围 */
-                .padding(horizontal = 8.dp)
-                .verticalScroll(contentScrollState),
+                .padding(horizontal = 8.dp),
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             /**
@@ -1822,37 +1811,20 @@ fun InspirationEditScreen(
              *    `background`，暖米色 #FFFBF5 / 暗色 #1A0F08），此处不再重复求值。
              *    这样 WebView 内部 `.bn-editor` 与 body 与页面必然同色，消除"画中画"
              *    白底圆角框；也杜绝了"两处独立回落"日后漂移的可能。
-             * 2. **高度**：外层 Column 是 `verticalScroll`，其子项高度约束被改成 Infinity，
-             *    导致 WebView 只能按内容高撑开（内容少时塌成几行，下方大片空白其实不属于
-             *    编辑器）。此处加 `heightIn(min = ...)` 保底：取屏高的 62%，与旧 Compose
-             *    版 `BodyBlocksEditor` 的可用书写区高度量级一致，避免塌陷。
-             *    高度仍随内容增长（min 不封顶），滚动仍由外层 Column 承担。
+             * 2. **高度（v2026-09-17 用 `heightIn(min = 屏高 × 62%)` 保底，v1.11.8 已改为方案 A）**：
+             *    原先外层 Column 带 `verticalScroll`，子项高度约束变成 Infinity，
+             *    WebView 只能按内容高撑开（内容少时塌成几行），故用 62% 屏高保底。
+             *    但那是**经验值**，与真实可用空间脱钩，且键盘弹出时不会收缩。
              *
-             * ⚠️ 已知取舍（方案 B）：`heightIn(min = 屏高 × 0.62f)` 是经验值，不同机型/
-             *    字号会有偏差。更严谨的做法是让编辑区高度 = `Constraints.maxHeight`
-             *    （即视口真实剩余高度），但那要求去掉外层 `verticalScroll`（方案 A），
-             *    会波及上方"滚动清除块选中态"的 LaunchedEffect 与图片画廊的 inset 链路，
-             *    故单独立项处理，此处先保底。
+             *    **v1.11.8 改为方案 A**：去掉外层 `verticalScroll`，WebView 用
+             *    `weight(1f)` 占满剩余空间 → 编辑区高度 = **视口真实剩余高度**
+             *    （视口 − 状态栏 − 顶栏 − 底栏 − 标题 − 日期行），并随 `innerPadding`
+             *    （含软键盘）自动收缩。滚动改由 WebView 内部承担。
+             *
+             *    当初搁置方案 A 的理由是"会波及滚动清除选中态与图片画廊 inset"，
+             *    经核查两条链路均已是死代码（详见 `docs/编辑区高度方案A评估.md`），
+             *    故本轮实施。
              */
-            val configuration = LocalConfiguration.current
-            /** 屏高 62% 作为编辑区最小高度（旋转时 screenHeightDp 变化 → remember 自动重算） */
-            val editorMinHeight = remember(configuration.screenHeightDp) {
-                (configuration.screenHeightDp * 0.62f).dp
-            }
-
-            /**
-             * 把同一个最小高度下发给 JS（v1.11.6）
-             *
-             * 仅设 `heightIn(min)` 只保证 **WebView** 不塌陷；`.bn-editor` 自身没有
-             * min-height，高度仍由内容决定——于是 WebView 内、编辑器盒子之外的那片区域
-             * 点击不会聚焦光标（"死区"）。下发同一数值让 JS 给 `.bn-editor` 设 min-height，
-             * 编辑区即铺满 WebView，点击任意空白都能聚焦并把光标落到最后一行。
-             *
-             * 依赖 [editorMinHeight]，旋转屏时 screenHeightDp 变化 → 自动重算并重发。
-             */
-            LaunchedEffect(editorMinHeight) {
-                blockNoteController.setEditorMinHeight(editorMinHeight.value)
-            }
 
             BlockNoteEditorWebView(
                 controller = blockNoteController,
@@ -1861,7 +1833,27 @@ fun InspirationEditScreen(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = editorMinHeight),
+                    /**
+                     * 方案 A（v1.11.8）：占满 Column 剩余空间 → 编辑区高度 = **视口真实剩余高度**。
+                     * 取代原先 `heightIn(min = 屏高 × 62%)` 的经验值，并随 `innerPadding`
+                     * （含软键盘弹出）自动收缩。滚动改由 WebView 内部承担。
+                     */
+                    .weight(1f)
+                    /**
+                     * 实测高度 → 下发给 JS 作为 `.bn-editor` 的 min-height（复用 v1.11.6 通道）。
+                     *
+                     * 为什么用 [onSizeChanged] 而不是再算一次屏幕比例：`weight(1f)` 之后 WebView
+                     * 的高度是**系统布局出来的真实值**，比任何估算都准；且键盘弹出/收起、旋转屏
+                     * 都会重新回调，不需要手动维护依赖列表。
+                     *
+                     * ⚠️ 该回调发生在布局之后、**远早于 JS ready**，所以命令会先进入
+                     * `BlockNoteBridgeController` 的 pendingCommands，待 init 后按序发出
+                     * ——因此不存在"首帧编辑区矮一下再变高"的闪烁。
+                     */
+                    .onSizeChanged { size ->
+                        val heightDp = with(density) { size.height.toDp() }
+                        blockNoteController.setEditorMinHeight(heightDp.value)
+                    },
                 /** 唯一真值：内容区实际生效背景色（Transparent 已在源头回落为主题 background） */
                 backgroundColor = contentBackgroundColor
             )
