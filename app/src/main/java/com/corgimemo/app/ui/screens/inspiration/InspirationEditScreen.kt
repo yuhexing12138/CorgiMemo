@@ -1780,7 +1780,16 @@ fun InspirationEditScreen(
                     bottom = 0.dp,
                     start = 0.dp,
                     end = 0.dp
-                )
+                ),
+                /**
+                 * v2026-09-18 二次修订（真机截图逐像素实测「标题↔时间行」可见间距 ≈30dp，
+                 * 远大于设计的 6dp）：根因是 RichTextEditor 的 minHeight 默认
+                 * Material3 TextField 标准 56dp —— 标题框被强撑到 56dp，而文字行盒只有
+                 * 36dp（contentPadding top8 + 36 + 剩余 12dp），多出的 12dp 幽灵空隙
+                 * 全部堆在标题文字下方。传 0.dp 关闭强制撑高，标题框高度回归
+                 * contentPadding(8+0) + 行盒 36 = 44dp。
+                 */
+                minHeight = 0.dp
             )
 
             /**
@@ -1797,7 +1806,14 @@ fun InspirationEditScreen(
              *   → 标题文本下沿到日期行上沿 = 0 + 6 = 6.dp。
              * - 日期行之后新增 `Spacer(6.dp)`，WebView 编辑器首部留白（editor.css 已压到 0）不再额外撑高
              *   → 日期行文本下沿到 WebView 首块文本上沿 = 6.dp。
-             * - 两段均严格 = 6.dp，视觉等距。
+             *
+             * v2026-09-18 二次修订（真机截图逐像素复测推翻「视觉等距」结论）：
+             * 6.dp 等距只是**布局盒间距**；肉眼看到的是**文字墨迹间距**，二者之间还隔着
+             * 各级行盒的死空间。实测墨迹间距 ≈30dp / ≈17dp，根因三个：
+             * ① 标题框被 RichTextEditor 默认 minHeight=56dp 撑高（+12dp，见上方 minHeight 注释）；
+             * ② 时间行 Text 未显式 lineHeight，merge 了 bodyLarge 的 24.sp 行盒（上下各 ~5dp）；
+             * ③ 标题 36.sp 行盒的字形下沉空间 ~7dp（字体固有，只能靠 Spacer 补偿）。
+             * ①② 已修；③ 的补偿留待复测后微调两个 Spacer（第二步，数据驱动）。
              */
             val createdAt by viewModel.createdAt.collectAsState()
             val timestampText = remember(createdAt) {
@@ -1820,6 +1836,13 @@ fun InspirationEditScreen(
                 Text(
                     text = timestampText,
                     fontSize = 12.sp,
+                    /**
+                     * v2026-09-18（真机实测间距修复）：必须显式给 lineHeight=16.sp
+                     * （对齐 bodySmall 12/16 规格）。不显式给会 merge 主题 bodyLarge 的
+                     * 24.sp 行高 → 12sp 文字套 24dp 行盒，墨迹上下各多 ~5dp 行距空间，
+                     * 把「标题↔时间行↔正文」两段可见间距都撑大（实测 30dp/17dp）。
+                     */
+                    lineHeight = 16.sp,
                     color = Color(0xFF999999),
                     letterSpacing = 0.5.sp
                 )
@@ -1835,6 +1858,8 @@ fun InspirationEditScreen(
                 Text(
                     text = "${contentCharCount}字",
                     fontSize = 12.sp,
+                    /** 与左侧时间戳同规格：显式压掉 bodyLarge 继承的 24.sp 行高（见上注释） */
+                    lineHeight = 16.sp,
                     color = Color(0xFF999999),
                     letterSpacing = 0.5.sp
                 )
