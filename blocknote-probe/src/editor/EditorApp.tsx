@@ -856,37 +856,34 @@ function EditorCore(props: {
     }, [props.minHeight]);
 
     /**
-     * 键盘弹出 → WebView 高度收缩后，把光标滚回可见区（v1.11.9）。
+     * WebView 高度变化后，用 ProseMirror 的一等 API 保证选区可见（v1.11.9）。
      *
-     * 背景：键盘弹出时 BottomBar 的面板接管键盘位，WebView（weight）从 620dp
-     * 收缩到 ~332dp。Android WebView 在 resize 时**只保持 scrollY 不变**，
-     * 不会重新定位光标——而系统的"显示光标"请求发生在键盘弹出**前**
-     * （那时 WebView 还是全高、光标可见），于是光标落进被键盘盖住的下沿区，
-     * 视觉上"光标消失了"。
+     * **根因链路**（真机日志 + 源码确证）：
+     * 1. `enableEdgeToEdge` 下 `adjustResize` 不再 resize 窗口——ime 只以 insets
+     *    形式派发给应用，**Chromium 层永远收不到"键盘导致窗口 resize"的信号**；
+     * 2. 键盘弹出时 BottomBar 经 `imePadding()` 抬起并占据键盘位 → content 区域
+     *    收缩 → WebView（weight）高度随之变化（实测 620→332dp）；
+     * 3. Android WebView 对**应用布局驱动**的 View 尺寸变化只做"保持 scrollY"，
+     *    它的「滚动到聚焦输入框」逻辑仅由系统 ime/resize 信号触发（见 1，收不到）
+     *    ——于是光标落进被键盘遮住的下沿区，无人负责把它滚回来。
      *
-     * 修法：`visualViewport` 的 resize（即 WebView 高度变化，含收缩动画的
-     * 每一帧）时，把当前 selection 滚到最近的可视位置（`block: "nearest"`
-     * 只在不可见时滚最小量，可见时不动，动画期间反复调用会自然收敛）。
-     * 用户主动滚动阅读不会触发 resize，不受影响。
+     * **修法**：WebView 高度变化（`visualViewport` resize 与之同源同刻）后，
+     * 由编辑器自己执行 `tr.scrollIntoView()`——这是 ProseMirror 为"保证选区可见"
+     * 提供的一等 API（与打字时的自动滚动同一机制），非 DOM 层面的补丁。
+     * 动画期间连续触发无害：选区已可见时 PM 不产生滚动。
      */
     useEffect(() => {
-      const scrollCaretIntoView = () => {
-        const sel = window.getSelection();
-        if (!sel || sel.rangeCount === 0) return;
-        const node = sel.anchorNode;
-        if (!node) return;
-        const el =
-          node.nodeType === Node.TEXT_NODE
-            ? node.parentElement
-            : (node as HTMLElement | null);
-        el?.scrollIntoView({ block: "nearest" });
+      const scrollSelectionIntoView = () => {
+        const view = editor.prosemirrorView;
+        if (!view) return;
+        view.dispatch(view.state.tr.scrollIntoView());
       };
       const vv = window.visualViewport;
-      vv?.addEventListener("resize", scrollCaretIntoView);
-      window.addEventListener("resize", scrollCaretIntoView);
+      vv?.addEventListener("resize", scrollSelectionIntoView);
+      window.addEventListener("resize", scrollSelectionIntoView);
       return () => {
-        vv?.removeEventListener("resize", scrollCaretIntoView);
-        window.removeEventListener("resize", scrollCaretIntoView);
+        vv?.removeEventListener("resize", scrollSelectionIntoView);
+        window.removeEventListener("resize", scrollSelectionIntoView);
       };
     }, []);
 
