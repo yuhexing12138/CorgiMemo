@@ -196,6 +196,17 @@ fun RichTextFormatToolbar(
      */
     onSetTableHeader: (String, Boolean) -> Unit = { _, _ -> },
     /**
+     * 块上移 / 下移（v1.11.5）：**替代原 ⋮⋮ 手柄的拖拽重排**。
+     *
+     * 该手柄的拖拽纯用 HTML5 原生 Drag & Drop，在 Android WebView 的触摸下不触发
+     * （真机"按住无反应"），故手柄已整体删除，块移动改由这两个按钮承担。
+     *
+     * ⚠️ 不做置灰：BlockNote 的 `moveBlocksUp/Down` 到达首/末块时是安全 no-op，
+     * 但 API 未暴露"能否移动"的判定，故点了没反应即代表已在边界。
+     */
+    onMoveBlockUp: () -> Unit = {},
+    onMoveBlockDown: () -> Unit = {},
+    /**
      * 当前光标块状态（v1.11）：驱动「块操作」菜单的可用态与选中回显
      * （色板高亮当前色、表头项显隐与勾选）。由 JS 侧经 `blockState` 上行。
      */
@@ -514,7 +525,9 @@ fun RichTextFormatToolbar(
                 enabled = onTransformEnabled,
                 onDeleteBlock = onDeleteBlock,
                 onSetBlockColor = onSetBlockColor,
-                onSetTableHeader = onSetTableHeader
+                onSetTableHeader = onSetTableHeader,
+                onMoveBlockUp = onMoveBlockUp,
+                onMoveBlockDown = onMoveBlockDown
             )
         }
     }
@@ -814,22 +827,26 @@ private fun FormatWeightTierButton(
 }
 
 /**
- * 「块操作」菜单按钮（v1.11）
+ * 「块操作」菜单按钮（v1.11 → v1.11.5 增「上移 / 下移」）
  *
- * 收纳原 BlockNote 侧边菜单（⋮⋮ 手柄）**点击菜单**的 4 项，是这 4 项的唯一入口
- * （手柄本身已退化为纯拖拽把手）。菜单顺序刻意与官方 `DragHandleMenu` 对齐
- * （删除块 → 颜色 → 表头），降低从原手柄迁移过来的认知成本。
+ * 收纳原 BlockNote 侧边菜单（⋮⋮ 手柄）**点击菜单**的 4 项，外加 v1.11.5 的
+ * 「上移 / 下移」。菜单顺序刻意与官方 `DragHandleMenu` 对齐（删除块 → 颜色 → 表头），
+ * 降低从原手柄迁移过来的认知成本；「上移 / 下移」紧跟删除块之后，因为二者都与
+ * "块的位置"相关，且它们是**原手柄拖拽重排的替代品**。
  *
  * 可用态与回显全部取自 [blockState]（JS 侧判定后经 `blockState` 上行）：
  * - 块颜色行始终显示——色板点击在 JS 侧对不支持的块类型静默忽略，UI 保持结构稳定；
  * - 表头两项**仅在表格块内出现**，与官方 `TableHeadersItem` 的 `return null` 同语义，
- *   避免在普通块上展示永远点不动的条目。
+ *   避免在普通块上展示永远点不动的条目；
+ * - 上移 / 下移**不置灰**——BlockNote 未暴露"能否移动"的判定，到顶/到底时是安全 no-op。
  *
  * @param blockState 当前光标块状态（可用态与选中回显）
  * @param enabled 整体可用性（BlockNote 模式 true；Compose 模式 false 置灰）
  * @param onDeleteBlock 删除块回调
  * @param onSetBlockColor 设置块级颜色回调（textColor, backgroundColor）；null = 不改动该维度
  * @param onSetTableHeader 切换表头回调（target, enabled）
+ * @param onMoveBlockUp 块上移回调（替代原拖拽重排）
+ * @param onMoveBlockDown 块下移回调（替代原拖拽重排）
  */
 @Composable
 private fun BlockOpsMenuButton(
@@ -837,7 +854,9 @@ private fun BlockOpsMenuButton(
     enabled: Boolean,
     onDeleteBlock: () -> Unit,
     onSetBlockColor: (String?, String?) -> Unit,
-    onSetTableHeader: (String, Boolean) -> Unit
+    onSetTableHeader: (String, Boolean) -> Unit,
+    onMoveBlockUp: () -> Unit,
+    onMoveBlockDown: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
@@ -884,6 +903,27 @@ private fun BlockOpsMenuButton(
                     menuOpen = false
                     onDeleteBlock()
                 }
+            )
+
+            /**
+             * 上移 / 下移（v1.11.5）：**替代原 ⋮⋮ 手柄的拖拽重排**。
+             *
+             * 该手柄的拖拽依赖 HTML5 原生 Drag & Drop，而该 API 在 Android WebView /
+             * iOS Safari 的触摸下不触发（真机表现为"按住没反应"），故手柄已整体删除，
+             * 这两项成为块移动的唯一入口。
+             *
+             * 设计取舍：
+             * - **不置灰**——BlockNote 未暴露"能否移动"的判定（到达首/末块时
+             *   `moveBlocksUp/Down` 是安全 no-op），点了没反应即代表已在边界；
+             * - **不关闭菜单**——便于连续点击把块一路移上去（与色板行的"保持打开"一致）。
+             */
+            DropdownMenuItem(
+                text = { Text("上移", fontSize = 13.sp) },
+                onClick = { onMoveBlockUp() }
+            )
+            DropdownMenuItem(
+                text = { Text("下移", fontSize = 13.sp) },
+                onClick = { onMoveBlockDown() }
             )
 
             HorizontalDivider()

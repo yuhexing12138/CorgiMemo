@@ -239,6 +239,17 @@ val contentBackgroundPaint = userPickedBackgroundColor  // 绘制层真值："�
 
 ### 3.8 侧边菜单留白：从「置 0」到「只留拖拽手柄」（v1.11 定案）
 
+> **🆕 v1.11.5 终局（2026-09-18）：手柄已整体删除，本节 24px 相关结论全部作废。**
+>
+> 真机反馈「按住 ⋮⋮ 无法拖拽」→ 排查确认 **HTML5 原生 Drag & Drop 在 Android
+> WebView 触摸下根本不触发**（BlockNote 纯用该 API、零 touch 处理；W3C 将 drag
+> 事件定义为鼠标驱动。OpenProject 的集成评估文档也记录了 "drag-and-drop 在移动端
+> 必须禁用"）。手柄注定拖不动，遂整体删除（`sideMenu={false}`）。
+> **块移动改由工具栏「上移 / 下移」承担**（`editor.moveBlocksUp/Down()`，见 §3.10）。
+> 于是左侧不再需要容纳手柄的 24px，**留白回落到 20px**（嵌套列表缩进线的下限，
+> 详见本节末尾的"约束只剩一条"），内容可用宽度从 `W − 48` 变为 **`W − 40`**。
+> 下文的历史沿革仍保留——「为什么 padding 不能置 0」的教训依然成立。
+
 **⚠️ 本节曾写入的错误退路（已废弃，勿再采用）**：
 
 ```css
@@ -315,6 +326,28 @@ val contentBackgroundPaint = userPickedBackgroundColor  // 绘制层真值："�
 `deleteBlock` / `setBlockColor` / `setTableHeader`；可用态与回显由上行 `blockState` 驱动，
 判定口径**照抄官方** `BlockColorsItem` / `TableHeadersItem`，避免"官方能点、桥过来却置灰"。
 
+### 3.10 块移动的替代实现：「上移 / 下移」按钮（v1.11.5）
+
+拖拽手柄删除后，"移动块"不能没有替代品。BlockNote 提供程序化 API：
+
+```ts
+editor.moveBlocksUp(blockIdentifier?)     // 不传参 → 取选区首块或光标块
+editor.moveBlocksDown(blockIdentifier?)   // 不传参 → 取选区末块或光标块
+```
+
+由此新增两个下行命令 `moveBlockUp` / `moveBlockDown`，挂在工具栏「块操作」菜单里
+（紧跟"删除块"之后，因为同样与块的位置相关）。设计取舍：
+
+| 决策 | 理由 |
+| --- | --- |
+| **不置灰** | BlockNote 未暴露"能否移动"的判定；到首/末块时 `moveBlocksUp/Down` 内部 `if (!placement) return`，是**安全 no-op**（点了没反应即代表已在边界） |
+| **不关菜单** | 便于连续点击把块一路移上去（与色板行的"保持打开"一致） |
+| **多选天然支持** | 不传 `blockIdentifier` 时取选区首/末块，配合 `moveSelectedBlocksAndSelection` 一起移动 |
+| **嵌套块支持** | 内部用 `getParentBlock` + `getMoveUpPlacement/DownPlacement` 处理层级 |
+
+**注意**：这套按钮是**触屏上移动块的唯一途径**——原生拖拽在移动端拿不到事件流，
+无法桥接（若日后确需触屏拖拽，只能自写 touchstart/move/end + `moveBlocks()` 落位，
+工作量中等偏大，需单独评估）。
 ### 3.9 ⚠️ 背景色修复其实**未生效**（v1.11.4 修复，2026-09-18）
 
 **发现经过**：用户上传真机截图问「为什么右边边距看着大」。用程序逐像素分析截图时，

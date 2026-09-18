@@ -196,6 +196,12 @@ fun InspirationEditBottomBar(
      * @param target "row" = 表头行，"column" = 表头列
      */
     onSetTableHeader: (String, Boolean) -> Unit = { _, _ -> },
+    /**
+     * 块上移 / 下移（v1.11.5）：**替代原 ⋮⋮ 手柄的拖拽重排**。
+     * 该手柄的拖拽在 Android WebView 触摸下不工作（HTML5 原生 DnD 限制），故已删除。
+     */
+    onMoveBlockUp: () -> Unit = {},
+    onMoveBlockDown: () -> Unit = {},
     /** 当前光标块状态（v1.11）：透传给 [RichTextFormatToolbar] 驱动「块操作」菜单 */
     blockState: BlockState = BlockState(),
     /**
@@ -271,6 +277,8 @@ fun InspirationEditBottomBar(
                     onDeleteBlock = onDeleteBlock,
                     onSetBlockColor = onSetBlockColor,
                     onSetTableHeader = onSetTableHeader,
+                    onMoveBlockUp = onMoveBlockUp,
+                    onMoveBlockDown = onMoveBlockDown,
                     blockState = blockState,
                     enabled = toolbarEnabled
                 )

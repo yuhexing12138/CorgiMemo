@@ -96,7 +96,20 @@ export type DownMessage =
    * （与官方 `TableHeadersItem` 的判定一致；条件不满足时 JS 侧静默忽略）。
    * 官方当前只支持 1 行 / 1 列表头，故用布尔开关而非数量。
    */
-  | { type: "setTableHeader"; target: "row" | "column"; enabled: boolean };
+  | { type: "setTableHeader"; target: "row" | "column"; enabled: boolean }
+  /**
+   * 块上移 / 下移（v1.11.5）
+   *
+   * **替代原 ⋮⋮ 手柄的拖拽重排**：该手柄的拖拽纯用 HTML5 原生 Drag & Drop，
+   * 而该 API 在 Android WebView / iOS Safari 的触摸下不触发（W3C 将 drag 事件
+   * 定义为鼠标驱动），因此手柄已整体删除，块移动改走程序化 API
+   * `editor.moveBlocksUp()` / `moveBlocksDown()`。
+   *
+   * 无需传参：JS 侧不传 `blockIdentifier`，BlockNote 会取**选区首/末块**或**光标块**，
+   * 因而天然支持「多选块一起移动」与嵌套块。到达首/末块时内部安全 no-op。
+   */
+  | { type: "moveBlockUp" }
+  | { type: "moveBlockDown" };
 
 /** 上行消息（JS → Kotlin） */
 export type UpMessage =

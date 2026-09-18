@@ -1493,6 +1493,19 @@ fun InspirationEditScreen(
                 onSetTableHeader = { target, enabled ->
                     blockNoteController.setTableHeader(target, enabled)
                 },
+                /**
+                 * 块上移 / 下移（v1.11.5）
+                 *
+                 * 这是原 ⋮⋮ 手柄「拖拽重排」的替代实现：实测该手柄的拖拽纯用
+                 * HTML5 原生 Drag & Drop，在 Android WebView 的触摸下不触发
+                 * （真机"按住无反应"），故手柄已整体删除（`sideMenu={false}`）。
+                 */
+                onMoveBlockUp = {
+                    blockNoteController.moveBlockUp()
+                },
+                onMoveBlockDown = {
+                    blockNoteController.moveBlockDown()
+                },
                 blockState = blockNoteController.blockState,
                 /**
                  * 锁定态整条格式工具栏禁用（v1.11.1）

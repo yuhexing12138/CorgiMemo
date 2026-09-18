@@ -15,44 +15,38 @@
 }
 
 /**
- * 内容区左右留白（v1.11 引入 → v1.11.3 改为**左右对称**）
+ * 内容区左右留白（v1.11 引入 → v1.11.5 定为 **20px 且左右同值**）
  *
  * 官方 `.bn-editor { padding-inline: 54px }`（@blocknote/core）是为块左侧的
  * 「+ / ⋮⋮」两个手柄预留的绘制位，来源可精确拆解：
  *   2 × `MantineActionIcon size={24}`（@blocknote/mantine 的 SideMenuButton）
  *   = 48px，外加 6px 呼吸余量 → 54px。
  *
- * ⚠️⚠️ 为什么左侧不能简单置 0（v1.9 的错法，真机已复现）：
- * 侧边菜单是 Floating UI 浮层，`placement: "left-start"`，portal 到 `.bn-root`
- * （在 `.bn-editor` **之外**）。它的**右边缘紧贴块内容左边缘**，再向左延伸
- * 自身宽度 W。于是：
- *     菜单左边缘 = padding-left − W
- * 可见条件是 `padding-left ≥ W`。padding 置 0 时菜单落在 `[−W, 0]`，
- * 整条跑到 WebView 视口左侧之外 → 表现为"+/⋮⋮ 手柄被裁"。
+ * ⚠️⚠️ **为什么左侧不能简单置 0**（v1.9 的错法，真机已复现，是重要的历史教训）：
+ * 侧边菜单曾是 Floating UI 浮层（`placement: "left-start"`，portal 到 `.bn-root`，
+ * 在 `.bn-editor` **之外**），其**右边缘紧贴块内容左边缘**再向左延伸自身宽度 W，于是：
+ *     菜单左边缘 = padding-left − W        可见条件：padding-left ≥ W
+ * padding 置 0 时菜单整体落在 `[−W, 0]`，跑到视口外 → 表现为"手柄被裁"。
  *
- * 本项目的处理（用户决策）：
- * - **删除 `+` 手柄**——其功能（插入媒体/分割线/emoji/块类型转换）早已桥接
- *   到宿主底部工具栏，手柄上是重复入口；
- * - **保留 `⋮⋮` 手柄**——它承担拖拽重排，是原生手势，无法按钮化；
- *   但其点击菜单（删除块/块颜色/表头行列）已桥接到工具栏，故菜单被禁用。
- * 于是所需宽度 W 从 48px 降为 **24px**（只剩一个按钮），
- * 左侧留白取 `24 + 0 = 24px`（间隙常量已收紧为 0，手柄直接贴左边缘）。
+ * **现状（v1.11.5）**：侧边菜单已**整体删除**（`sideMenu={false}`，不再自渲染任何实例）：
+ * - `+` 手柄的功能（插入媒体/分割线/emoji/块类型转换）早已桥接到宿主工具栏；
+ * - `⋮⋮` 手柄的点击菜单（删除块/块颜色/表头行列）同样已桥接；
+ * - 它唯一的自有功能「**拖拽重排**」实测**在移动端无法工作**——BlockNote 纯用
+ *   HTML5 原生 Drag & Drop（`SideMenu.ts` 只有 dragstart/dragover/drop/dragend，
+ *   零 touch 处理），而该 API 在 Android WebView / iOS Safari 的触摸下不触发
+ *   （W3C 将 drag 事件定义为鼠标驱动行为）。保留它只会得到"按住没反应"的误导。
+ *   块移动改由工具栏「上移 / 下移」承担（走 `editor.moveBlocksUp/Down()`）。
  *
- * **右侧（v1.11.3 改为对称）**：原本归零——官方那 54px 是对称留白、
- * 不承载任何功能，归零能换回内容宽度（这正是当初「没占满」的真正来源）。
- * 但按用户要求改为**与左侧相等**，使文本左右两边缘到屏幕的距离一致
- * （右侧同样 24px + 宿主 8dp = 32dp，与左侧对齐）。
- * ⚠️ 代价：内容可用宽度比"仅左留白"时少 24px。若日后想再"占满"，
- * 把本规则拆回 `padding-inline-start` / `padding-inline-end`（后者归零）即可。
+ * 于是左侧不再需要容纳手柄的 24px，本值的约束**只剩一条**：
+ * 嵌套列表的竖向缩进线位于 `left: -20px`（Block.css），toggle 块的添加按钮另有
+ * `margin-left: 22px`——左侧留白小于 20px 时，嵌套列表左侧那条竖线会被裁掉。
+ * 故取 **20px** 为下限；**左右同值**，保证文本两侧到屏幕的距离一致。
  *
- * 值由 `--bn-editor-gutter` 单点提供（在 EditorApp.tsx 由常量算出后写入，
- * 避免 CSS 与 JS 各写一份魔法数字而漂移）。
- *
- * ⚠️ **24px 是不可再小的下限**：嵌套列表的竖向缩进线位于 `left: -20px`
- * （Block.css）、toggle 添加按钮 `margin-left: 22px`，两者都依赖左侧空间。
+ * 值由 `--bn-editor-gutter` 单点提供（在 EditorApp.tsx 由常量 `EDITOR_CONTENT_GUTTER`
+ * 写入，避免 CSS 与 JS 各写一份魔法数字而漂移）。
  */
 .bn-editor {
-  padding-inline: var(--bn-editor-gutter, 24px) !important;
+  padding-inline: var(--bn-editor-gutter, 20px) !important;
 }
 
 /**

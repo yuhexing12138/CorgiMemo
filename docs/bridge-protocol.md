@@ -158,3 +158,24 @@ adb logcat -s BlockNoteEditor:V | grep "ready received"
   > ⚠️ **验证方式教训**：此问题**用「产物关键字计数」查不出来**（产物里一直含 `#FFFBF5`）。
   > 凡涉及「变量/样式是否真的生效」的修复，必须在真机或浏览器里读 **computed style** 才算验过
   > ——「产物里有这个字符串」与「浏览器用得上它」是两件事。
+- v1.11.5（2026-09-18）：**删除 ⋮⋮ 拖拽手柄；新增下行 `moveBlockUp` / `moveBlockDown`**。
+
+  **起因**：真机反馈「按住 ⋮⋮ 无法拖拽」。排查确认**不是本项目代码的问题，而是平台级限制**：
+  BlockNote 的块拖拽纯用 **HTML5 原生 Drag & Drop**（`SideMenu.ts` 只有
+  `dragstart`/`dragover`/`drop`/`dragend` + `dataTransfer`，**零 touch/pointer 处理**），
+  而 **W3C 把 drag 事件定义为鼠标驱动行为**——Android WebView / Chrome for Android /
+  iOS Safari 在触摸下**根本不派发这些事件**（`draggable="true"` 与否无关，
+  `dataTransfer` 在触摸上下文也是空操作）。
+  旁证：OpenProject 团队评估 BlockNote 时明确记录
+  *"Blocknote has some features that have to be disabled in mobile (drag-and-drop, toolbar)"*。
+
+  **决策**（用户）：既然手柄注定拖不动，留着只剩"按住没反应"的误导，故**整体删除**
+  （`sideMenu={false}`，不再自渲染任何实例）；块移动改由工具栏「上移 / 下移」承担，
+  走程序化 `editor.moveBlocksUp()/moveBlocksDown()`（不传 `blockIdentifier` 时取
+  **选区首/末块**或**光标块**，天然支持多选一起移动与嵌套块；到首/末块时安全 no-op）。
+
+  **连带效果**：左侧留白不再需要容纳手柄的 24px，回落到 **20px**（嵌套列表缩进线
+  在 `left:-20px` 的下限，`--bn-editor-gutter` 值更新，左右同值保持对称）。
+
+  > 注：若日后确需触屏拖拽，只能自写 touchstart/move/end 逻辑并用 `moveBlocks()` 落位，
+  > 原生 DnD 事件流触屏下拿不到，无法桥接。

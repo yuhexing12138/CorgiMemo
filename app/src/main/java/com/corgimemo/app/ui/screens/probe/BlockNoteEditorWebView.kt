@@ -228,6 +228,22 @@ class BlockNoteBridgeController {
                 .put("enabled", enabled)
         )
 
+    /**
+     * 块上移 / 下移（v1.11.5）：**替代原 ⋮⋮ 手柄的拖拽重排**。
+     *
+     * 背景：该手柄的拖拽纯用 HTML5 原生 Drag & Drop，而该 API 在 Android WebView /
+     * iOS Safari 的触摸下**不触发**（W3C 把 drag 事件定义为鼠标驱动行为），
+     * 实测真机"按住无反应"。故手柄已整体删除（`sideMenu={false}`），
+     * 块移动改由本方法走程序化 API `editor.moveBlocksUp()` / `moveBlocksDown()`。
+     *
+     * 无需传参：JS 侧不传 `blockIdentifier`，BlockNote 会取**选区首/末块**或**光标块**，
+     * 因而天然支持「多选块一起移动」与嵌套块。**到达首/末块时内部安全 no-op**
+     * （不会抛错，但也无法预知能否移动，故工具栏不对这两项做置灰）。
+     */
+    fun moveBlockUp() = enqueueCommand(JSONObject().put("type", "moveBlockUp"))
+
+    fun moveBlockDown() = enqueueCommand(JSONObject().put("type", "moveBlockDown"))
+
     /** 主题下行（深浅 + 主色 + 编辑区背景色，v1.9 增 background） */
     fun setTheme(dark: Boolean, primary: String, background: String) {
         val theme = JSONObject()

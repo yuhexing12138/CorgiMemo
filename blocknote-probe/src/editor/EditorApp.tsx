@@ -1,18 +1,14 @@
 import "@blocknote/mantine/style.css";
 import { BlockNoteView } from "@blocknote/mantine";
 import {
-  DragHandleButton,
   FormattingToolbar,
   FormattingToolbarController,
-  SideMenu,
-  SideMenuController,
   useBlockNoteEditor,
   useComponentsContext,
   useCreateBlockNote,
-  type SideMenuProps,
 } from "@blocknote/react";
 import { BlockNoteEditor, blockHasType } from "@blocknote/core";
-import { useCallback, useEffect, useRef, useState, type FC } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { editorSchema } from "./schema";
 import { bindDown, sendUp, BUILD_FINGERPRINT, type ThemePayload } from "./bridge";
 import { mdToBlocks, blocksToMd, toWebImageUrl } from "./markdown/converter";
@@ -621,6 +617,42 @@ export default function EditorApp() {
           }
           break;
         }
+
+        /**
+         * 块上移 / 下移（v1.11.5）
+         *
+         * **替代原 ⋮⋮ 手柄的拖拽重排**。该手柄的拖拽依赖 HTML5 原生 Drag & Drop，
+         * 在 Android WebView / iOS Safari 的触摸下不触发（W3C 把 drag 事件定义为
+         * 鼠标驱动），故手柄整体删除，块移动改用这套程序化 API。
+         *
+         * ⚠️ 无需自己判断边界：BlockNote 内部用 `getMoveUpPlacement` /
+         * `getMoveDownPlacement` 求目标位置，**到顶 / 到底时返回 undefined 直接 return**
+         * （安全 no-op，不会抛错）。正因如此宿主侧也没法预知能否移动，
+         * 工具栏不再对这两项做置灰（点了没反应即已在边界）。
+         *
+         * ⚠️ 也无需传参：不传 `blockIdentifier` 时会取**选区首块 / 末块**或**光标块**，
+         * 因此天然支持「多选块一起移动」与嵌套块（内部会处理 parentBlock）。
+         */
+        case "moveBlockUp": {
+          const ed = editorRef.current;
+          if (!ed) break;
+          try {
+            ed.moveBlocksUp();
+          } catch (e: any) {
+            sendUp({ type: "error", message: `moveBlockUp: ${e.message}` });
+          }
+          break;
+        }
+        case "moveBlockDown": {
+          const ed = editorRef.current;
+          if (!ed) break;
+          try {
+            ed.moveBlocksDown();
+          } catch (e: any) {
+            sendUp({ type: "error", message: `moveBlockDown: ${e.message}` });
+          }
+          break;
+        }
       }
     });
     // v1.8：ready 带上构建指纹，宿主打进 logcat，便于确认 WebView 加载的产物版本
@@ -685,81 +717,27 @@ export default function EditorApp() {
 }
 
 /**
- * 拖拽手柄的按钮尺寸（px，v1.11）
+ * 内容区左右留白（px，v1.11 → v1.11.5 定为 20）
  *
- * 源自 `@blocknote/mantine` 的 `SideMenuButton`：有 icon 时渲染
- * `MantineActionIcon size={24}`，且 `SideMenu` 的容器是 `MantineGroup gap={0}`
- * ——两个按钮之间没有任何间隙。本项目只保留拖拽手柄，故常量即为 24。
+ * 是 `.bn-editor` 的 `padding-inline` 值，经 CSS 变量 `--bn-editor-gutter` 注入
+ * （CSS 侧不写魔法数字）。**左右同值**，保证文本两侧到屏幕的距离一致。
  *
- * ⚠️ 这是「内容区留白」的唯一真值来源：它与下方 `SIDE_MENU_GUTTER_GAP` 相加
- * 得到 `EDITOR_CONTENT_GUTTER`，写入 CSS 变量 `--bn-editor-gutter` 供 editor.css 消费。
- * 若日后调整手柄图标尺寸，只改这两个常量即可，不要在 CSS 里另写数字。
+ * 这个 20px 是**下限**而非随手取的值：嵌套列表的竖向缩进线位于
+ * `left: -20px`（Block.css），toggle 块的添加按钮另有 `margin-left: 22px`——
+ * 左侧留白小于 20px 时那条缩进线会被裁掉（表现为嵌套列表左侧竖线消失）。
+ *
+ * ⚠️ **历史沿革（别把结论看反）**：
+ * - v1.11 时该值是 **24px**，因为左侧要**容纳一个 24px 宽的拖拽手柄**
+ *   （手柄左边缘 = padding-left − 手柄宽，padding 小于手柄宽就会把手柄挤出视口）；
+ * - v1.11.5 起**手柄已整体删除**。原因是实测确认：BlockNote 的块拖拽纯用
+ *   **HTML5 原生 Drag & Drop**（`SideMenu.ts` 只有 dragstart/dragover/drop/dragend，
+ *   零 touch 处理），而该 API 在 **Android WebView / iOS Safari 的触摸下根本不触发**
+ *   （W3C 把 drag 事件定义为鼠标驱动行为）——手柄注定拖不动，留着只会让人
+ *   "按住没反应"。块移动改由工具栏的「上移 / 下移」承担，走程序化
+ *   `editor.moveBlocksUp()/moveBlocksDown()`。
+ *   于是左侧不再需要 24px，回落到本下限 20px。
  */
-const SIDE_MENU_HANDLE_WIDTH = 24;
-
-/**
- * 拖拽手柄与正文之间的额外间隙（px，v1.11 → v1.11.2 调为 0）
- *
- * 官方 `padding-inline: 54px` 恰为 `48（两个按钮）+ 6`，最初取 6 以沿用其手感。
- * 后续按用户要求**收紧到 0**：手柄直接贴住编辑区左边缘，内容可用宽度再多 6px。
- *
- * ⚠️ 收紧后 `padding-left = 24px`，仍 **> 20px**，故嵌套列表位于
- * `left: -20px` 的竖向缩进线、以及 toggle 添加按钮的 `margin-left: 22px`
- * 都不会被裁——这是本值不能再小的下限（<20 会让缩进线消失）。
- */
-const SIDE_MENU_GUTTER_GAP = 0;
-
-/**
- * 内容区左右留白（px，v1.11 → v1.11.3 改为左右对称）
- *
- * = 手柄宽 + 间隙，是 `.bn-editor` 的 `padding-inline` 值，
- * 经 CSS 变量 `--bn-editor-gutter` 注入（CSS 侧不写魔法数字）。
- *
- * 为什么左右用同一个值：
- * - **左侧**是硬约束——必须 ≥ 手柄宽，否则手柄会被裁（见 editor.css 的长注释）；
- * - **右侧**原本归零（官方那 54px 对称留白无任何功能，归零能换内容宽度），
- *   但按用户要求改为与左侧相等，让文本左右边缘到屏幕的距离一致。
- *
- * ⚠️ 因此本值同时受两个语义支配：左侧"容纳手柄"、右侧"视觉对称"。
- * 若两者日后冲突（例如想调大右侧留白但不希望左侧跟着变），
- * 拆成 `--bn-editor-gutter-start` / `-end` 两个变量即可。
- */
-const EDITOR_CONTENT_GUTTER = SIDE_MENU_HANDLE_WIDTH + SIDE_MENU_GUTTER_GAP;
-
-/**
- * 禁用拖拽手柄的点击菜单（v1.11）
- *
- * ⋮⋮ 手柄的点击菜单原有 4 项：删除块 / 块颜色 / 表头行 / 表头列。
- * 按用户决策，这 4 项**全部桥接到宿主底部工具栏**，手柄因此退化为「纯拖拽把手」。
- *
- * ⚠️ 必须显式传组件覆盖：`DragHandleButton` 内部是
- * `const Component = props.dragHandleMenu || DragHandleMenu;`
- * ——不传时 `Component` 会回落到官方 `DragHandleMenu`（渲染全部默认条目），
- * 传 `undefined` 达不到"禁用"效果，只有传一个返回 `null` 的组件才行。
- */
-const NoDragHandleMenu: FC = () => null;
-
-/**
- * 只含拖拽手柄的侧边菜单（v1.11）
- *
- * 与官方默认 `SideMenu` 的差异只有一处：**不含 `AddBlockButton`**。
- * - `+` 手柄的功能（插入图片/视频/音频/文件、分割线、emoji、块类型转换）早已
- *   桥接到宿主底部工具栏，手柄上是重复入口，且它是左侧 48px 留白的一半来源；
- * - **保留 `SideMenu` 容器而非自绘**：它内部会算出 `data-block-type` /
- *   `data-level` / `data-url` 等属性，`@blocknote/react` 的样式表靠这些属性
- *   把菜单高度与块高对齐（如 `heading[data-level=1]` = 108px）。自绘会让拖拽
- *   手柄在标题、图片等大块上垂直错位。
- *
- * 于是菜单宽度由 48px（2 × 24）降为 **24px**（1 × 24），
- * 内容区左侧留白相应由 54px 降到 24px（= `SIDE_MENU_HANDLE_WIDTH` +
- * `SIDE_MENU_GUTTER_GAP`，后者按用户要求已收紧为 0）；
- * 右侧留白与之取齐（v1.11.3），详情见 `EDITOR_CONTENT_GUTTER` 的 KDoc。
- */
-const DragHandleOnlySideMenu: FC<SideMenuProps> = () => (
-  <SideMenu dragHandleMenu={NoDragHandleMenu}>
-    <DragHandleButton dragHandleMenu={NoDragHandleMenu} />
-  </SideMenu>
-);
+const EDITOR_CONTENT_GUTTER = 20;
 
 /** 编辑器核心（initialBlocks 就绪后挂载，useCreateBlockNote 仅执行一次） */
 function EditorCore(props: {
@@ -868,12 +846,15 @@ function EditorCore(props: {
           theme={props.theme.dark ? "dark" : "light"}
           formattingToolbar={false}
           /**
-           * 关闭官方默认侧边菜单（v1.11）
+           * 关闭官方默认侧边菜单 —— 即「+ / ⋮⋮」两个块手柄（v1.11 起）
            *
-           * 官方默认渲染「+ / ⋮⋮」两个手柄（48px）。本项目要用自己的
-           * `DragHandleOnlySideMenu`（只剩拖拽手柄，24px），故先关默认，
-           * 再在 children 里挂自定义实例 —— 与下方 `formattingToolbar={false}`
-           * + 自渲染 `FormattingToolbarController` 的做法一致。
+           * 本项目不再渲染侧边菜单：
+           * - `+` 手柄的功能（插入媒体/分割线/emoji/块类型转换）早已桥接到宿主工具栏；
+           * - `⋮⋮` 手柄的点击菜单（删除块/块颜色/表头行列）也已桥接到工具栏，
+           *   而它唯一的自有功能「拖拽重排」——实测确认**在移动端无法工作**
+           *   （BlockNote 纯用 HTML5 原生 Drag & Drop，该 API 在 Android WebView /
+           *   iOS Safari 触摸下不触发），故 v1.11.5 整体删除。块移动改由工具栏的
+           *   「上移 / 下移」承担（`editor.moveBlocksUp/Down()`）。
            */
           sideMenu={false}
           onChange={() => {
@@ -900,8 +881,6 @@ function EditorCore(props: {
               </>
             )}
           />
-          {/** 自定义侧边菜单：只保留拖拽手柄（v1.11） */}
-          <SideMenuController sideMenu={DragHandleOnlySideMenu} />
         </BlockNoteView>
       </div>
       {props.emojiOpen && (

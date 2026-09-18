@@ -124,19 +124,29 @@
   → `padding-inline: 0` 会让菜单整体落到视口左侧之外（**v1.9 的真实回归，真机已复现**）；
   `16px + translateX(-16px)` 之类"退路"更糟（完全不可见）——**勿再采用**。
   留白过小还会连带裁掉嵌套列表竖线（`left:-20px`）与 toggle 添加按钮（`margin-left:22px`）。
-- **v1.11 定案**：`+` 删除（功能早已桥接工具栏），`⋮⋮` **保留**（拖拽重排是原生手势，无法按钮化），
-  但其**点击菜单 4 项移入工具栏** → 宽度 48→24px，留白改
-  `padding-inline: var(--bn-editor-gutter, 24px) !important`
-  （**左右同值**：左侧兼任手柄绘制位，右侧自 v1.11.3 起取齐以保证文本两侧到屏幕距离一致；
-  变量值在 JS 侧由常量算出，CSS 无魔法数字）。
-  ⚠️ **24px 是左值的下限**：嵌套列表竖线在 `left:-20px`、toggle 添加按钮 `margin-left:22px`，
-  手柄本身已占 24px，故间隙常量只能为 0、不能为负（v1.11.2 已按用户要求收紧到 0）。
-  实现细节**详见 `docs/bridge-protocol.md` v1.11 与
-  `docs/BlockNote编辑器占满与背景色修复方案.md` §3.8** —— 含三条必知坑：①关默认菜单用官方开关
-  `sideMenu={false}` 再自渲染 `SideMenuController`；②自定义菜单**必须复用官方 `SideMenu` 容器**
-  （它算 `data-block-type`/`data-level` 供样式表对齐块高，自绘会让手柄在标题/图片上**垂直错位**）；
-  ③禁用点击菜单须传 `dragHandleMenu={() => null}`（内部是 `|| DragHandleMenu`，不传会回落官方菜单）。
-  另：`setBlockColor` 写**块 props**，与 `format` 的 `textColor`（行内 span）是**不同维度**。
+- **v1.11 → v1.11.5 演进**（最终状态，2026-09-18）：
+  - v1.11：`+` 删除，`⋮⋮` 保留（当时以为拖拽可用），点击菜单 4 项移入工具栏，留白 24px；
+  - **v1.11.5：`⋮⋮` 手柄也整体删除（`sideMenu={false}`，不再自渲染任何实例）**。
+    **根因（重要，别再犯）**：真机反馈"按住无法拖拽"→ 排查确认 BlockNote 的块拖拽
+    **纯用 HTML5 原生 Drag & Drop**（`SideMenu.ts` 只有 dragstart/dragover/drop/dragend
+    + dataTransfer，**零 touch 处理**），而 **HTML5 DnD 在 Android WebView / iOS Safari
+    的触摸下根本不触发**（W3C 把 drag 事件定义为鼠标驱动行为）——手柄在手机上注定拖不动，
+    留着只会误导。旁证：OpenProject 的集成评估明确记录
+    "Blocknote has some features that have to be disabled in mobile (drag-and-drop, toolbar)"。
+    **块移动改由工具栏「上移/下移」承担**（`editor.moveBlocksUp/Down()`，
+    不传参取选区首/末块或光标块，支持多选与嵌套；到首/末块安全 no-op，
+    但 API 不暴露"能否移动"的判定，故按钮不置灰）。
+  - 留白随之下调：`padding-inline: var(--bn-editor-gutter, 20px) !important`
+    （**左右同值**，保证文本两侧到屏幕距离一致；20px 是嵌套列表缩进线 `left:-20px`
+    的下限，不能再小）。
+  - 实现细节详见 `docs/bridge-protocol.md` v1.11.5 与方案文档 §3.8/§3.10。
+  - 另：`setBlockColor` 写**块 props**，与 `format` 的 `textColor`（行内 span）是**不同维度**。
+- ⚠️ 保留的历史教训（**若日后恢复侧边菜单，以下三条必看**）：
+  ①几何约束：菜单是 Floating UI 浮层（portal 到 `.bn-root`，在 `.bn-editor` 之外），
+  `菜单左边缘 = padding-left − W`，**`padding-left ≥ W` 才可见**（v1.9 的"手柄被裁"
+  就是违反了它）；②自定义菜单必须复用官方 `SideMenu` 容器（自绘会因 `data-block-type`
+  /`data-level` 缺失而在大块上垂直错位）；③禁用点击菜单须传 `dragHandleMenu={() => null}`
+  （内部是 `|| DragHandleMenu`，不传会回落官方菜单）。
 - ⚠️⚠️ **CSS 变量「就近取值」——设在 `<html>` 上会被库的同名定义盖掉（2026-09-18 实测）**：
   BlockNote 官方在 **`.bn-root`** 上定义了一整套变量（`--bn-colors-editor-background: #fff`，
   暗色分支 `#1f1f1f` 单独声明）。v1.9 却把同名变量设在 `documentElement`（`<html>`）上 →
