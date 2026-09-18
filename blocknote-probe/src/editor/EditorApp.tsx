@@ -855,6 +855,39 @@ function EditorCore(props: {
       });
     }, [props.minHeight]);
 
+    /**
+     * v1.11.9 诊断（**临时**，定位"键盘弹出 WebView 不收缩"后移除）：
+     * 监听三处高度变化并上报——
+     * - `bnEditor`：`.bn-editor` 实际高度（min-height 生效与否的直接证据）
+     * - `innerHeight`：WebView 视口高（若窗口被 resize 会跟着变）
+     * - `visualViewport.height`：**关键指标**——Android 上键盘弹出且系统真正 resize
+     *   时它会变小；保持不变则说明窗口没被 resize（edge-to-edge 下 ime 需应用自行消费）
+     */
+    useEffect(() => {
+      const el = document.querySelector(".bn-editor") as HTMLElement | null;
+      if (!el) return;
+      const report = () => {
+        sendUp({
+          type: "diagnostic",
+          message:
+            `viewport | bnEditor=${el.offsetHeight}px` +
+            ` innerHeight=${window.innerHeight}` +
+            ` visualViewportH=${window.visualViewport?.height ?? -1}`,
+        });
+      };
+      const ro = new ResizeObserver(report);
+      ro.observe(el);
+      const vv = window.visualViewport;
+      vv?.addEventListener("resize", report);
+      window.addEventListener("resize", report);
+      report();
+      return () => {
+        ro.disconnect();
+        vv?.removeEventListener("resize", report);
+        window.removeEventListener("resize", report);
+      };
+    }, []);
+
     useEffect(() => {
       props.onReady(editor);
       // 初次挂载后上报一次可用态（初始内容装载本身不产生可撤销历史，通常为 false/false）

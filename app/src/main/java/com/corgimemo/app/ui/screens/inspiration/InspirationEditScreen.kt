@@ -22,10 +22,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -1508,6 +1510,28 @@ fun InspirationEditScreen(
         }
     ) { innerPadding ->
         /**
+         * ⚠️ v1.11.9 诊断埋点（**临时**，定位"键盘弹出 WebView 不收缩"后移除）：
+         * 打印键盘 insets 与 Scaffold innerPadding 的实时值。
+         *
+         * 背景假设：`enableEdgeToEdge` 下 `adjustResize` 不再 resize 窗口，
+         * 改为派发 ime insets 交给应用消费；而本项目**没有任何地方消费 ime**
+         * （`imePadding()` 从未被调用），Scaffold 的 innerPadding 默认也不含 ime
+         * ——于是键盘弹出时布局纹丝不动，WebView 被键盘直接盖住。
+         * 本埋点用于证实/证伪该假设。
+         */
+        val diagImeBottomPx = WindowInsets.ime.getBottom(density)
+        LaunchedEffect(diagImeBottomPx) {
+            Log.d(
+                "BlockNoteEditor",
+                "diag | ime bottom=${diagImeBottomPx}px" +
+                    " (${with(density) { diagImeBottomPx.toDp() }})"
+            )
+        }
+        LaunchedEffect(innerPadding) {
+            Log.d("BlockNoteEditor", "diag | innerPadding: $innerPadding")
+        }
+
+        /**
          * 内容区布局：单层Column，Modifier顺序决定背景范围。
          * - background 在 horizontal padding 之前 → 用户自选背景色铺满全宽无空隙
          * - 默认不绘制（[contentBackgroundPaint] = Transparent），让页面主题背景透出
@@ -1852,6 +1876,12 @@ fun InspirationEditScreen(
                      */
                     .onSizeChanged { size ->
                         val heightDp = with(density) { size.height.toDp() }
+                        // v1.11.9 诊断埋点：WebView 实际被分配的高度（键盘弹出前后对比的关键值）
+                        Log.d(
+                            "BlockNoteEditor",
+                            "diag | webview onSizeChanged: ${size.width}x${size.height}px" +
+                                " = ${heightDp.value}dp"
+                        )
                         blockNoteController.setEditorMinHeight(heightDp.value)
                     },
                 /** 唯一真值：内容区实际生效背景色（Transparent 已在源头回落为主题 background） */
