@@ -16,7 +16,6 @@ import android.webkit.WebViewClient
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -428,8 +427,16 @@ fun BlockNoteEditorWebView(
      * 宿主在 `verticalScroll` 容器内会通过 `modifier` 传 `heightIn(min=...)`，
      * 若此处再 `fillMaxSize()`，在无限高约束下会覆盖宿主的高度意图，导致
      * WebView 塌成内容高。改为仅 `fillMaxWidth()` 让宿主的高度约束生效。
+     *
+     * ⚠️ **不要在此处追加 `imePadding()`**（v1.11.9 修复，曾于 P1.5 误加）：
+     * 键盘 insets 的消费**只能发生一次**——Scaffold bottomBar 已通过
+     * `Modifier.safeAreaForEditBar()`（= `imePadding()`）抬起工具栏、
+     * 让 content 区域收缩，WebView 经 `weight` 自然获得键盘上方的剩余空间。
+     * 此处若再垫一次 ime，WebView 会被两层 insets 压到只剩十几 dp
+     * （旧布局下被 `heightIn(min)` + `verticalScroll` 的"溢出可滚"掩盖，
+     * 方案 A 移除掩护后暴露为「键盘弹出视口坍缩到一行高」）。
      */
-    Box(modifier = modifier.fillMaxWidth().imePadding()) {
+    Box(modifier = modifier.fillMaxWidth()) {
         AndroidView(
             factory = { appContext ->
                 createEditorWebView(appContext, controller, effectiveBackground)
