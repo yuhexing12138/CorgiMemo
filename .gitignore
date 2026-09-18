@@ -114,3 +114,6 @@ blocknote-probe/vite.config.ts.timestamp-*
 blocknote-probe/probe-result.png
 app/src/main/assets/blocknote-probe/
 app/src/main/assets/blocknote-web/probe/
+
+# 诊断日志（临时抓取，不入库）
+diag_*.txt
