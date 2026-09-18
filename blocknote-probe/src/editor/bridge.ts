@@ -70,7 +70,33 @@ export type DownMessage =
    * - alignLeft / alignCenter / alignRight（光标块对齐）
    * - transform（value = heading1/2/3、quote、codeBlock、table、pageBreak——块类型转换/插入）
    */
-  | { type: "format"; action: string; value?: string };
+  | { type: "format"; action: string; value?: string }
+  /**
+   * 删除块（v1.11：原 ⋮⋮ 手柄点击菜单的「删除」项，桥接到宿主工具栏）。
+   *
+   * 语义与官方 `RemoveBlockItem` 一致：若当前选区包含了光标块，则删除**选区内的全部块**；
+   * 否则只删光标所在的那一个块。因此宿主无需关心"选中了几个块"。
+   */
+  | { type: "deleteBlock" }
+  /**
+   * 设置当前块的**块级**颜色（v1.11：原 ⋮⋮ 手柄菜单的「颜色」项）。
+   *
+   * ⚠️ 与 `format` 的 `textColor` 是**不同维度**：
+   * - `format.textColor` 走 `addStyles`，作用于**选区内的行内文字**（inline span style）；
+   * - 本条走 `updateBlock(block, { props })`，作用于**整个块**（block props）。
+   * 两者互不覆盖，但宿主 UI 上要区分入口，避免用户误以为是同一件事。
+   *
+   * 取值为 BlockNote 预设色名（如 "red" / "blue" / "default" 表示清除）。
+   */
+  | { type: "setBlockColor"; textColor?: string; backgroundColor?: string }
+  /**
+   * 切换表格的表头行 / 表头列（v1.11：原 ⋮⋮ 手柄菜单的「表头行 / 表头列」项）。
+   *
+   * 仅在 `block.type === "table"` 且 `editor.settings.tables.headers` 为真时生效
+   * （与官方 `TableHeadersItem` 的判定一致；条件不满足时 JS 侧静默忽略）。
+   * 官方当前只支持 1 行 / 1 列表头，故用布尔开关而非数量。
+   */
+  | { type: "setTableHeader"; target: "row" | "column"; enabled: boolean };
 
 /** 上行消息（JS → Kotlin） */
 export type UpMessage =
@@ -91,6 +117,33 @@ export type UpMessage =
    * 宿主据此给左上角撤销/重做按钮置灰（对齐 Compose 版 canUndo/canRedo 语义）。
    */
   | { type: "undoState"; canUndo: boolean; canRedo: boolean }
+  /**
+   * 当前光标块状态（v1.11）
+   *
+   * 原 ⋮⋮ 手柄的点击菜单有 4 项，其中「删除块」无条件可用，另外三项各有前置条件
+   * （块级颜色看块类型是否声明 textColor/backgroundColor；表头看是否表格块）。
+   * 菜单被移除、功能移入宿主工具栏后，宿主必须自己知道**当前能不能点**，
+   * 否则会出现"点了没反应"的哑按钮，故由 JS 侧统一判定后上行。
+   *
+   * 仅在上报内容发生变化时上行（JS 侧做去重），避免选区移动时刷屏。
+   */
+  | {
+      type: "blockState";
+      /** 光标块类型（BlockNote 的 block.type，如 paragraph / heading / table / image） */
+      blockType: string;
+      /** 当前块是否支持块级颜色（块 spec 声明了 textColor 或 backgroundColor） */
+      canSetBlockColor: boolean;
+      /** 当前块的文本色（预设色名；"default" 或 undefined = 默认色） */
+      blockTextColor?: string;
+      /** 当前块的背景色（预设色名；"default" 或 undefined = 无背景色） */
+      blockBackgroundColor?: string;
+      /** 当前块是否可切换表头（table 块 且 settings.tables.headers 为真） */
+      canToggleHeader: boolean;
+      /** 表格当前是否有标题行（非表格恒 false） */
+      isHeaderRow: boolean;
+      /** 表格当前是否有标题列（非表格恒 false） */
+      isHeaderCol: boolean;
+    }
   | { type: "error"; message: string };
 
 declare global {

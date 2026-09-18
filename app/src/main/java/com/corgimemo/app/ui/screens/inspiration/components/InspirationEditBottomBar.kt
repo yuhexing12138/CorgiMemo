@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import com.corgimemo.app.ui.screens.probe.BlockState
 import com.mohamedrejeb.richeditor.model.RichTextState
 
 /**
@@ -179,6 +180,29 @@ fun InspirationEditBottomBar(
     onAlignRight: () -> Unit = {},
     onInsertLink: () -> Unit = {},
     onToggleCodeSpan: () -> Unit = {},
+    /**
+     * 删除当前块（v1.11）：原 BlockNote 侧边菜单（⋮⋮ 手柄）点击菜单的「删除」项，
+     * 现移入格式工具栏的「块操作」菜单。命中口径由 JS 侧决定，无需传参。
+     */
+    onDeleteBlock: () -> Unit = {},
+    /**
+     * 设置当前块的**块级**颜色（v1.11）：原 ⋮⋮ 菜单的「颜色」项。
+     * @param textColor 块级文本色（色名；"default" 清除）；null = 不改动该维度
+     * @param backgroundColor 块级背景色（色名；"default" 清除）；null = 不改动该维度
+     */
+    onSetBlockColor: (String?, String?) -> Unit = { _, _ -> },
+    /**
+     * 切换表头行 / 表头列（v1.11）：原 ⋮⋮ 菜单的「表头行 / 表头列」项。
+     * @param target "row" = 表头行，"column" = 表头列
+     */
+    onSetTableHeader: (String, Boolean) -> Unit = { _, _ -> },
+    /** 当前光标块状态（v1.11）：透传给 [RichTextFormatToolbar] 驱动「块操作」菜单 */
+    blockState: BlockState = BlockState(),
+    /**
+     * 格式工具栏整体可用性（v1.11.1）：宿主锁定态传 false。
+     * 透传给 [RichTextFormatToolbar]，锁定态下整条置灰并拦截点击。
+     */
+    toolbarEnabled: Boolean = true,
     modifier: Modifier = Modifier,
     backgroundColor: Color = MaterialTheme.colorScheme.background
 ) {
@@ -243,7 +267,12 @@ fun InspirationEditBottomBar(
                     onAlignCenter = onAlignCenter,
                     onAlignRight = onAlignRight,
                     onInsertLink = onInsertLink,
-                    onToggleCodeSpan = onToggleCodeSpan
+                    onToggleCodeSpan = onToggleCodeSpan,
+                    onDeleteBlock = onDeleteBlock,
+                    onSetBlockColor = onSetBlockColor,
+                    onSetTableHeader = onSetTableHeader,
+                    blockState = blockState,
+                    enabled = toolbarEnabled
                 )
             }
 

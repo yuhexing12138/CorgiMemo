@@ -53,6 +53,35 @@ private const val EDITOR_URL = "file:///android_asset/blocknote-web/editor/edito
  * Kotlin 只下行「配置与命令」，内容以 markdown 快照经 `changed` 上行；
  * 历史栈本身始终留在 JS 侧，上行仅是可撤销/可重做的布尔态。
  */
+/**
+ * 当前光标块状态（v1.11）
+ *
+ * 原 BlockNote 侧边菜单（⋮⋮ 手柄）的点击菜单有 4 项，按用户决策全部移入宿主
+ * 底部工具栏，手柄本身只保留拖拽重排。宿主因此必须知道「当前块能点什么」，
+ * 否则会出现点了没反应的哑按钮——本数据类即承载该判定结果（由 JS 侧 `blockState` 上行）。
+ *
+ * 判定口径照抄 BlockNote 官方（见 JS 侧 `pushBlockState`）：
+ * - 块颜色取决于块 spec 是否声明 textColor / backgroundColor；
+ * - 表头取决于是否 table 块（且 `settings.tables.headers` 为真）。
+ *
+ * @param blockType 光标块类型（BlockNote 的 block.type，如 paragraph / heading / table / image）
+ * @param canSetBlockColor 是否支持块级颜色（决定「块颜色」入口是否可点）
+ * @param blockTextColor 当前块文本色（预设色名；空串 = 默认色，用于色板回显）
+ * @param blockBackgroundColor 当前块背景色（预设色名；空串 = 无背景色）
+ * @param canToggleHeader 是否可切换表头（table 块且 header 特性开启）
+ * @param isHeaderRow 表格当前是否有标题行（非表格恒 false）
+ * @param isHeaderCol 表格当前是否有标题列（非表格恒 false）
+ */
+data class BlockState(
+    val blockType: String = "",
+    val canSetBlockColor: Boolean = false,
+    val blockTextColor: String = "",
+    val blockBackgroundColor: String = "",
+    val canToggleHeader: Boolean = false,
+    val isHeaderRow: Boolean = false,
+    val isHeaderCol: Boolean = false,
+)
+
 class BlockNoteBridgeController {
     internal var webView: WebView? = null
     internal var ready = false
@@ -71,6 +100,15 @@ class BlockNoteBridgeController {
 
     /** 重做可用态（v1.7，语义同 [canUndo]） */
     var canRedo by mutableStateOf(false)
+        private set
+
+    /**
+     * 当前光标块状态（v1.11）：JS 侧光标块变化后经 `blockState` 上行。
+     *
+     * 驱动宿主底部工具栏的「删除块 / 块颜色 / 表头行 / 表头列」四个入口的
+     * 可用态与选中回显。JS 侧已做去重，仅在状态真的变化时上行。
+     */
+    var blockState by mutableStateOf(BlockState())
         private set
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -95,6 +133,21 @@ class BlockNoteBridgeController {
 
     /** 重做 */
     fun redo() = enqueueCommand(JSONObject().put("type", "requestRedo"))
+
+    /**
+     * 只读切换（v1.11.1）：宿主锁定态（isLocked）下传 true，禁止正文编辑。
+     *
+     * ⚠️ 桥协议自 v1 起就定义了 `setReadOnly` 下行，JS 侧也早已实现
+     * （`setReadOnly(msg.readOnly)` → 编辑器 `editable`），
+     * 但 **Kotlin 侧一直没有对应的下发方法** —— 这条链路从未被使用，
+     * 导致锁定态下正文实际上仍可编辑。此处补齐。
+     *
+     * ⚠️ 本开关只阻止**用户输入**；`removeBlocks` / `updateBlock` 等程序化 API
+     * 不受 `editable` 限制，故宿主工具栏在锁定态必须另行禁用
+     * （见 RichTextFormatToolbar 的 `enabled` 参数）。
+     */
+    fun setReadOnly(readOnly: Boolean) =
+        enqueueCommand(JSONObject().put("type", "setReadOnly").put("readOnly", readOnly))
 
     /** 主动要一次 markdown 快照（返回键/切后台前） */
     fun requestSave() = enqueueCommand(JSONObject().put("type", "requestSave"))
@@ -130,6 +183,50 @@ class BlockNoteBridgeController {
         if (value != null) msg.put("value", value)
         enqueueCommand(msg)
     }
+
+    /**
+     * 删除当前块（v1.11）：原 ⋮⋮ 手柄点击菜单的「删除」项，移入宿主工具栏。
+     *
+     * 命中口径由 JS 侧决定（与官方 RemoveBlockItem 一致）：当前选区若包含光标块，
+     * 则删除选区内的**全部块**；否则只删光标所在的那一块。
+     * 因此宿主无需关心用户选了几个块，也不必传参。
+     */
+    fun deleteBlock() = enqueueCommand(JSONObject().put("type", "deleteBlock"))
+
+    /**
+     * 设置当前块的**块级**颜色（v1.11）：原 ⋮⋮ 手柄点击菜单的「颜色」项。
+     *
+     * ⚠️ 与 [format] 的 `textColor` 是**不同维度**，别混用：
+     * - 本方法 → `updateBlock(block, { props })`，作用于**整个块**；
+     * - [format]`("textColor", …)` → `addStyles`，只作用于**选区内的行内文字**。
+     * 两者可同时存在、互不覆盖，宿主 UI 上要区分入口。
+     *
+     * @param textColor 块级文本色（BlockNote 预设色名；"default" 表示清除）；传 null = 不改动该维度
+     * @param backgroundColor 块级背景色（预设色名；"default" 表示清除）；传 null = 不改动该维度
+     */
+    fun setBlockColor(textColor: String? = null, backgroundColor: String? = null) {
+        val msg = JSONObject().put("type", "setBlockColor")
+        if (textColor != null) msg.put("textColor", textColor)
+        if (backgroundColor != null) msg.put("backgroundColor", backgroundColor)
+        enqueueCommand(msg)
+    }
+
+    /**
+     * 切换表头行 / 表头列（v1.11）：原 ⋮⋮ 手柄点击菜单的「表头行 / 表头列」项。
+     *
+     * 官方目前只支持 1 行 / 1 列，故用布尔开关而非数量。仅当光标在表格块内时生效
+     * （宿主可按 [BlockState.canToggleHeader] 置灰；非表格块时 JS 侧静默忽略）。
+     *
+     * @param target "row" = 表头行，"column" = 表头列
+     * @param enabled true = 开启表头，false = 关闭
+     */
+    fun setTableHeader(target: String, enabled: Boolean) =
+        enqueueCommand(
+            JSONObject()
+                .put("type", "setTableHeader")
+                .put("target", target)
+                .put("enabled", enabled)
+        )
 
     /** 主题下行（深浅 + 主色 + 编辑区背景色，v1.9 增 background） */
     fun setTheme(dark: Boolean, primary: String, background: String) {
@@ -209,6 +306,22 @@ class BlockNoteBridgeController {
                         canUndo = u
                         canRedo = r
                     }
+                }
+                "blockState" -> {
+                    // v1.11：当前光标块状态上行 → 驱动宿主工具栏的
+                    // 删除块 / 块颜色 / 表头行 / 表头列 四个入口的可用态与回显。
+                    // 一次性构造后整体赋值，避免多次 post 造成中间态（如颜色已改而可用态未改）。
+                    // 注意 optString 对缺失字段返回 ""，正好与 BlockState 的默认值语义一致。
+                    val st = BlockState(
+                        blockType = msg.optString("blockType"),
+                        canSetBlockColor = msg.optBoolean("canSetBlockColor", false),
+                        blockTextColor = msg.optString("blockTextColor"),
+                        blockBackgroundColor = msg.optString("blockBackgroundColor"),
+                        canToggleHeader = msg.optBoolean("canToggleHeader", false),
+                        isHeaderRow = msg.optBoolean("isHeaderRow", false),
+                        isHeaderCol = msg.optBoolean("isHeaderCol", false),
+                    )
+                    mainHandler.post { blockState = st }
                 }
                 "error" -> Log.e(TAG, "js error: ${msg.optString("message")}")
             }

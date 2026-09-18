@@ -21,6 +21,9 @@
 | `setTheme` | `{ theme }` | 主题切换（P1 扩展六色主题；v1.9 起 `theme.background` 携带宿主编辑区背景色，JS 写入 `--bn-colors-editor-background` 与 `html/body` 底色，消除编辑器白底与外层主题不一致的"画中画"） |
 | `setFontFamily` | `{ fontFamily }` | 内容字体切换（配合 shouldInterceptRequest 字体流） |
 | `requestSave` | `{}` | 主动要一次快照（返回键/切后台前），JS 侧立即触发一次 `changed` |
+| `deleteBlock` | `{}` | 删除块（v1.11）。原 ⋮⋮ 手柄点击菜单的「删除」项。命中口径与官方 `RemoveBlockItem` 一致：当前**选区**若包含光标块则删整个选区（支持多选一起删），否则只删光标块——故无需传参 |
+| `setBlockColor` | `{ textColor?, backgroundColor? }` | 设置当前块的**块级**颜色（v1.11）。原 ⋮⋮ 菜单的「颜色」项。取值是 BlockNote 预设色名（`gray`/`brown`/`red`/`orange`/`yellow`/`green`/`blue`/`purple`/`pink`；`"default"` 表示清除）。字段缺省 = 不改动该维度。⚠️ 与 `format` 的 `textColor` **不是一回事**：本条写块 props（整个块），后者写行内 span 样式（仅选区文字） |
+| `setTableHeader` | `{ target, enabled }` | 切换表头行/列（v1.11）。原 ⋮⋮ 菜单的「表头行 / 表头列」项。`target` = `"row"` / `"column"`。仅 `table` 块生效（非表格静默忽略）。官方目前只支持 1 行 / 1 列，故用布尔开关 |
 
 ## 上行消息（JS → Kotlin）
 
@@ -29,6 +32,7 @@
 | `ready` | `{}` | 编辑器脚本就绪并已绑定下行宿主（Kotlin 侧解除 loading、随后发 `init`） |
 | `changed` | `{ markdown }` | 内容变更快照；**JS 侧防抖 800ms**；由 `blocksToMd` 生成（含分割线样式编码） |
 | `undoState` | `{ canUndo, canRedo }` | 撤销/重做可用态（v1.7）；历史栈变化后上报，宿主左上角按钮据此置灰 |
+| `blockState` | `{ blockType, canSetBlockColor, blockTextColor?, blockBackgroundColor?, canToggleHeader, isHeaderRow, isHeaderCol }` | 当前光标块状态（v1.11）；驱动宿主工具栏「块操作」菜单的可用态与回显。**仅在状态变化时上报**（JS 侧按 JSON 串去重） |
 | `error` | `{ message }` | JS 异常上报（Kotlin 侧打 logcat / 展示错误态） |
 
 > `ready` 载荷自 v1.8 起带可选 `build` 字段（构建指纹，见下），故其类型为 `{ build?: string }`。
@@ -66,6 +70,10 @@ Kotlin 收 changed → 落库（P0 内存态，P1 接 Repository）
 返回键/切后台 → Kotlin sendDown(requestSave) → JS 立即 changed → Kotlin 落库 → 关闭
 点宿主撤销/重做 → Kotlin sendDown(requestUndo|requestRedo) → JS editor.undo()/redo()
               → sendUp(undoState) → Kotlin 更新按钮可用态
+光标块变化（onSelectionChange / onChange） → JS sendUp(blockState) → Kotlin 更新块状态快照
+              → 工具栏「块操作」菜单据此决定表头项显隐、色板高亮
+点工具栏「块操作」某项 → Kotlin sendDown(deleteBlock|setBlockColor|setTableHeader)
+              → JS 执行 → onChange/onSelectionChange → sendUp(blockState) 回传新状态
 ```
 
 ## 构建指纹（v1.8）
@@ -108,3 +116,29 @@ adb logcat -s BlockNoteEditor:V | grep "ready received"
   命令取 `getExtension("yUndo" | "history")` 的 `undoCommand` / `redoCommand`。
   同时把 `pushUndoState` 的静默 `catch` 改为上行 `error`，让同类故障在 logcat 可见。
   协议字段与形状**无变化**（纯 JS 侧实现修复）。
+- v1.11（2026-09-17）：**侧边菜单收敛为纯拖拽把手，其点击菜单 4 项移入宿主工具栏**。
+  新增下行 `deleteBlock` / `setBlockColor` / `setTableHeader`，新增上行 `blockState`。
+
+  **背景**（真机复现 + 源码核实）：`.bn-editor` 的 `padding-inline: 0`（v1.9 的改法）
+  导致「+/⋮⋮ 手柄被裁」。根因是侧边菜单为 Floating UI 浮层（`placement: "left-start"`，
+  portal 到 `.bn-root`，即 `.bn-editor` **之外**），其**右边缘紧贴块内容左边缘**再向左
+  延伸自身宽度 W，故可见条件是 `padding-left ≥ W`；置 0 时菜单整体落在 `[−W, 0]`，
+  跑到 WebView 视口左侧之外。W 的构成为 `2 × MantineActionIcon size=24 = 48px`。
+
+  **决策**（用户）：`+` 手柄删除（其功能早已桥接到工具栏）、`⋮⋮` 手柄**保留**用于拖拽重排
+  （原生手势，无法按钮化），但它的**点击菜单**（删除块 / 块颜色 / 表头行 / 表头列）
+  全部移入工具栏 → 所需左侧留白由 54px 降为 `24 + 6 = 30px`（由 CSS 变量
+  `--bn-side-menu-gutter` 单点控制，值在 JS 侧由常量算出）。
+
+  ⚠️ **`blockState` 的判定口径照抄官方**，避免"官方菜单能点、桥过来的按钮却置灰"：
+  块颜色用 `blockHasType(block, ed, block.type, { textColor | backgroundColor })`
+  （官方 `BlockColorsItem` 写法）；表头用 `block.type === "table" && settings.tables.headers`
+  （官方 `TableHeadersItem` 写法）。
+- v1.11.1（2026-09-17，**补齐断链**）：修正 `setReadOnly` **只有 JS 实现、没有 Kotlin 下发方**
+  的问题。该消息自 v1 起就在协议与 `EditorApp` 里，但 controller 从未提供方法，
+  于是**锁定态（`isLocked`）下正文实际仍可编辑**，且工具栏按钮照常可点。
+  现补 `BlockNoteBridgeController.setReadOnly(readOnly)`，宿主在 `LaunchedEffect(isLocked)` 中下发。
+  ⚠️ 只读只挡**用户输入**，挡不住 `removeBlocks` / `updateBlock` 这类程序化 API，
+  故工具栏另加 `enabled = !isLocked`（整条 38% 不透明度 + `PointerEventPass.Initial`
+  阶段的指针拦截）——用 `Initial` 而非 `Main` 是因为 `Initial` 阶段事件**由父流向子**，
+  父级先 consume 才能拦住子按钮；`Main` 阶段子按钮早已处理完。

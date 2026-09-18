@@ -114,8 +114,26 @@
 
 ### ⚠️ BlockNote 官方样式约束（v1.9 实测，改前必看）
 - `.bn-editor { padding-inline: 54px }`（`@blocknote/core`）——给侧边 `+`/`⋮⋮` 手柄留的**绘制位**。
-  桌面端居中窄栏（~780px）不明显；**手机全宽下左右各 54px ≈ 吞掉 30% 宽度**。
-  修复：`editor.css` 里 `.bn-editor { padding-inline: 0 !important }`。
+  桌面端窄栏（780px）不明显；**手机全宽下左右各 54px ≈ 吞掉 30%，且右侧那 54px 无任何功能**。
+- ⚠️⚠️ **侧边菜单几何约束（v1.11 读源码确证，改 padding 前必看）**：
+  菜单 = `AddBlockButton`+`DragHandleButton`，`gap={0}`，每按钮 `MantineActionIcon size={24}`
+  → **总宽 48px**（官方 54 = 48 + 6 间隙，正好吻合）。
+  它是 Floating UI 浮层（`placement:"left-start"`，portal 到 `.bn-root`，在 `.bn-editor` **之外**），
+  **右边缘紧贴块内容左边缘**再向左延伸，故 `菜单左边缘 = padding-left − W`，
+  **可见条件 `padding-left ≥ W`**。
+  → `padding-inline: 0` 会让菜单整体落到视口左侧之外（**v1.9 的真实回归，真机已复现**）；
+  `16px + translateX(-16px)` 之类"退路"更糟（完全不可见）——**勿再采用**。
+  留白过小还会连带裁掉嵌套列表竖线（`left:-20px`）与 toggle 添加按钮（`margin-left:22px`）。
+- **v1.11 定案**：`+` 删除（功能早已桥接工具栏），`⋮⋮` **保留**（拖拽重排是原生手势，无法按钮化），
+  但其**点击菜单 4 项移入工具栏** → 宽度 48→24px，留白改
+  `padding-inline-start: var(--bn-side-menu-gutter, 30px) !important` + `padding-inline-end: 0 !important`
+  （变量值在 JS 侧由常量算出，CSS 无魔法数字）。
+  实现细节**详见 `docs/bridge-protocol.md` v1.11 与
+  `docs/BlockNote编辑器占满与背景色修复方案.md` §3.8** —— 含三条必知坑：①关默认菜单用官方开关
+  `sideMenu={false}` 再自渲染 `SideMenuController`；②自定义菜单**必须复用官方 `SideMenu` 容器**
+  （它算 `data-block-type`/`data-level` 供样式表对齐块高，自绘会让手柄在标题/图片上**垂直错位**）；
+  ③禁用点击菜单须传 `dragHandleMenu={() => null}`（内部是 `|| DragHandleMenu`，不传会回落官方菜单）。
+  另：`setBlockColor` 写**块 props**，与 `format` 的 `textColor`（行内 span）是**不同维度**。
 - `.bn-editor { background-color: var(--bn-colors-editor-background) }`（`@blocknote/react`），默认亮 `#ffffff` /
   暗 `#1f1f1f` → 与宿主暖米色不一致时形成"白底圆角卡片"画中画。修复：JS 侧
   `documentElement.style.setProperty('--bn-colors-editor-background', bg)` + `html/body` 底色 +

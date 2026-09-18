@@ -15,18 +15,40 @@
 }
 
 /**
- * 抵消 BlockNote 默认的侧边菜单留白（v1.9）
+ * 左侧留白重算：只容纳保留下来的拖拽手柄（v1.11）
  *
- * @blocknote/core 的 `.bn-editor` 带 `padding-inline: 54px`——那是给块左侧
- * 的 `+` / `⋮⋮` 手柄预留的绘制位。桌面端编辑器是居中窄栏（780px），54px 占比不大；
- * 但手机全宽（约 360dp）下左右各 54px 等于吞掉近 30% 可用宽度，
- * 表现为"明显没占满"。
+ * 官方 `.bn-editor { padding-inline: 54px }`（@blocknote/core）是为块左侧的
+ * 「+ / ⋮⋮」两个手柄预留的绘制位，来源可精确拆解：
+ *   2 × `MantineActionIcon size={24}`（@blocknote/mantine 的 SideMenuButton）
+ *   = 48px，外加 6px 呼吸余量 → 54px。
  *
- * ⚠️ 置 0 后侧边菜单在块左缘可能溢出/被裁，需真机确认；
- *    若被裁，退为 `padding-inline: 16px` + `.bn-side-menu { transform: translateX(-16px) }`。
+ * ⚠️⚠️ 为什么不能简单置 0（v1.9 的错法，真机已复现）：
+ * 侧边菜单是 Floating UI 浮层，`placement: "left-start"`，portal 到 `.bn-root`
+ * （在 `.bn-editor` **之外**）。它的**右边缘紧贴块内容左边缘**，再向左延伸
+ * 自身宽度 W。于是：
+ *     菜单左边缘 = padding-left − W
+ * 可见条件是 `padding-left ≥ W`。padding 置 0 时菜单落在 `[−W, 0]`，
+ * 整条跑到 WebView 视口左侧之外 → 表现为"+/⋮⋮ 手柄被裁"。
+ *
+ * 本项目的处理（用户决策）：
+ * - **删除 `+` 手柄**——其功能（插入媒体/分割线/emoji/块类型转换）早已桥接
+ *   到宿主底部工具栏，手柄上是重复入口；
+ * - **保留 `⋮⋮` 手柄**——它承担拖拽重排，是原生手势，无法按钮化；
+ *   但其点击菜单（删除块/块颜色/表头行列）已桥接到工具栏，故菜单被禁用。
+ *
+ * 于是所需宽度 W 从 48px 降为 **24px**（只剩一个按钮），左侧留白相应取
+ * `24 + 6 = 30px`，由 `--bn-side-menu-gutter` 单点提供（值在 EditorApp.tsx
+ * 由常量算出后写入，避免 CSS 与 JS 各写一份魔法数字而漂移）。
+ *
+ * 右侧那 54px 是官方为左右对称而留、**不承载任何功能**——它才是手机全宽下
+ * 「编辑区明显没占满」的真正来源，故直接归零。
+ *
+ * 副带好处：嵌套列表的竖向缩进线位于 `left: -20px`（Block.css），
+ * 30px > 20px 所以不会被裁；若左侧留白小于 20px，那条线会消失。
  */
 .bn-editor {
-  padding-inline: 0 !important;
+  padding-inline-start: var(--bn-side-menu-gutter, 30px) !important;
+  padding-inline-end: 0 !important;
 }
 
 /**

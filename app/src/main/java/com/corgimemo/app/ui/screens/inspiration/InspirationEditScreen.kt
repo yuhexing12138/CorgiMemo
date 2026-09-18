@@ -307,6 +307,21 @@ fun InspirationEditScreen(
     var isLocked by remember { mutableStateOf(false) }
 
     /**
+     * 锁定态 → 正文只读（v1.11.1）
+     *
+     * 补齐一条「协议早已定义、JS 早已实现、但 Kotlin 侧从未下发」的链路：
+     * `setReadOnly` 自桥协议 v1 起就在文档里，`EditorApp` 也一直处理它
+     * （`setReadOnly(msg.readOnly)` → 编辑器 `editable`），但 controller 此前
+     * 没有对应方法 —— 于是锁定后正文其实**仍然可编辑**，只是没人发现。
+     *
+     * ⚠️ 只读只挡**用户输入**，挡不住 `removeBlocks` / `updateBlock` 这类程序化 API，
+     * 所以底部工具栏在锁定态另有 `toolbarEnabled = !isLocked` 一层防护（见其调用处）。
+     */
+    LaunchedEffect(isLocked) {
+        blockNoteController.setReadOnly(isLocked)
+    }
+
+    /**
      * V2.8.4 新增：保存进行中标志
      *
      * 防止用户连续点击"完成"按钮触发多次保存：
@@ -1457,6 +1472,36 @@ fun InspirationEditScreen(
                 onToggleCodeSpan = {
                     blockNoteController.format("codeSpan")
                 },
+                /**
+                 * 块操作三项（v1.11）
+                 *
+                 * 来源：原 BlockNote 侧边菜单（⋮⋮ 手柄）的**点击菜单**。按用户决策，
+                 * 该菜单的 4 项全部移入格式工具栏的「块操作」入口，手柄本身只保留
+                 * 拖拽重排（原生手势，无法按钮化）。
+                 *
+                 * 可用态与回显（能否设块色、是否表头）由 JS 侧判定后经 `blockState`
+                 * 上行，见 [com.corgimemo.app.ui.screens.probe.BlockState]。
+                 * 此处与 onToggleCodeSpan 等块内操作一致，不再单独检查 isLocked
+                 * （锁定态由 onTransformEnabled 统一承担）。
+                 */
+                onDeleteBlock = {
+                    blockNoteController.deleteBlock()
+                },
+                onSetBlockColor = { textColor, backgroundColor ->
+                    blockNoteController.setBlockColor(textColor, backgroundColor)
+                },
+                onSetTableHeader = { target, enabled ->
+                    blockNoteController.setTableHeader(target, enabled)
+                },
+                blockState = blockNoteController.blockState,
+                /**
+                 * 锁定态整条格式工具栏禁用（v1.11.1）
+                 *
+                 * ⚠️ 不能只依赖上面的 `setReadOnly`：块操作走的是 `removeBlocks` /
+                 * `updateBlock` 这类**程序化 API，不受编辑器只读状态限制**——
+                 * 只读挡得住用户打字，挡不住"点一下删除块"。故工具栏必须自己再拦一道。
+                 */
+                toolbarEnabled = !isLocked,
                 modifier = Modifier.safeAreaForEditBar()
             )
         }

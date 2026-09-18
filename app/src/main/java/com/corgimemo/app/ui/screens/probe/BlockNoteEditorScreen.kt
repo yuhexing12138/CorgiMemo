@@ -276,6 +276,15 @@ private fun createEditorWebView(
                                         "canRedo=${msg.optBoolean("canRedo")}"
                                 )
                             }
+                            "blockState" -> {
+                                // v1.11：探针页只记录（该页无工具栏，无需驱动 UI）
+                                Log.d(
+                                    TAG,
+                                    "blockState: type=${msg.optString("blockType")}, " +
+                                        "canSetBlockColor=${msg.optBoolean("canSetBlockColor")}, " +
+                                        "canToggleHeader=${msg.optBoolean("canToggleHeader")}"
+                                )
+                            }
                             "error" -> Log.e(
                                 "BlockNoteEditor",
                                 "js error: ${msg.optString("message")}"

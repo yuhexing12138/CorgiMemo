@@ -1,14 +1,18 @@
 import "@blocknote/mantine/style.css";
 import { BlockNoteView } from "@blocknote/mantine";
 import {
+  DragHandleButton,
   FormattingToolbar,
   FormattingToolbarController,
+  SideMenu,
+  SideMenuController,
   useBlockNoteEditor,
   useComponentsContext,
   useCreateBlockNote,
+  type SideMenuProps,
 } from "@blocknote/react";
-import { BlockNoteEditor } from "@blocknote/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { BlockNoteEditor, blockHasType } from "@blocknote/core";
+import { useCallback, useEffect, useRef, useState, type FC } from "react";
 import { editorSchema } from "./schema";
 import { bindDown, sendUp, BUILD_FINGERPRINT, type ThemePayload } from "./bridge";
 import { mdToBlocks, blocksToMd, toWebImageUrl } from "./markdown/converter";
@@ -214,6 +218,67 @@ export default function EditorApp() {
     lastUndoStateRef.current = { canUndo, canRedo };
     sendUp({ type: "undoState", canUndo, canRedo });
   }, [getHistoryCommands]);
+
+  /** 上一次上报的当前块状态（JSON 串做去重键，v1.11） */
+  const lastBlockStateRef = useRef<string | null>(null);
+
+  /**
+   * 上报当前光标块状态（v1.11）
+   *
+   * 背景：原 ⋮⋮ 手柄的点击菜单有 4 项，按用户决策全部移入宿主底部工具栏，
+   * 手柄本身只留拖拽。宿主因此必须知道「当前块能点什么」，否则会出现
+   * 点了没反应的哑按钮。其中「删除块」无条件可用（只要有块），故不参与判定。
+   *
+   * 判定口径**照抄官方**，避免"官方菜单能点、桥过来的按钮却置灰"这类不一致：
+   * - 块颜色 → `blockHasType(block, ed, block.type, { textColor | backgroundColor })`
+   *   （官方 `BlockColorsItem` 的写法）
+   * - 表头   → `block.type === "table" && editor.settings.tables.headers`
+   *   （官方 `TableHeadersItem` 的写法；官方目前只支持 1 行 / 1 列，故用布尔）
+   *
+   * 用 JSON 串做去重键：只有选区跨块移动、或有色/表头状态真的变了才上行，
+   * 同一块内移动光标不产生流量。
+   *
+   * 异常同样不静默吞（延续 v1.10 的教训），但做去重，避免选区每次移动都刷 error。
+   */
+  const pushBlockState = useCallback(() => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    try {
+      const { block } = ed.getTextCursorPosition();
+      const supportsTextColor = blockHasType(block, ed, block.type, {
+        textColor: "string",
+      });
+      const supportsBgColor = blockHasType(block, ed, block.type, {
+        backgroundColor: "string",
+      });
+      const isTable = block.type === "table";
+      const props = (block.props ?? {}) as Record<string, unknown>;
+      const content = (block.content ?? {}) as Record<string, unknown>;
+      const payload = {
+        blockType: block.type as string,
+        canSetBlockColor: supportsTextColor || supportsBgColor,
+        blockTextColor: supportsTextColor
+          ? (props.textColor as string | undefined)
+          : undefined,
+        blockBackgroundColor: supportsBgColor
+          ? (props.backgroundColor as string | undefined)
+          : undefined,
+        canToggleHeader: isTable && !!ed.settings?.tables?.headers,
+        isHeaderRow: isTable ? Boolean(content.headerRows) : false,
+        isHeaderCol: isTable ? Boolean(content.headerCols) : false,
+      };
+      const key = JSON.stringify(payload);
+      if (lastBlockStateRef.current === key) return;
+      lastBlockStateRef.current = key;
+      sendUp({ type: "blockState", ...payload });
+    } catch (e: any) {
+      const message = `blockState probe failed: ${e?.message ?? e}`;
+      // 首次或错误内容变化时才上行，避免选区移动反复刷同一条
+      if (lastBlockStateRef.current === message) return;
+      lastBlockStateRef.current = message;
+      sendUp({ type: "error", message });
+    }
+  }, []);
 
   /** 变更上行（防抖 800ms） */
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -480,6 +545,82 @@ export default function EditorApp() {
           }
           break;
         }
+
+        /**
+         * 删除块（v1.11）：原 ⋮⋮ 手柄点击菜单的「删除」项，移入宿主工具栏。
+         *
+         * 命中口径与官方 `RemoveBlockItem` 完全一致：若当前**选区**包含光标块，
+         * 则删除选区内的全部块（支持多选一起删）；否则只删光标那一块。
+         * 这样宿主无需关心用户选了几个块。
+         */
+        case "deleteBlock": {
+          const ed = editorRef.current;
+          if (!ed) break;
+          try {
+            const cur = ed.getTextCursorPosition();
+            const selected = ed.getSelection()?.blocks as any[] | undefined;
+            const targets =
+              selected && selected.some((b) => b.id === cur.block.id)
+                ? selected
+                : [cur.block];
+            ed.removeBlocks(targets);
+          } catch (e: any) {
+            sendUp({ type: "error", message: `deleteBlock: ${e.message}` });
+          }
+          break;
+        }
+
+        /**
+         * 块级颜色（v1.11）：原 ⋮⋮ 手柄点击菜单的「颜色」项。
+         *
+         * ⚠️ 与 `format` 的 `textColor` 是不同维度：本条走 `updateBlock` 写
+         * **块 props**，作用于整个块；后者走 `addStyles` 写**行内 span 样式**，
+         * 只作用于选区内的文字。两者可同时存在、互不覆盖。
+         *
+         * 传 `"default"` 表示清除（与 BlockNote 预设色语义一致）。
+         */
+        case "setBlockColor": {
+          const ed = editorRef.current;
+          if (!ed) break;
+          try {
+            const { block } = ed.getTextCursorPosition();
+            const props: Record<string, string> = {};
+            if (msg.textColor !== undefined) props.textColor = msg.textColor;
+            if (msg.backgroundColor !== undefined) {
+              props.backgroundColor = msg.backgroundColor;
+            }
+            if (Object.keys(props).length === 0) break;
+            ed.updateBlock(block, { props } as any);
+          } catch (e: any) {
+            sendUp({ type: "error", message: `setBlockColor: ${e.message}` });
+          }
+          break;
+        }
+
+        /**
+         * 表头行 / 表头列（v1.11）：原 ⋮⋮ 手柄点击菜单的「表头行 / 表头列」项。
+         *
+         * 官方 TODO 注明目前只支持 1 行 / 1 列，故桥协议用布尔开关
+         * （enabled → 1，disabled → undefined）。
+         * 非表格块静默忽略——宿主已按上行的 `canToggleHeader` 置灰，正常不会走到这里。
+         */
+        case "setTableHeader": {
+          const ed = editorRef.current;
+          if (!ed) break;
+          try {
+            const { block } = ed.getTextCursorPosition();
+            if (block.type !== "table") break;
+            const content = (block.content ?? {}) as Record<string, unknown>;
+            const next =
+              msg.target === "row"
+                ? { headerRows: msg.enabled ? 1 : undefined }
+                : { headerCols: msg.enabled ? 1 : undefined };
+            ed.updateBlock(block, { content: { ...content, ...next } } as any);
+          } catch (e: any) {
+            sendUp({ type: "error", message: `setTableHeader: ${e.message}` });
+          }
+          break;
+        }
       }
     });
     // v1.8：ready 带上构建指纹，宿主打进 logcat，便于确认 WebView 加载的产物版本
@@ -531,6 +672,7 @@ export default function EditorApp() {
       }}
       onChange={pushChanged}
       onUndoStateChange={pushUndoState}
+      onBlockStateChange={pushBlockState}
       emojiOpen={emojiOpen}
       onEmojiClose={() => setEmojiOpen(false)}
       onEmojiPick={(emoji) => {
@@ -541,6 +683,61 @@ export default function EditorApp() {
     />
   );
 }
+
+/**
+ * 拖拽手柄的按钮尺寸（px，v1.11）
+ *
+ * 源自 `@blocknote/mantine` 的 `SideMenuButton`：有 icon 时渲染
+ * `MantineActionIcon size={24}`，且 `SideMenu` 的容器是 `MantineGroup gap={0}`
+ * ——两个按钮之间没有任何间隙。本项目只保留拖拽手柄，故常量即为 24。
+ *
+ * ⚠️ 这是「左侧留白」的唯一真值来源：它与下方 `SIDE_MENU_GUTTER_GAP` 相加后
+ * 写入 CSS 变量 `--bn-side-menu-gutter`，由 editor.css 消费。
+ * 若日后调整手柄图标尺寸，只改这两个常量即可，不要在 CSS 里另写数字。
+ */
+const SIDE_MENU_HANDLE_WIDTH = 24;
+
+/**
+ * 拖拽手柄与正文之间保留的视觉间隙（px，v1.11）
+ *
+ * 官方 `padding-inline: 54px` 恰为 `48（两个按钮）+ 6`，取 6 沿用其手感，
+ * 避免手柄紧贴文字。同时 24 + 6 = 30 > 20，可保住嵌套列表
+ * 位于 `left: -20px` 的竖向缩进线（见 editor.css 说明）。
+ */
+const SIDE_MENU_GUTTER_GAP = 6;
+
+/**
+ * 禁用拖拽手柄的点击菜单（v1.11）
+ *
+ * ⋮⋮ 手柄的点击菜单原有 4 项：删除块 / 块颜色 / 表头行 / 表头列。
+ * 按用户决策，这 4 项**全部桥接到宿主底部工具栏**，手柄因此退化为「纯拖拽把手」。
+ *
+ * ⚠️ 必须显式传组件覆盖：`DragHandleButton` 内部是
+ * `const Component = props.dragHandleMenu || DragHandleMenu;`
+ * ——不传时 `Component` 会回落到官方 `DragHandleMenu`（渲染全部默认条目），
+ * 传 `undefined` 达不到"禁用"效果，只有传一个返回 `null` 的组件才行。
+ */
+const NoDragHandleMenu: FC = () => null;
+
+/**
+ * 只含拖拽手柄的侧边菜单（v1.11）
+ *
+ * 与官方默认 `SideMenu` 的差异只有一处：**不含 `AddBlockButton`**。
+ * - `+` 手柄的功能（插入图片/视频/音频/文件、分割线、emoji、块类型转换）早已
+ *   桥接到宿主底部工具栏，手柄上是重复入口，且它是左侧 48px 留白的一半来源；
+ * - **保留 `SideMenu` 容器而非自绘**：它内部会算出 `data-block-type` /
+ *   `data-level` / `data-url` 等属性，`@blocknote/react` 的样式表靠这些属性
+ *   把菜单高度与块高对齐（如 `heading[data-level=1]` = 108px）。自绘会让拖拽
+ *   手柄在标题、图片等大块上垂直错位。
+ *
+ * 于是菜单宽度由 48px（2 × 24）降为 **24px**（1 × 24），
+ * 左侧留白相应由 54px 降到 30px。
+ */
+const DragHandleOnlySideMenu: FC<SideMenuProps> = () => (
+  <SideMenu dragHandleMenu={NoDragHandleMenu}>
+    <DragHandleButton dragHandleMenu={NoDragHandleMenu} />
+  </SideMenu>
+);
 
 /** 编辑器核心（initialBlocks 就绪后挂载，useCreateBlockNote 仅执行一次） */
 function EditorCore(props: {
@@ -556,6 +753,8 @@ function EditorCore(props: {
   onChange: () => void;
   /** v1.7：撤销/重做可用态上报（宿主左上角按钮置灰用） */
   onUndoStateChange: () => void;
+  /** v1.11：当前光标块状态上报（宿主工具栏的删除/块颜色/表头按钮置灰与回显用） */
+  onBlockStateChange: () => void;
 }) {
   // @font-face 注入（S5）
   useEffect(() => {
@@ -601,6 +800,8 @@ function EditorCore(props: {
     props.onReady(editor);
     // 初次挂载后上报一次可用态（初始内容装载本身不产生可撤销历史，通常为 false/false）
     props.onUndoStateChange();
+    // v1.11：同时上报一次当前块状态，避免宿主工具栏的按钮在首次点击前处于无状态
+    props.onBlockStateChange();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
 
@@ -619,6 +820,8 @@ function EditorCore(props: {
         ["--editor-bg" as any]: editorBackground,
         ["--editor-fg" as any]: props.theme.dark ? "#e0e0e0" : "#333333",
         ["--editor-border" as any]: props.theme.dark ? "#444444" : "#cccccc",
+        // 左侧留白（v1.11）：由常量算出单点注入，editor.css 的 .bn-editor 消费
+        ["--bn-side-menu-gutter" as any]: `${SIDE_MENU_HANDLE_WIDTH + SIDE_MENU_GUTTER_GAP}px`,
       }}
     >
       <div style={{ fontFamily: "var(--content-font, system-ui)" }}>
@@ -626,11 +829,29 @@ function EditorCore(props: {
           editor={editor}
           theme={props.theme.dark ? "dark" : "light"}
           formattingToolbar={false}
+          /**
+           * 关闭官方默认侧边菜单（v1.11）
+           *
+           * 官方默认渲染「+ / ⋮⋮」两个手柄（48px）。本项目要用自己的
+           * `DragHandleOnlySideMenu`（只剩拖拽手柄，24px），故先关默认，
+           * 再在 children 里挂自定义实例 —— 与下方 `formattingToolbar={false}`
+           * + 自渲染 `FormattingToolbarController` 的做法一致。
+           */
+          sideMenu={false}
           onChange={() => {
             // v1.7：内容变更既推 markdown 快照，也刷新撤销/重做可用态
             props.onChange();
             props.onUndoStateChange();
+            // v1.11：块类型可能因 markdown 前缀输入而改变（如 "# " → heading），需刷新块状态
+            props.onBlockStateChange();
           }}
+          /**
+           * 选区变化 → 上报当前块状态（v1.11）
+           *
+           * 光标在不同块之间移动时，工具栏的「块颜色 / 表头」按钮可用态与回显需要跟着变。
+           * 上报函数内部按 JSON 串去重，同块内移动光标不会产生上行流量。
+           */
+          onSelectionChange={() => props.onBlockStateChange()}
         >
           <FormattingToolbarController
             formattingToolbar={() => (
@@ -641,6 +862,8 @@ function EditorCore(props: {
               </>
             )}
           />
+          {/** 自定义侧边菜单：只保留拖拽手柄（v1.11） */}
+          <SideMenuController sideMenu={DragHandleOnlySideMenu} />
         </BlockNoteView>
       </div>
       {props.emojiOpen && (

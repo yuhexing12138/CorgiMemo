@@ -237,15 +237,75 @@ val contentBackgroundPaint = userPickedBackgroundColor  // 绘制层真值："�
 会波及"滚动清除块选中态"（`contentScrollState.isScrollInProgress` 链路）与图片画廊的 inset 计算，
 **故单独排期，本轮不做**（已在代码注释中标注取舍）。
 
-### 3.8 备选：54px 保留但改为浮层
+### 3.8 侧边菜单留白：从「置 0」到「只留拖拽手柄」（v1.11 定案）
 
-若置 0 后侧边菜单被裁，可退为：
+**⚠️ 本节曾写入的错误退路（已废弃，勿再采用）**：
 
 ```css
-/* 保留极小安全边距，侧边菜单靠 transform 溢出显示 */
+/* ❌ 真机上会让手柄比"被裁"更糟——完全不可见 */
 .bn-editor { padding-inline: 16px !important; }
 .bn-side-menu { transform: translateX(-16px); }
 ```
+
+**为何错**（读源码核实，非推测）：
+
+| 事实 | 来源 |
+| --- | --- |
+| 菜单 = `AddBlockButton` + `DragHandleButton`，容器 `MantineGroup gap={0}` | `react/.../SideMenu/SideMenu.tsx` |
+| 每个按钮 `MantineActionIcon size={24}` → **菜单总宽 48px** | `mantine/.../sideMenu/SideMenuButton.tsx` |
+| 官方 `padding-inline: 54px` = 48 + 6 间隙 | `core/src/editor/editor.css` |
+| 菜单 `placement: "left-start"`，portal 到 `.bn-root`（在 `.bn-editor` **之外**） | `react/.../SideMenu/SideMenuController.tsx` |
+| `.bn-root` 只有 CSS 变量、无水平 padding | 已核实 |
+
+**几何**：菜单**右边缘紧贴块内容左边缘**，再向左延伸 48px →
+`菜单左边缘 = padding-left − 48`，故可见条件是 **`padding-left ≥ 48`**。
+
+| padding 取值 | 菜单区间 | 结果 |
+| --- | --- | --- |
+| `padding-inline: 0` | `[−48, 0]` | 完全在视口外 ← **真机实测确认** |
+| `padding-inline: 16px` | `[−32, 16]` | 只露约 1/3，仍被裁 |
+| `16px` + `translateX(-16px)` | `[−48, 0]` | **完全不可见，比不改更糟** |
+| `padding-left: 54px` | `[6, 54]` | 完整可见（官方取值） |
+
+> 另注：左侧留白过小还会连带裁掉**嵌套列表的竖向缩进线**（`left: -20px`）与
+> toggle 块的添加按钮（`margin-left: 22px`）——二者同样依赖左侧空间。
+
+**最终方案（v1.11，用户决策）**——不再靠留白迁就手柄，而是**收敛侧边菜单本身**：
+
+1. **删除 `+` 手柄**：其功能（插入媒体 / 分割线 / emoji / 块类型转换）早已桥接到工具栏，
+   手柄上是重复入口，且它占掉左侧 24px；
+2. **保留 `⋮⋮` 手柄**：它承担拖拽重排（原生 HTML5 drag 手势，无法按钮化）；
+3. **其点击菜单的 4 项移入宿主工具栏**（删除块 / 块颜色 / 表头行 / 表头列），
+   手柄因此退化为**纯拖拽把手**。
+   - 关默认 + 自渲染：`<BlockNoteView sideMenu={false}>`，
+     children 里挂 `<SideMenuController sideMenu={DragHandleOnlySideMenu} />`
+     ——与既有 `formattingToolbar={false}` + 自渲染 `FormattingToolbarController` 同一模式；
+   - 禁用点击菜单用 `dragHandleMenu={() => null}`（`DragHandleButton` 内是
+     `props.dragHandleMenu || DragHandleMenu`，不传会回落官方菜单，传 `undefined` 无效）；
+   - ⚠️ 自定义组件**必须复用官方 `SideMenu` 容器**而非自绘：它内部会算出
+     `data-block-type` / `data-level` / `data-url` 等属性，`@blocknote/react` 的样式表
+     靠这些属性把菜单高度与块高对齐（如 `heading[data-level=1]` = 108px）。
+     自绘会让拖拽手柄在标题、图片等大块上**垂直错位**。
+
+于是所需宽度由 48px 降为 **24px**，左侧留白取 `24 + 6 = 30px`：
+
+```css
+.bn-editor {
+  padding-inline-start: var(--bn-side-menu-gutter, 30px) !important; /* 只容一个拖拽手柄 */
+  padding-inline-end: 0 !important;                                  /* 右侧官方纯对称留白，无功能 */
+}
+```
+
+`--bn-side-menu-gutter` 的值在 `EditorApp.tsx` 由两个常量
+（`SIDE_MENU_HANDLE_WIDTH = 24`、`SIDE_MENU_GUTTER_GAP = 6`）算出后写入，
+**CSS 里不出现魔法数字**——日后调整手柄尺寸只改常量。
+
+**效果**：可用宽度从 `W − 108` 变为 `W − 30`（**净增 78px**），手柄完整可见，
+且嵌套缩进线（需 20px）也不被裁。
+
+**新增的桥接命令**（协议详见 `bridge-protocol.md` v1.11）：
+`deleteBlock` / `setBlockColor` / `setTableHeader`；可用态与回显由上行 `blockState` 驱动，
+判定口径**照抄官方** `BlockColorsItem` / `TableHeadersItem`，避免"官方能点、桥过来却置灰"。
 
 ## 四、改动文件清单
 
@@ -262,6 +322,23 @@ val contentBackgroundPaint = userPickedBackgroundColor  // 绘制层真值："�
 | `app/src/main/assets/blocknote-web/editor/editor.html` | **产物重建**（1,882,083 bytes） |
 | `.workbuddy/memory/MEMORY.md` | 新增「BlockNote 官方样式约束（v1.9 实测）」；补「无限高约束穿透多层」教训 |
 
+**v1.11（侧边菜单收敛 + 块操作桥接）追加**：
+
+| 文件 | 改动 |
+| --- | --- |
+| `blocknote-probe/src/editor/editor.css` | `padding-inline: 0` → `padding-inline-start: var(--bn-side-menu-gutter, 30px)` + `padding-inline-end: 0`（§3.8） |
+| `blocknote-probe/src/editor/EditorApp.tsx` | 新增 `SIDE_MENU_HANDLE_WIDTH` / `SIDE_MENU_GUTTER_GAP` 常量 + 写入 `--bn-side-menu-gutter`；`NoDragHandleMenu` / `DragHandleOnlySideMenu` 组件；`sideMenu={false}` + 自渲染 `SideMenuController`；`pushBlockState`（含去重）；三个新下行命令 handler；`onSelectionChange` 接线 |
+| `blocknote-probe/src/editor/bridge.ts` | 下行增 `deleteBlock` / `setBlockColor` / `setTableHeader`；上行增 `blockState` |
+| `app/.../probe/BlockNoteEditorWebView.kt` | 新增 `BlockState` 数据类；controller 增 `deleteBlock` / `setBlockColor` / `setTableHeader` 与 `blockState` 快照；`handleUpMessage` 增 `blockState` 分支 |
+| `app/.../probe/BlockNoteEditorScreen.kt` | 探针页上行处理器补 `blockState` 分支（仅打 log） |
+| `app/.../inspiration/components/RichTextFormatToolbar.kt` | 新增「组九：块操作」入口 + `BlockOpsMenuButton` / `BlockColorRow` / `BlockColorDot` 组件 + `BlockColorPalette`（色值对齐 `defaultColors.ts`）；新增 4 个参数 |
+| `app/.../inspiration/components/InspirationEditBottomBar.kt` | 透传 4 个新参数 |
+| `app/.../inspiration/InspirationEditScreen.kt` | 接线到 `blockNoteController` 的三个新方法与 `blockState` |
+| `docs/bridge-protocol.md` | 下行/上行表补新消息 + 时序补块操作链路 + 版本记录 v1.11 |
+
 > ⚠️ **产物必须重建**：改完 `blocknote-probe/src/editor/` 后，需
 > `cd blocknote-probe && npm run build:editor`（或依赖 `:app:buildBlockNoteEditor`）。
 > 验证判据：logcat 的 `ready received | build=<构建时间>` 应为本次时间。
+> ⚠️ 产物是否刷新**用关键字计数判断，不要用 diff 行数**（vite 会重排压缩短变量名，
+> diff 恒显示大量"改动"）。本次核验：`--bn-side-menu-gutter` ×2、
+> `deleteBlock`/`setBlockColor`/`setTableHeader`/`blockState` 各 ×2。

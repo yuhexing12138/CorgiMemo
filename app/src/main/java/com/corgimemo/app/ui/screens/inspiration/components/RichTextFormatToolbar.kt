@@ -3,20 +3,29 @@ package com.corgimemo.app.ui.screens.inspiration.components
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
@@ -30,8 +39,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.BaselineShift
@@ -40,8 +53,10 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.corgimemo.app.ui.components.longPressRepeat
+import com.corgimemo.app.ui.screens.probe.BlockState
 import com.corgimemo.app.ui.theme.ContentFontManager
 import com.corgimemo.app.ui.theme.FontWeightProbe
+import com.corgimemo.app.ui.theme.ThemeManager
 import com.mohamedrejeb.richeditor.model.RichTextState
 import compose.icons.LucideIcons
 import compose.icons.lucideicons.CaseSensitive
@@ -155,7 +170,44 @@ fun RichTextFormatToolbar(
     /** BlockNote 迁移（P1.5）：媒体插入请求（"image"/"video"/"audio"/"file" → 宿主选择器） */
     onInsertMedia: (String) -> Unit = {},
     /** BlockNote 迁移（P1.5）：打开表情选择面板 */
-    onOpenEmojiPicker: () -> Unit = {}
+    onOpenEmojiPicker: () -> Unit = {},
+    /**
+     * 删除当前块（v1.11）：原 BlockNote 侧边菜单（⋮⋮ 手柄）点击菜单的「删除」项。
+     *
+     * 背景：该手柄的点击菜单原有 4 项，按用户决策全部移入本工具栏，手柄本身
+     * 只保留拖拽重排（原生手势，无法按钮化）。命中口径由 JS 侧决定——当前选区
+     * 若包含光标块则删整个选区，否则只删光标块，故本回调无需传参。
+     */
+    onDeleteBlock: () -> Unit = {},
+    /**
+     * 设置当前块的**块级**颜色（v1.11）：原 ⋮⋮ 手柄点击菜单的「颜色」项。
+     *
+     * ⚠️ 与 [onOpenColorStyleDialog]（行内文字色）是**不同维度**，别混：
+     * 本回调写**块 props**（整个块生效），后者写**行内 span 样式**（仅选区文字生效）。
+     *
+     * @param textColor 块级文本色（BlockNote 预设色名；"default" 清除）；传 null = 不改动该维度
+     * @param backgroundColor 块级背景色（预设色名；"default" 清除）；传 null = 不改动该维度
+     */
+    onSetBlockColor: (String?, String?) -> Unit = { _, _ -> },
+    /**
+     * 切换表头行 / 表头列（v1.11）：原 ⋮⋮ 手柄点击菜单的「表头行 / 表头列」项。
+     * @param target "row" = 表头行，"column" = 表头列
+     * @param enabled true = 开启，false = 关闭
+     */
+    onSetTableHeader: (String, Boolean) -> Unit = { _, _ -> },
+    /**
+     * 当前光标块状态（v1.11）：驱动「块操作」菜单的可用态与选中回显
+     * （色板高亮当前色、表头项显隐与勾选）。由 JS 侧经 `blockState` 上行。
+     */
+    blockState: BlockState = BlockState(),
+    /**
+     * 整条格式工具栏的可用性（v1.11.1）：宿主锁定态（`isLocked`）时传 false。
+     *
+     * ⚠️ 为什么需要**遮罩**而不只是视觉变淡：块操作走的是 `editor.removeBlocks()` /
+     * `updateBlock()` 这类**程序化 API**，它们**不受编辑器只读状态限制**——只把按钮
+     * 画灰仍会真的生效。故禁用态除降低不透明度外，还叠一层透明遮罩吞掉全部触摸。
+     */
+    enabled: Boolean = true
 ) {
     /** 加粗字重菜单的展开状态（纯 UI 局部状态，置于函数体顶层，不在条件分支内） */
     var boldExpanded by remember { mutableStateOf(false) }
@@ -192,11 +244,34 @@ fun RichTextFormatToolbar(
         )
     }
 
+    /**
+     * 禁用态拦截：在 `PointerEventPass.Initial` 阶段消费全部指针事件。
+     *
+     * 为什么必须用 `Initial`（本阶段事件**由父级流向子级**，与外层相反）：
+     * `clickable` / `IconButton` 都在 `Main` 阶段（由子级流向父级）响应，
+     * 若在 Row 的 `Main` 阶段拦截，子按钮早已先一步处理完，拦不住。
+     * 而在 `Initial` 阶段父级先拿到事件并 consume，子按钮便收不到有效点击。
+     */
+    val disabledBlocker = if (enabled) {
+        Modifier
+    } else {
+        Modifier.pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                }
+            }
+        }
+    }
+
     Row(
         modifier = modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            /** 锁定态整条降到 38% 不透明度（与 FormatIconButton 的禁用态同款视觉） */
+            .alpha(if (enabled) 1f else 0.38f)
+            .then(disabledBlocker),
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -418,6 +493,29 @@ fun RichTextFormatToolbar(
         /** ====== 组八：Others（+ 菜单 Others 分类） ====== */
         FormatButtonGroup {
             RiFormatButton("RiEmotionFill", onClick = onOpenEmojiPicker, contentDescription = "表情", enabled = onTransformEnabled)
+        }
+
+        ToolbarDivider()
+
+        /**
+         * ====== 组九：块操作（v1.11）======
+         *
+         * 收纳原 BlockNote 侧边菜单（⋮⋮ 手柄）**点击菜单**的 4 项：删除块、块颜色、
+         * 表头行、表头列。手柄本身已退化为纯拖拽把手（其拖拽重排是原生手势，无法按钮化），
+         * 故这 4 项在此提供唯一入口。
+         *
+         * 之所以合成**一个入口按钮 + 下拉菜单**而非 4 个独立按钮：块颜色需要色板、
+         * 表头需要两个开关，直接铺开会挤占工具栏；且这 4 项都是低频块级操作，
+         * 合并后语义与官方原菜单一一对应，用户认知成本最低。
+         */
+        FormatButtonGroup {
+            BlockOpsMenuButton(
+                blockState = blockState,
+                enabled = onTransformEnabled,
+                onDeleteBlock = onDeleteBlock,
+                onSetBlockColor = onSetBlockColor,
+                onSetTableHeader = onSetTableHeader
+            )
         }
     }
 }
@@ -712,5 +810,286 @@ private fun FormatWeightTierButton(
                 style = LocalTextStyle.current.copy(baselineShift = BaselineShift.Subscript)
             )
         }
+    }
+}
+
+/**
+ * 「块操作」菜单按钮（v1.11）
+ *
+ * 收纳原 BlockNote 侧边菜单（⋮⋮ 手柄）**点击菜单**的 4 项，是这 4 项的唯一入口
+ * （手柄本身已退化为纯拖拽把手）。菜单顺序刻意与官方 `DragHandleMenu` 对齐
+ * （删除块 → 颜色 → 表头），降低从原手柄迁移过来的认知成本。
+ *
+ * 可用态与回显全部取自 [blockState]（JS 侧判定后经 `blockState` 上行）：
+ * - 块颜色行始终显示——色板点击在 JS 侧对不支持的块类型静默忽略，UI 保持结构稳定；
+ * - 表头两项**仅在表格块内出现**，与官方 `TableHeadersItem` 的 `return null` 同语义，
+ *   避免在普通块上展示永远点不动的条目。
+ *
+ * @param blockState 当前光标块状态（可用态与选中回显）
+ * @param enabled 整体可用性（BlockNote 模式 true；Compose 模式 false 置灰）
+ * @param onDeleteBlock 删除块回调
+ * @param onSetBlockColor 设置块级颜色回调（textColor, backgroundColor）；null = 不改动该维度
+ * @param onSetTableHeader 切换表头回调（target, enabled）
+ */
+@Composable
+private fun BlockOpsMenuButton(
+    blockState: BlockState,
+    enabled: Boolean,
+    onDeleteBlock: () -> Unit,
+    onSetBlockColor: (String?, String?) -> Unit,
+    onSetTableHeader: (String, Boolean) -> Unit
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+
+    /**
+     * 色板要按当前主题取明/暗两套色值——BlockNote 内部同样分两套
+     * （见 defaultColors.ts 的 COLORS_DEFAULT / COLORS_DARK_MODE_DEFAULT），
+     * 取错会让色点在暗色主题下显得过亮而失真。
+     * 判定口径与 [com.corgimemo.app.ui.screens.probe.BlockNoteEditorWebView] 一致，
+     * 保证色板与编辑器实际渲染颜色同源。
+     */
+    val themeMode by ThemeManager.themeMode.collectAsState()
+    val isDark = when (themeMode) {
+        "dark" -> true
+        "light" -> false
+        else -> isSystemInDarkTheme()
+    }
+
+    Box {
+        FormatIconButton(
+            imageVector = Icons.Default.MoreHoriz,
+            isActive = menuOpen,
+            onClick = { menuOpen = true },
+            contentDescription = "块操作",
+            enabled = enabled
+        )
+        DropdownMenu(
+            expanded = menuOpen,
+            onDismissRequest = { menuOpen = false }
+        ) {
+            /**
+             * 删除块：用 error 色标示破坏性语义。
+             * 不额外加二次确认——BlockNote 历史栈可撤销，误触有兜底；
+             * 且「从菜单里显式选中一个红色条目」本身已构成确认动作。
+             */
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = "删除块",
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 13.sp
+                    )
+                },
+                onClick = {
+                    menuOpen = false
+                    onDeleteBlock()
+                }
+            )
+
+            HorizontalDivider()
+
+            /** 块背景色 / 块文字色：两行色板，点选后菜单保持打开，便于连续微调 */
+            BlockColorRow(
+                label = "背景色",
+                current = blockState.blockBackgroundColor,
+                isDark = isDark,
+                picker = { name, dark -> BlockColorPalette.background(name, dark) },
+                onPick = { name -> onSetBlockColor(null, name) }
+            )
+            BlockColorRow(
+                label = "文字色",
+                current = blockState.blockTextColor,
+                isDark = isDark,
+                picker = { name, dark -> BlockColorPalette.text(name, dark) },
+                onPick = { name -> onSetBlockColor(name, null) }
+            )
+
+            if (blockState.canToggleHeader) {
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = if (blockState.isHeaderRow) "✓ 表头行" else "表头行",
+                            fontSize = 13.sp
+                        )
+                    },
+                    onClick = { onSetTableHeader("row", !blockState.isHeaderRow) }
+                )
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = if (blockState.isHeaderCol) "✓ 表头列" else "表头列",
+                            fontSize = 13.sp
+                        )
+                    },
+                    onClick = { onSetTableHeader("column", !blockState.isHeaderCol) }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 块颜色选择行（v1.11）
+ *
+ * 一行色点：最左为「默认」（清除块级颜色），其后是 9 个 BlockNote 预设色。
+ * 当前生效色以暖橙粗描边标记，与工具栏其余按钮的激活态配色保持一致。
+ *
+ * @param label 行标题（"背景色" / "文字色"）
+ * @param current 当前生效色名（空串或 "default" 视为默认色）
+ * @param isDark 是否暗色主题（决定取哪套色值）
+ * @param picker 色名 → Compose Color（背景色与文字色取不同维度，故由调用方注入）
+ * @param onPick 点选回调（参数为色名；"default" = 清除）
+ */
+@Composable
+private fun BlockColorRow(
+    label: String,
+    current: String,
+    isDark: Boolean,
+    picker: (String, Boolean) -> Color,
+    onPick: (String) -> Unit
+) {
+    /** 空串与 "default" 都表示"未设置块级颜色"（前者来自未上报，后者是 BlockNote 的清除值） */
+    val isDefault = current.isEmpty() || current == "default"
+
+    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(
+            modifier = Modifier.padding(top = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BlockColorDot(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                selected = isDefault,
+                onClick = { onPick("default") },
+                contentDescription = "$label 默认",
+                showSlash = true
+            )
+            BlockColorPalette.names.forEach { name ->
+                BlockColorDot(
+                    color = picker(name, isDark),
+                    selected = !isDefault && current == name,
+                    onClick = { onPick(name) },
+                    contentDescription = "$label $name"
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 单个色点（v1.11）
+ *
+ * @param color 填充色
+ * @param selected 是否当前选中（暖橙 2dp 描边）
+ * @param onClick 点击回调
+ * @param contentDescription 无障碍描述
+ * @param showSlash 是否画一条斜杠表示「不设置颜色」（用于"默认"项，避免与纯白底色混淆）
+ */
+@Composable
+private fun BlockColorDot(
+    color: Color,
+    selected: Boolean,
+    onClick: () -> Unit,
+    contentDescription: String,
+    showSlash: Boolean = false
+) {
+    Box(
+        modifier = Modifier
+            .size(24.dp)
+            .clip(CircleShape)
+            .background(color)
+            .border(
+                width = if (selected) 2.dp else 1.dp,
+                color = if (selected) {
+                    Color(0xFFFF9A5C)
+                } else {
+                    MaterialTheme.colorScheme.outlineVariant
+                },
+                shape = CircleShape
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        if (showSlash) {
+            Text(
+                text = "／",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/**
+ * BlockNote 官方块级色板（v1.11）
+ *
+ * 色名与色值**逐条对应** `@blocknote/core/src/editor/defaultColors.ts`：
+ * - 亮色 → `COLORS_DEFAULT`
+ * - 暗色 → `COLORS_DARK_MODE_DEFAULT`
+ *
+ * 为何在宿主硬编码而非由 JS 上行：色板必须在菜单弹出的**同一帧**就渲染出来，
+ * 不能等一次上下行往返；而色名属于桥协议的一部分（稳定），色值极少变动。
+ * 若 BlockNote 升级调整了色值，同步本表即可——**改前先读上述源文件确认**，
+ * 不要凭印象填色。
+ *
+ * 注意 `default`（清除）不是色板成员而是调用方传的特殊值，故不在 [names] 中。
+ */
+private object BlockColorPalette {
+    /** 预设色名，顺序与官方 ColorPicker 一致 */
+    val names = listOf(
+        "gray", "brown", "red", "orange", "yellow", "green", "blue", "purple", "pink"
+    )
+
+    /** 亮色模式：色名 → (文本色 hex, 背景色 hex) */
+    private val lightMap = mapOf(
+        "gray" to ("#9b9a97" to "#ebeced"),
+        "brown" to ("#64473a" to "#e9e5e3"),
+        "red" to ("#e03e3e" to "#fbe4e4"),
+        "orange" to ("#d9730d" to "#f6e9d9"),
+        "yellow" to ("#dfab01" to "#fbf3db"),
+        "green" to ("#4d6461" to "#ddedea"),
+        "blue" to ("#0b6e99" to "#ddebf1"),
+        "purple" to ("#6940a5" to "#eae4f2"),
+        "pink" to ("#ad1a72" to "#f4dfeb")
+    )
+
+    /** 暗色模式：色名 → (文本色 hex, 背景色 hex) */
+    private val darkMap = mapOf(
+        "gray" to ("#bebdb8" to "#9b9a97"),
+        "brown" to ("#8e6552" to "#64473a"),
+        "red" to ("#ec4040" to "#be3434"),
+        "orange" to ("#e3790d" to "#b7600a"),
+        "yellow" to ("#dfab01" to "#b58b00"),
+        "green" to ("#6b8b87" to "#4d6461"),
+        "blue" to ("#0e87bc" to "#0b6e99"),
+        "purple" to ("#8552d7" to "#6940a5"),
+        "pink" to ("#da208f" to "#ad1a72")
+    )
+
+    /** 取某色名的**文本色**（色板"文字色"行用） */
+    fun text(name: String, isDark: Boolean): Color = pick(name, isDark, 0)
+
+    /** 取某色名的**背景色**（色板"背景色"行用） */
+    fun background(name: String, isDark: Boolean): Color = pick(name, isDark, 1)
+
+    /**
+     * 未知色名回落透明色。
+     * 刻意不抛异常——色板是纯展示层，某个色名对不上不应该让整行渲染失败。
+     */
+    private fun pick(name: String, isDark: Boolean, index: Int): Color {
+        val pair = (if (isDark) darkMap else lightMap)[name] ?: return Color.Transparent
+        return hexToColor(if (index == 0) pair.first else pair.second)
+    }
+
+    /** "#RRGGBB" → Compose Color（自行解析，避免与 Compose 的 Color 撞名而需别名 import） */
+    private fun hexToColor(hex: String): Color {
+        val v = hex.removePrefix("#").toLongOrNull(16) ?: return Color.Transparent
+        return Color(0xFF000000L or v)
     }
 }
