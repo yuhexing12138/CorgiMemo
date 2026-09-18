@@ -856,6 +856,41 @@ function EditorCore(props: {
     }, [props.minHeight]);
 
     /**
+     * 键盘弹出 → WebView 高度收缩后，把光标滚回可见区（v1.11.9）。
+     *
+     * 背景：键盘弹出时 BottomBar 的面板接管键盘位，WebView（weight）从 620dp
+     * 收缩到 ~332dp。Android WebView 在 resize 时**只保持 scrollY 不变**，
+     * 不会重新定位光标——而系统的"显示光标"请求发生在键盘弹出**前**
+     * （那时 WebView 还是全高、光标可见），于是光标落进被键盘盖住的下沿区，
+     * 视觉上"光标消失了"。
+     *
+     * 修法：`visualViewport` 的 resize（即 WebView 高度变化，含收缩动画的
+     * 每一帧）时，把当前 selection 滚到最近的可视位置（`block: "nearest"`
+     * 只在不可见时滚最小量，可见时不动，动画期间反复调用会自然收敛）。
+     * 用户主动滚动阅读不会触发 resize，不受影响。
+     */
+    useEffect(() => {
+      const scrollCaretIntoView = () => {
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0) return;
+        const node = sel.anchorNode;
+        if (!node) return;
+        const el =
+          node.nodeType === Node.TEXT_NODE
+            ? node.parentElement
+            : (node as HTMLElement | null);
+        el?.scrollIntoView({ block: "nearest" });
+      };
+      const vv = window.visualViewport;
+      vv?.addEventListener("resize", scrollCaretIntoView);
+      window.addEventListener("resize", scrollCaretIntoView);
+      return () => {
+        vv?.removeEventListener("resize", scrollCaretIntoView);
+        window.removeEventListener("resize", scrollCaretIntoView);
+      };
+    }, []);
+
+    /**
      * v1.11.9 诊断（**临时**，定位"键盘弹出 WebView 不收缩"后移除）：
      * 监听三处高度变化并上报——
      * - `bnEditor`：`.bn-editor` 实际高度（min-height 生效与否的直接证据）
