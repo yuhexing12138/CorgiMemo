@@ -31,6 +31,7 @@
 ## 视觉/渲染教训
 - alpha 动画必裁边界外绘制→悬浮元素不要挂 shadow/dropShadow（被切），定版用 1dp 黑25% 外边框；Modifier.shadow 在 scale+alpha 出方角阴影；animateContentSize 内部 clipToBounds() 持续裁剪。
 - 无限高约束穿透多层吞宿主意图：host(verticalScroll)→Box→AndroidView 任一层 fillMaxSize 即在无限高解不出有限高→heightIn(min) 被静默吞。判据：heightIn(min) 没生效→逐层 grep fillMaxSize 全改 fillMaxWidth()，约定要在每一层都写。
+- ⚠️ 布局盒等距≠墨迹视觉等距（2026-09-18）：Spacer 6dp 精确等距，截图实测墨迹间距 30/17dp。两个隐形行盒空间：①RichTextEditor 默认 minHeight=56dp（M3 标准），矮内容（单行标题）被强撑、12dp 幽灵空隙堆文字下方→矮输入场景传 0.dp；②Text(fontSize=X) 不显式 lineHeight 会 merge LocalTextStyle(bodyLarge 16/24) 大行盒→小字墨迹上下各 ~5dp。大字行盒的字形下沉空间（36sp 盒 ~7.8dp）字体固有，只能靠 Spacer 不对称补偿。已定版：密度 2.2（该机 864×1920 屏）复测 15.5/13.6dp，残差=正文首行 1.5 行距上方死空间 ~4.3dp>时间行 ~1.8dp；时间行→正文 Spacer 6→8dp 后两段均 ≈15.5dp。常量收敛：UiDimensions.inspirationTitleToMetaGap(6.dp)/inspirationMetaToBodyGap(8.dp)，改任一值须逐像素复测另一段。
 
 ## ⚠️ Compose 高频陷阱
 - remember{} 的 calculation lambda 不是 @Composable，里面读 MaterialTheme.colorScheme.* / LocalXxx.current 报错；key 位置合法（组合期求值），只有大括号内非法→把组合读取提到 remember 外。derivedStateOf / LaunchedEffect 里读组合属性能编过但语义错（不随主题重组）。
@@ -52,7 +53,7 @@
   - padding-inline 用 var(--bn-editor-gutter,20px)!important（左右同值；20px 是嵌套列表竖线 left:-20px 下限）；右侧 54px 官方手柄位在手机全宽浪费，sideMenu={false} 整体删除（BlockNote 块拖拽纯 HTML5 DnD，Android WebView 触摸不触发→手机拖不动，改工具栏上移/下移）。
   - ⚠️ CSS 变量就近取值：库在 .bn-root 定义 --bn-colors-*，设在 <html> 会被盖掉→编辑器背景始终纯白。修法：在 .bn-root（含暗色分支）带 !important 重声明 + JS querySelectorAll('.bn-root').forEach setProperty(k,v,'important')。通用规则：覆盖库 CSS 变量前先在产物搜 `.bn-xxx{--var` 找定义选择器。
   - .bn-editor border-radius:0；html/body background 也设宿主背景消除画中画；.editor-page 去 max-width/margin auto；探针 src/probe.css body 背景须改 transparent；首帧防闪白 html,body 内联 background。
-  - 编辑器首部留白：.bn-editor{padding:0}，首块 .bn-block-content{padding:3px 0} 上 3px；宿主用 Compose Spacer 控制间距时需在 editor.css 把首部压 0 才能精确等距（v2026-09-18 灵感编辑页标题/日期行/WebView 三段 6.dp 等距即此做法）。
+  - 编辑器首部留白：.bn-editor{padding:0}，首块 .bn-block-content{padding:3px 0} 上 3px；宿主用 Compose Spacer 控制间距时需在 editor.css 把首部压 0 才能精确等距（v2026-09-18 灵感编辑页三段间距即此做法；⚠️ 但盒间距等距≠墨迹视觉等距，见视觉/渲染教训）。
 
 ## 工具/协作教训
 - 遇「API 看起来应该有但没反应」先查它在不在（grep public xxx），别论证语义。

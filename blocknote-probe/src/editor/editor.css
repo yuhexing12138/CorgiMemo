@@ -161,9 +161,4 @@
 }
 .bn-block-outer:first-child > .bn-block > .bn-block-content {
   padding-top: 0 !important;
-  /* v2026-09-18：首块 line-height 压到 1.1，使「WebView 框顶 → 首块文字上沿」的半行高空白
-     尽量趋近 0，从而与「日期行→WebView」的 6.dp Spacer 叠加后逼近 6.dp
-     （Compose 侧日期行已用 Trim.Both + includeFontPadding=false 把同样空白压到≈0）。
-     ⚠️ 仅作用于首块，避免影响正文其余段落的舒适行距。 */
-  line-height: 1.1;
 }
