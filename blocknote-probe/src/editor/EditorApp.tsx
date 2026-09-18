@@ -873,28 +873,26 @@ function EditorCore(props: {
      * 动画期间连续触发无害：选区已可见时 PM 不产生滚动。
      */
     useEffect(() => {
-      let timer: number | undefined;
       const scrollSelectionIntoView = () => {
         const view = editor.prosemirrorView;
         if (!view) return;
         view.dispatch(view.state.tr.scrollIntoView());
       };
       /**
-       * 防抖 ~200ms：键盘弹出/收起是 ~300ms 的高度动画，`visualViewport` 的
-       * resize 会**逐帧**触发（每 10-30ms 一次）。若每帧都执行 scrollIntoView，
-       * PM 的滚动（瞬时完成）会变成"逐帧追跳"——视觉上断断续续。
-       * 防抖到动画结束后只执行一次，配合 `html { scroll-behavior: smooth }`
-       * （editor.css）即为一次平滑滚动。
+       * **逐帧触发，勿加防抖**（v1.11.9 实测两个方向都踩过后定的）：
+       *
+       * - 逐帧**瞬跳**（无 smooth）：键盘 ~300ms 动画内 20 来次小瞬跳，断断续续；
+       * - **防抖 200ms**：滚动被推迟到键盘动画结束后才开始（再叠加 smooth 的
+       *   动画时长），视觉上「键盘完全出现后 WebView 才动」，与键盘不同步；
+       * - **逐帧 + CSS smooth（现状）**：`html { scroll-behavior: smooth }`
+       *   把 PM 的每次瞬时 scrollTo 转成平滑动画，下一帧重新定向时从当前位置
+       *   继续缓动——连续帧拼接成**与键盘同步的连续跟随**，两端皆平滑。
        */
-      const onResize = () => {
-        window.clearTimeout(timer);
-        timer = window.setTimeout(scrollSelectionIntoView, 200);
-      };
+      const onResize = () => scrollSelectionIntoView();
       const vv = window.visualViewport;
       vv?.addEventListener("resize", onResize);
       window.addEventListener("resize", onResize);
       return () => {
-        window.clearTimeout(timer);
         vv?.removeEventListener("resize", onResize);
         window.removeEventListener("resize", onResize);
       };
