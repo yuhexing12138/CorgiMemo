@@ -1512,15 +1512,26 @@ fun InspirationEditScreen(
         /**
          * ⚠️ v1.11.9 诊断埋点（**临时**，定位"键盘弹出 WebView 不收缩"后移除）：
          * 打印键盘 insets 与 Scaffold innerPadding 的实时值。
-         *
-         * 背景假设：`enableEdgeToEdge` 下 `adjustResize` 不再 resize 窗口，
-         * 改为派发 ime insets 交给应用消费；而本项目**没有任何地方消费 ime**
-         * （`imePadding()` 从未被调用），Scaffold 的 innerPadding 默认也不含 ime
-         * ——于是键盘弹出时布局纹丝不动，WebView 被键盘直接盖住。
-         * 本埋点用于证实/证伪该假设。
          */
         val diagImeBottomPx = WindowInsets.ime.getBottom(density)
+        /**
+         * 键盘是否收起（v1.11.9 修复）：**仅在键盘收起时才允许更新编辑区 min-height**。
+         *
+         * 真机日志证实了失控循环：键盘弹出 → BottomBar 的"面板"接管键盘位 →
+         * WebView（weight）变矮 → `onSizeChanged` 把变矮后的值经 `setEditorMinHeight`
+         * 写进 `.bn-editor { min-height }` → Android WebView 为避让键盘进一步压缩
+         * 自己的视口（innerHeight 实测从 620 一路坍缩到 28px）→ 触发新的
+         * `onSizeChanged` → min-height 再变小 → …… 正反馈直到视口只剩一行高。
+         *
+         * 修法：min-height 只在 **ime = 0** 时更新。键盘弹出期间冻结上一次的
+         * 稳定值——长文档不受影响（内容高 > min-height），空文档在压缩后的
+         * 视口里变为"可滚动"，光标始终可见；键盘收起后自然恢复。
+         * 必须用 state 存 ime 值：`onSizeChanged` 是普通回调（非 Composable），
+         * 捕获普通局部变量会是旧值，读 state 才拿得到最新值。
+         */
+        val imeBottomState = remember { mutableStateOf(0) }
         LaunchedEffect(diagImeBottomPx) {
+            imeBottomState.value = diagImeBottomPx
             Log.d(
                 "BlockNoteEditor",
                 "diag | ime bottom=${diagImeBottomPx}px" +
@@ -1882,7 +1893,17 @@ fun InspirationEditScreen(
                             "diag | webview onSizeChanged: ${size.width}x${size.height}px" +
                                 " = ${heightDp.value}dp"
                         )
-                        blockNoteController.setEditorMinHeight(heightDp.value)
+                        /**
+                         * ⚠️ 仅在键盘收起时下发（v1.11.9 修复失控循环）：
+                         * 键盘弹出期间 BottomBar 面板接管键盘位、WebView 被压缩，
+                         * 此时若跟随下发只会让 `.bn-editor` 的 min-height 一路变小，
+                         * 与 Android WebView 的键盘避让互相激发，视口坍缩到一行高
+                         * （真机实测 innerHeight 620 → 28）。冻结为键盘收起时的稳定值，
+                         * 键盘收起后自然恢复。
+                         */
+                        if (imeBottomState.value == 0) {
+                            blockNoteController.setEditorMinHeight(heightDp.value)
+                        }
                     },
                 /** 唯一真值：内容区实际生效背景色（Transparent 已在源头回落为主题 background） */
                 backgroundColor = contentBackgroundColor
