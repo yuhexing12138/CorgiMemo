@@ -1,0 +1,575 @@
+﻿
+09-18 14:18:27.466  6063  6063 D BlockNoteEditor: diag | ime bottom=9px (3.2727273.dp)
+09-18 14:18:27.474  6063  6063 D BlockNoteEditor: diag | ime bottom=36px (13.090909.dp)
+09-18 14:18:27.479  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1674px = 608.7273dp
+09-18 14:18:27.485  6063  6063 D BlockNoteEditor: diag | ime bottom=75px (27.272728.dp)
+09-18 14:18:27.488  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=608 scrollY=317 caretVY=534 caretCY=851 visible=true"})
+09-18 14:18:27.488  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=608 scrollY=317 caretVY=534 caretCY=851 visible=true
+09-18 14:18:27.489  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=608 scrollY=317 caretVY=534 caretCY=851 visible=true"})
+09-18 14:18:27.489  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=608 scrollY=317 caretVY=534 caretCY=851 visible=true
+09-18 14:18:27.489  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=608 visualViewportH=608.727294921875"})
+09-18 14:18:27.489  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=608 visualViewportH=608.727294921875
+09-18 14:18:27.490  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=608 scrollY=317 caretVY=534 caretCY=851 visible=true"})
+09-18 14:18:27.490  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=608 scrollY=317 caretVY=534 caretCY=851 visible=true
+09-18 14:18:27.490  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1629px = 592.36365dp
+09-18 14:18:27.490  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=608 scrollY=317 caretVY=534 caretCY=851 visible=true"})
+09-18 14:18:27.490  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=608 scrollY=317 caretVY=534 caretCY=851 visible=true
+09-18 14:18:27.491  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=608 visualViewportH=608.727294921875"})
+09-18 14:18:27.491  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=608 visualViewportH=608.727294921875
+09-18 14:18:27.497  6063  6063 D BlockNoteEditor: diag | ime bottom=120px (43.636364.dp)
+09-18 14:18:27.500  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=592 scrollY=317 caretVY=534 caretCY=851 visible=true"})
+09-18 14:18:27.500  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=592 scrollY=317 caretVY=534 caretCY=851 visible=true
+09-18 14:18:27.501  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=592 scrollY=317 caretVY=534 caretCY=851 visible=true"})
+09-18 14:18:27.501  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=592 scrollY=317 caretVY=534 caretCY=851 visible=true
+09-18 14:18:27.502  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=592 visualViewportH=592.3636474609375"})
+09-18 14:18:27.502  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=592 visualViewportH=592.3636474609375
+09-18 14:18:27.502  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=592 scrollY=317 caretVY=534 caretCY=851 visible=true"})
+09-18 14:18:27.502  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=592 scrollY=317 caretVY=534 caretCY=851 visible=true
+09-18 14:18:27.503  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1579px = 574.1818dp
+09-18 14:18:27.504  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=592 scrollY=317 caretVY=534 caretCY=851 visible=true"})
+09-18 14:18:27.504  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=592 scrollY=317 caretVY=534 caretCY=851 visible=true
+09-18 14:18:27.504  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=592 visualViewportH=592.3636474609375"})
+09-18 14:18:27.504  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=592 visualViewportH=592.3636474609375
+09-18 14:18:27.511  6063  6063 D BlockNoteEditor: diag | ime bottom=170px (61.81818.dp)
+09-18 14:18:27.518  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1527px = 555.2727dp
+09-18 14:18:27.519  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=574 scrollY=317 caretVY=534 caretCY=851 visible=true"})
+09-18 14:18:27.519  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=574 scrollY=317 caretVY=534 caretCY=851 visible=true
+09-18 14:18:27.523  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=574 scrollY=317 caretVY=534 caretCY=851 visible=true"})
+09-18 14:18:27.523  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=574 scrollY=317 caretVY=534 caretCY=851 visible=true
+09-18 14:18:27.523  6063  6063 D BlockNoteEditor: diag | ime bottom=222px (80.72727.dp)
+09-18 14:18:27.524  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=574 visualViewportH=574.1818237304688"})
+09-18 14:18:27.525  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=574 visualViewportH=574.1818237304688
+09-18 14:18:27.526  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=574 scrollY=317 caretVY=534 caretCY=851 visible=true"})
+09-18 14:18:27.526  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=574 scrollY=317 caretVY=534 caretCY=851 visible=true
+09-18 14:18:27.528  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=574 scrollY=317 caretVY=534 caretCY=851 visible=true"})
+09-18 14:18:27.528  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=574 scrollY=317 caretVY=534 caretCY=851 visible=true
+09-18 14:18:27.529  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=574 visualViewportH=574.1818237304688"})
+09-18 14:18:27.529  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=574 visualViewportH=574.1818237304688
+09-18 14:18:27.531  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=555 scrollY=317 caretVY=534 caretCY=851 visible=true"})
+09-18 14:18:27.531  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=555 scrollY=317 caretVY=534 caretCY=851 visible=true
+09-18 14:18:27.532  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=555 scrollY=317 caretVY=534 caretCY=851 visible=true"})
+09-18 14:18:27.532  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=555 scrollY=317 caretVY=534 caretCY=851 visible=true
+09-18 14:18:27.532  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1475px = 536.36365dp
+09-18 14:18:27.533  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=555 visualViewportH=555.272705078125"})
+09-18 14:18:27.533  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=555 visualViewportH=555.272705078125
+09-18 14:18:27.533  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=555 scrollY=317 caretVY=534 caretCY=851 visible=true"})
+09-18 14:18:27.533  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=555 scrollY=317 caretVY=534 caretCY=851 visible=true
+09-18 14:18:27.534  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=555 scrollY=317 caretVY=534 caretCY=851 visible=true"})
+09-18 14:18:27.534  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=555 scrollY=317 caretVY=534 caretCY=851 visible=true
+09-18 14:18:27.534  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=555 visualViewportH=555.272705078125"})
+09-18 14:18:27.534  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=555 visualViewportH=555.272705078125
+09-18 14:18:27.539  6063  6063 D BlockNoteEditor: diag | ime bottom=274px (99.63636.dp)
+09-18 14:18:27.542  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=536 scrollY=317 caretVY=534 caretCY=851 visible=true"})
+09-18 14:18:27.542  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=536 scrollY=317 caretVY=534 caretCY=851 visible=true
+09-18 14:18:27.544  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=536 scrollY=317 caretVY=534 caretCY=851 visible=true"})
+09-18 14:18:27.544  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=536 scrollY=317 caretVY=534 caretCY=851 visible=true
+09-18 14:18:27.544  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=536 visualViewportH=536.3636474609375"})
+09-18 14:18:27.544  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=536 visualViewportH=536.3636474609375
+09-18 14:18:27.544  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1425px = 518.1818dp
+09-18 14:18:27.544  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=536 scrollY=317 caretVY=534 caretCY=851 visible=true"})
+09-18 14:18:27.544  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=536 scrollY=317 caretVY=534 caretCY=851 visible=true
+09-18 14:18:27.545  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=536 scrollY=317 caretVY=534 caretCY=851 visible=true"})
+09-18 14:18:27.545  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=536 scrollY=317 caretVY=534 caretCY=851 visible=true
+09-18 14:18:27.545  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=536 visualViewportH=536.3636474609375"})
+09-18 14:18:27.545  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=536 visualViewportH=536.3636474609375
+09-18 14:18:27.556  6063  6063 D BlockNoteEditor: diag | ime bottom=324px (117.818184.dp)
+09-18 14:18:27.567  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=518 scrollY=318 caretVY=532 caretCY=850 visible=false"})
+09-18 14:18:27.567  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=518 scrollY=318 caretVY=532 caretCY=850 visible=false
+09-18 14:18:27.568  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=518 scrollY=318 caretVY=532 caretCY=850 visible=false"})
+09-18 14:18:27.568  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=518 scrollY=318 caretVY=532 caretCY=850 visible=false
+09-18 14:18:27.569  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=518 visualViewportH=518.1818237304688"})
+09-18 14:18:27.569  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=518 visualViewportH=518.1818237304688
+09-18 14:18:27.570  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=518 scrollY=318 caretVY=532 caretCY=850 visible=false"})
+09-18 14:18:27.570  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=518 scrollY=318 caretVY=532 caretCY=850 visible=false
+09-18 14:18:27.570  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1376px = 500.36365dp
+09-18 14:18:27.571  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=518 scrollY=318 caretVY=532 caretCY=850 visible=false"})
+09-18 14:18:27.571  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=518 scrollY=318 caretVY=532 caretCY=850 visible=false
+09-18 14:18:27.571  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=518 visualViewportH=518.1818237304688"})
+09-18 14:18:27.571  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=518 visualViewportH=518.1818237304688
+09-18 14:18:27.578  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1330px = 483.63635dp
+09-18 14:18:27.584  6063  6063 D BlockNoteEditor: diag | ime bottom=373px (135.63637.dp)
+09-18 14:18:27.588  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=483 scrollY=319 caretVY=532 caretCY=851 visible=false"})
+09-18 14:18:27.588  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=483 scrollY=319 caretVY=532 caretCY=851 visible=false
+09-18 14:18:27.589  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=483 scrollY=319 caretVY=532 caretCY=851 visible=false"})
+09-18 14:18:27.589  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=483 scrollY=319 caretVY=532 caretCY=851 visible=false
+09-18 14:18:27.589  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=483 visualViewportH=483.6363525390625"})
+09-18 14:18:27.589  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=483 visualViewportH=483.6363525390625
+09-18 14:18:27.590  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=483 scrollY=319 caretVY=532 caretCY=851 visible=false"})
+09-18 14:18:27.590  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=483 scrollY=319 caretVY=532 caretCY=851 visible=false
+09-18 14:18:27.591  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=483 scrollY=319 caretVY=532 caretCY=851 visible=false"})
+09-18 14:18:27.591  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=483 scrollY=319 caretVY=532 caretCY=851 visible=false
+09-18 14:18:27.591  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=483 visualViewportH=483.6363525390625"})
+09-18 14:18:27.591  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=483 visualViewportH=483.6363525390625
+09-18 14:18:27.594  6063  6063 D BlockNoteEditor: diag | ime bottom=419px (152.36363.dp)
+09-18 14:18:27.600  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1287px = 468.0dp
+09-18 14:18:27.607  6063  6063 D BlockNoteEditor: diag | ime bottom=462px (168.0.dp)
+09-18 14:18:27.610  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=468 scrollY=320 caretVY=531 caretCY=851 visible=false"})
+09-18 14:18:27.610  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=468 scrollY=320 caretVY=531 caretCY=851 visible=false
+09-18 14:18:27.612  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=468 scrollY=320 caretVY=531 caretCY=851 visible=false"})
+09-18 14:18:27.612  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=468 scrollY=320 caretVY=531 caretCY=851 visible=false
+09-18 14:18:27.613  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=468 visualViewportH=468"})
+09-18 14:18:27.613  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=468 visualViewportH=468
+09-18 14:18:27.613  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1248px = 453.81818dp
+09-18 14:18:27.613  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=468 scrollY=320 caretVY=531 caretCY=851 visible=false"})
+09-18 14:18:27.613  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=468 scrollY=320 caretVY=531 caretCY=851 visible=false
+09-18 14:18:27.614  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=468 scrollY=320 caretVY=531 caretCY=851 visible=false"})
+09-18 14:18:27.614  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=468 scrollY=320 caretVY=531 caretCY=851 visible=false
+09-18 14:18:27.614  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=468 visualViewportH=468"})
+09-18 14:18:27.614  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=468 visualViewportH=468
+09-18 14:18:27.619  6063  6063 D BlockNoteEditor: diag | ime bottom=501px (182.18182.dp)
+09-18 14:18:27.623  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=454 scrollY=320 caretVY=530 caretCY=850 visible=false"})
+09-18 14:18:27.623  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=454 scrollY=320 caretVY=530 caretCY=850 visible=false
+09-18 14:18:27.625  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=454 scrollY=320 caretVY=530 caretCY=850 visible=false"})
+09-18 14:18:27.625  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=454 scrollY=320 caretVY=530 caretCY=850 visible=false
+09-18 14:18:27.625  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=454 visualViewportH=453.81817626953125"})
+09-18 14:18:27.625  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=454 visualViewportH=453.81817626953125
+09-18 14:18:27.626  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=454 scrollY=320 caretVY=530 caretCY=850 visible=false"})
+09-18 14:18:27.626  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=454 scrollY=320 caretVY=530 caretCY=850 visible=false
+09-18 14:18:27.626  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1211px = 440.36365dp
+09-18 14:18:27.626  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=454 scrollY=320 caretVY=530 caretCY=850 visible=false"})
+09-18 14:18:27.626  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=454 scrollY=320 caretVY=530 caretCY=850 visible=false
+09-18 14:18:27.627  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=454 visualViewportH=453.81817626953125"})
+09-18 14:18:27.627  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=454 visualViewportH=453.81817626953125
+09-18 14:18:27.633  6063  6063 D BlockNoteEditor: diag | ime bottom=538px (195.63637.dp)
+09-18 14:18:27.637  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=440 scrollY=320 caretVY=530 caretCY=850 visible=false"})
+09-18 14:18:27.638  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=440 scrollY=320 caretVY=530 caretCY=850 visible=false
+09-18 14:18:27.639  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=440 scrollY=320 caretVY=530 caretCY=850 visible=false"})
+09-18 14:18:27.639  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=440 scrollY=320 caretVY=530 caretCY=850 visible=false
+09-18 14:18:27.639  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=440 visualViewportH=440.3636474609375"})
+09-18 14:18:27.639  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=440 visualViewportH=440.3636474609375
+09-18 14:18:27.640  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=440 scrollY=320 caretVY=530 caretCY=850 visible=false"})
+09-18 14:18:27.640  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=440 scrollY=320 caretVY=530 caretCY=850 visible=false
+09-18 14:18:27.640  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1178px = 428.36365dp
+09-18 14:18:27.641  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=440 scrollY=320 caretVY=530 caretCY=850 visible=false"})
+09-18 14:18:27.641  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=440 scrollY=320 caretVY=530 caretCY=850 visible=false
+09-18 14:18:27.641  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=440 visualViewportH=440.3636474609375"})
+09-18 14:18:27.641  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=440 visualViewportH=440.3636474609375
+09-18 14:18:27.646  6063  6063 D BlockNoteEditor: diag | ime bottom=571px (207.63637.dp)
+09-18 14:18:27.652  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=428 scrollY=321 caretVY=529 caretCY=850 visible=false"})
+09-18 14:18:27.652  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=428 scrollY=321 caretVY=529 caretCY=850 visible=false
+09-18 14:18:27.653  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=428 scrollY=321 caretVY=529 caretCY=850 visible=false"})
+09-18 14:18:27.653  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=428 scrollY=321 caretVY=529 caretCY=850 visible=false
+09-18 14:18:27.654  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1148px = 417.45456dp
+09-18 14:18:27.654  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=428 visualViewportH=428.3636474609375"})
+09-18 14:18:27.654  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=428 visualViewportH=428.3636474609375
+09-18 14:18:27.654  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=428 scrollY=321 caretVY=529 caretCY=850 visible=false"})
+09-18 14:18:27.654  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=428 scrollY=321 caretVY=529 caretCY=850 visible=false
+09-18 14:18:27.655  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=428 scrollY=321 caretVY=529 caretCY=850 visible=false"})
+09-18 14:18:27.655  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=428 scrollY=321 caretVY=529 caretCY=850 visible=false
+09-18 14:18:27.656  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=428 visualViewportH=428.3636474609375"})
+09-18 14:18:27.656  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=428 visualViewportH=428.3636474609375
+09-18 14:18:27.659  6063  6063 D BlockNoteEditor: diag | ime bottom=601px (218.54546.dp)
+09-18 14:18:27.663  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=417 scrollY=321 caretVY=529 caretCY=850 visible=false"})
+09-18 14:18:27.664  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=417 scrollY=321 caretVY=529 caretCY=850 visible=false
+09-18 14:18:27.665  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=417 scrollY=321 caretVY=529 caretCY=850 visible=false"})
+09-18 14:18:27.665  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=417 scrollY=321 caretVY=529 caretCY=850 visible=false
+09-18 14:18:27.666  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=417 visualViewportH=417.4545593261719"})
+09-18 14:18:27.666  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=417 visualViewportH=417.4545593261719
+09-18 14:18:27.666  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1120px = 407.27274dp
+09-18 14:18:27.666  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=417 scrollY=321 caretVY=529 caretCY=850 visible=false"})
+09-18 14:18:27.666  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=417 scrollY=321 caretVY=529 caretCY=850 visible=false
+09-18 14:18:27.667  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=417 scrollY=321 caretVY=529 caretCY=850 visible=false"})
+09-18 14:18:27.667  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=417 scrollY=321 caretVY=529 caretCY=850 visible=false
+09-18 14:18:27.667  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=417 visualViewportH=417.4545593261719"})
+09-18 14:18:27.668  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=417 visualViewportH=417.4545593261719
+09-18 14:18:27.676  6063  6063 D BlockNoteEditor: diag | ime bottom=629px (228.72728.dp)
+09-18 14:18:27.680  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=407 scrollY=322 caretVY=529 caretCY=851 visible=false"})
+09-18 14:18:27.680  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=407 scrollY=322 caretVY=529 caretCY=851 visible=false
+09-18 14:18:27.681  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=407 scrollY=322 caretVY=529 caretCY=851 visible=false"})
+09-18 14:18:27.681  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=407 scrollY=322 caretVY=529 caretCY=851 visible=false
+09-18 14:18:27.681  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=407 visualViewportH=407.2727355957031"})
+09-18 14:18:27.681  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=407 visualViewportH=407.2727355957031
+09-18 14:18:27.682  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=407 scrollY=322 caretVY=529 caretCY=851 visible=false"})
+09-18 14:18:27.682  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=407 scrollY=322 caretVY=529 caretCY=851 visible=false
+09-18 14:18:27.682  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1096px = 398.54544dp
+09-18 14:18:27.682  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=407 scrollY=322 caretVY=529 caretCY=851 visible=false"})
+09-18 14:18:27.682  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=407 scrollY=322 caretVY=529 caretCY=851 visible=false
+09-18 14:18:27.683  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=407 visualViewportH=407.2727355957031"})
+09-18 14:18:27.683  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=407 visualViewportH=407.2727355957031
+09-18 14:18:27.689  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1074px = 390.54544dp
+09-18 14:18:27.694  6063  6063 D BlockNoteEditor: diag | ime bottom=653px (237.45454.dp)
+09-18 14:18:27.698  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=390 scrollY=323 caretVY=528 caretCY=851 visible=false"})
+09-18 14:18:27.698  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=390 scrollY=323 caretVY=528 caretCY=851 visible=false
+09-18 14:18:27.699  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=390 scrollY=323 caretVY=528 caretCY=851 visible=false"})
+09-18 14:18:27.699  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=390 scrollY=323 caretVY=528 caretCY=851 visible=false
+09-18 14:18:27.699  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=390 visualViewportH=390.5454406738281"})
+09-18 14:18:27.699  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=390 visualViewportH=390.5454406738281
+09-18 14:18:27.700  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=390 scrollY=323 caretVY=528 caretCY=851 visible=false"})
+09-18 14:18:27.700  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=390 scrollY=323 caretVY=528 caretCY=851 visible=false
+09-18 14:18:27.700  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=390 scrollY=323 caretVY=528 caretCY=851 visible=false"})
+09-18 14:18:27.700  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=390 scrollY=323 caretVY=528 caretCY=851 visible=false
+09-18 14:18:27.701  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=390 visualViewportH=390.5454406738281"})
+09-18 14:18:27.701  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=390 visualViewportH=390.5454406738281
+09-18 14:18:27.704  6063  6063 D BlockNoteEditor: diag | ime bottom=675px (245.45454.dp)
+09-18 14:18:27.712  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1054px = 383.27274dp
+09-18 14:18:27.718  6063  6063 D BlockNoteEditor: diag | ime bottom=695px (252.72728.dp)
+09-18 14:18:27.722  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=383 scrollY=324 caretVY=526 caretCY=850 visible=false"})
+09-18 14:18:27.722  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=383 scrollY=324 caretVY=526 caretCY=850 visible=false
+09-18 14:18:27.723  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=383 scrollY=324 caretVY=526 caretCY=850 visible=false"})
+09-18 14:18:27.724  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=383 scrollY=324 caretVY=526 caretCY=850 visible=false
+09-18 14:18:27.724  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=383 visualViewportH=383.2727355957031"})
+09-18 14:18:27.724  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=383 visualViewportH=383.2727355957031
+09-18 14:18:27.725  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=383 scrollY=324 caretVY=526 caretCY=850 visible=false"})
+09-18 14:18:27.725  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=383 scrollY=324 caretVY=526 caretCY=850 visible=false
+09-18 14:18:27.725  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1037px = 377.0909dp
+09-18 14:18:27.726  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=383 scrollY=324 caretVY=526 caretCY=850 visible=false"})
+09-18 14:18:27.726  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=383 scrollY=324 caretVY=526 caretCY=850 visible=false
+09-18 14:18:27.726  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=383 visualViewportH=383.2727355957031"})
+09-18 14:18:27.726  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=383 visualViewportH=383.2727355957031
+09-18 14:18:27.732  6063  6063 D BlockNoteEditor: diag | ime bottom=712px (258.9091.dp)
+09-18 14:18:27.736  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=377 scrollY=325 caretVY=526 caretCY=851 visible=false"})
+09-18 14:18:27.736  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=377 scrollY=325 caretVY=526 caretCY=851 visible=false
+09-18 14:18:27.737  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=377 scrollY=325 caretVY=526 caretCY=851 visible=false"})
+09-18 14:18:27.737  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=377 scrollY=325 caretVY=526 caretCY=851 visible=false
+09-18 14:18:27.737  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=377 visualViewportH=377.0909118652344"})
+09-18 14:18:27.737  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=377 visualViewportH=377.0909118652344
+09-18 14:18:27.737  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=377 scrollY=325 caretVY=526 caretCY=851 visible=false"})
+09-18 14:18:27.738  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=377 scrollY=325 caretVY=526 caretCY=851 visible=false
+09-18 14:18:27.738  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1021px = 371.27274dp
+09-18 14:18:27.738  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=377 scrollY=325 caretVY=526 caretCY=851 visible=false"})
+09-18 14:18:27.738  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=377 scrollY=325 caretVY=526 caretCY=851 visible=false
+09-18 14:18:27.739  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=377 visualViewportH=377.0909118652344"})
+09-18 14:18:27.739  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=377 visualViewportH=377.0909118652344
+09-18 14:18:27.744  6063  6063 D BlockNoteEditor: diag | ime bottom=728px (264.72726.dp)
+09-18 14:18:27.748  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=371 scrollY=325 caretVY=525 caretCY=850 visible=false"})
+09-18 14:18:27.748  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=371 scrollY=325 caretVY=525 caretCY=850 visible=false
+09-18 14:18:27.750  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=371 scrollY=325 caretVY=525 caretCY=850 visible=false"})
+09-18 14:18:27.750  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=371 scrollY=325 caretVY=525 caretCY=850 visible=false
+09-18 14:18:27.750  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=371 visualViewportH=371.2727355957031"})
+09-18 14:18:27.750  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=371 visualViewportH=371.2727355957031
+09-18 14:18:27.751  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x1007px = 366.18182dp
+09-18 14:18:27.751  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=371 scrollY=325 caretVY=525 caretCY=850 visible=false"})
+09-18 14:18:27.751  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=371 scrollY=325 caretVY=525 caretCY=850 visible=false
+09-18 14:18:27.751  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=371 scrollY=325 caretVY=525 caretCY=850 visible=false"})
+09-18 14:18:27.751  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=371 scrollY=325 caretVY=525 caretCY=850 visible=false
+09-18 14:18:27.752  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=371 visualViewportH=371.2727355957031"})
+09-18 14:18:27.752  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=371 visualViewportH=371.2727355957031
+09-18 14:18:27.757  6063  6063 D BlockNoteEditor: diag | ime bottom=742px (269.81818.dp)
+09-18 14:18:27.761  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=366 scrollY=325 caretVY=525 caretCY=850 visible=false"})
+09-18 14:18:27.761  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=366 scrollY=325 caretVY=525 caretCY=850 visible=false
+09-18 14:18:27.763  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=366 scrollY=325 caretVY=525 caretCY=850 visible=false"})
+09-18 14:18:27.763  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=366 scrollY=325 caretVY=525 caretCY=850 visible=false
+09-18 14:18:27.763  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=366 visualViewportH=366.18182373046875"})
+09-18 14:18:27.763  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=366 visualViewportH=366.18182373046875
+09-18 14:18:27.763  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x995px = 361.81818dp
+09-18 14:18:27.764  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=366 scrollY=325 caretVY=525 caretCY=850 visible=false"})
+09-18 14:18:27.764  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=366 scrollY=325 caretVY=525 caretCY=850 visible=false
+09-18 14:18:27.764  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=366 scrollY=325 caretVY=525 caretCY=850 visible=false"})
+09-18 14:18:27.764  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=366 scrollY=325 caretVY=525 caretCY=850 visible=false
+09-18 14:18:27.765  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=366 visualViewportH=366.18182373046875"})
+09-18 14:18:27.765  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=366 visualViewportH=366.18182373046875
+09-18 14:18:27.769  6063  6063 D BlockNoteEditor: diag | ime bottom=754px (274.18182.dp)
+09-18 14:18:27.775  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=362 scrollY=326 caretVY=524 caretCY=850 visible=false"})
+09-18 14:18:27.775  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=362 scrollY=326 caretVY=524 caretCY=850 visible=false
+09-18 14:18:27.777  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=362 scrollY=326 caretVY=524 caretCY=850 visible=false"})
+09-18 14:18:27.777  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=362 scrollY=326 caretVY=524 caretCY=850 visible=false
+09-18 14:18:27.778  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x985px = 358.18182dp
+09-18 14:18:27.778  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=362 visualViewportH=361.81817626953125"})
+09-18 14:18:27.778  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=362 visualViewportH=361.81817626953125
+09-18 14:18:27.779  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=362 scrollY=326 caretVY=524 caretCY=850 visible=false"})
+09-18 14:18:27.779  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=362 scrollY=326 caretVY=524 caretCY=850 visible=false
+09-18 14:18:27.781  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=362 scrollY=326 caretVY=524 caretCY=850 visible=false"})
+09-18 14:18:27.781  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=362 scrollY=326 caretVY=524 caretCY=850 visible=false
+09-18 14:18:27.781  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=362 visualViewportH=361.81817626953125"})
+09-18 14:18:27.781  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=362 visualViewportH=361.81817626953125
+09-18 14:18:27.784  6063  6063 D BlockNoteEditor: diag | ime bottom=764px (277.81818.dp)
+09-18 14:18:27.790  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=358 scrollY=326 caretVY=524 caretCY=850 visible=false"})
+09-18 14:18:27.790  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=358 scrollY=326 caretVY=524 caretCY=850 visible=false
+09-18 14:18:27.791  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=358 scrollY=326 caretVY=524 caretCY=850 visible=false"})
+09-18 14:18:27.791  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=358 scrollY=326 caretVY=524 caretCY=850 visible=false
+09-18 14:18:27.791  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=358 visualViewportH=358.18182373046875"})
+09-18 14:18:27.791  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=358 visualViewportH=358.18182373046875
+09-18 14:18:27.792  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=358 scrollY=326 caretVY=524 caretCY=850 visible=false"})
+09-18 14:18:27.792  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=358 scrollY=326 caretVY=524 caretCY=850 visible=false
+09-18 14:18:27.793  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=358 scrollY=326 caretVY=524 caretCY=850 visible=false"})
+09-18 14:18:27.793  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=358 scrollY=326 caretVY=524 caretCY=850 visible=false
+09-18 14:18:27.793  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x975px = 354.54544dp
+09-18 14:18:27.793  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=358 visualViewportH=358.18182373046875"})
+09-18 14:18:27.793  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=358 visualViewportH=358.18182373046875
+09-18 14:18:27.801  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x967px = 351.63635dp
+09-18 14:18:27.806  6063  6063 D BlockNoteEditor: diag | ime bottom=774px (281.45456.dp)
+09-18 14:18:27.810  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=351 scrollY=328 caretVY=523 caretCY=851 visible=false"})
+09-18 14:18:27.811  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=351 scrollY=328 caretVY=523 caretCY=851 visible=false
+09-18 14:18:27.812  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=351 scrollY=328 caretVY=523 caretCY=851 visible=false"})
+09-18 14:18:27.812  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=351 scrollY=328 caretVY=523 caretCY=851 visible=false
+09-18 14:18:27.813  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=351 visualViewportH=351.6363525390625"})
+09-18 14:18:27.813  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=351 visualViewportH=351.6363525390625
+09-18 14:18:27.813  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=351 scrollY=328 caretVY=523 caretCY=851 visible=false"})
+09-18 14:18:27.813  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=351 scrollY=328 caretVY=523 caretCY=851 visible=false
+09-18 14:18:27.814  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=351 scrollY=328 caretVY=523 caretCY=851 visible=false"})
+09-18 14:18:27.814  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=351 scrollY=328 caretVY=523 caretCY=851 visible=false
+09-18 14:18:27.814  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=351 visualViewportH=351.6363525390625"})
+09-18 14:18:27.814  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=351 visualViewportH=351.6363525390625
+09-18 14:18:27.818  6063  6063 D BlockNoteEditor: diag | ime bottom=782px (284.36365.dp)
+09-18 14:18:27.824  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x960px = 349.0909dp
+09-18 14:18:27.830  6063  6063 D BlockNoteEditor: diag | ime bottom=789px (286.9091.dp)
+09-18 14:18:27.834  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=349 scrollY=328 caretVY=522 caretCY=850 visible=false"})
+09-18 14:18:27.834  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=349 scrollY=328 caretVY=522 caretCY=850 visible=false
+09-18 14:18:27.835  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=349 scrollY=328 caretVY=522 caretCY=850 visible=false"})
+09-18 14:18:27.835  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=349 scrollY=328 caretVY=522 caretCY=850 visible=false
+09-18 14:18:27.836  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=349 visualViewportH=349.0909118652344"})
+09-18 14:18:27.836  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x954px = 346.9091dp
+09-18 14:18:27.836  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=349 visualViewportH=349.0909118652344
+09-18 14:18:27.836  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=349 scrollY=328 caretVY=522 caretCY=850 visible=false"})
+09-18 14:18:27.836  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=349 scrollY=328 caretVY=522 caretCY=850 visible=false
+09-18 14:18:27.837  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=349 scrollY=328 caretVY=522 caretCY=850 visible=false"})
+09-18 14:18:27.837  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=349 scrollY=328 caretVY=522 caretCY=850 visible=false
+09-18 14:18:27.838  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=349 visualViewportH=349.0909118652344"})
+09-18 14:18:27.838  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=349 visualViewportH=349.0909118652344
+09-18 14:18:27.841  6063  6063 D BlockNoteEditor: diag | ime bottom=795px (289.0909.dp)
+09-18 14:18:27.845  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=347 scrollY=328 caretVY=522 caretCY=850 visible=false"})
+09-18 14:18:27.845  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=347 scrollY=328 caretVY=522 caretCY=850 visible=false
+09-18 14:18:27.846  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=347 scrollY=328 caretVY=522 caretCY=850 visible=false"})
+09-18 14:18:27.846  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=347 scrollY=328 caretVY=522 caretCY=850 visible=false
+09-18 14:18:27.847  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=347 visualViewportH=346.9090881347656"})
+09-18 14:18:27.847  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=347 visualViewportH=346.9090881347656
+09-18 14:18:27.848  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=347 scrollY=328 caretVY=522 caretCY=850 visible=false"})
+09-18 14:18:27.848  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=347 scrollY=328 caretVY=522 caretCY=850 visible=false
+09-18 14:18:27.848  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x948px = 344.72726dp
+09-18 14:18:27.849  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=347 scrollY=328 caretVY=522 caretCY=850 visible=false"})
+09-18 14:18:27.849  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=347 scrollY=328 caretVY=522 caretCY=850 visible=false
+09-18 14:18:27.849  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=347 visualViewportH=346.9090881347656"})
+09-18 14:18:27.849  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=347 visualViewportH=346.9090881347656
+09-18 14:18:27.853  6063  6063 D BlockNoteEditor: diag | ime bottom=801px (291.27274.dp)
+09-18 14:18:27.857  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=344 scrollY=329 caretVY=521 caretCY=850 visible=false"})
+09-18 14:18:27.857  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=344 scrollY=329 caretVY=521 caretCY=850 visible=false
+09-18 14:18:27.858  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=344 scrollY=329 caretVY=521 caretCY=850 visible=false"})
+09-18 14:18:27.858  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=344 scrollY=329 caretVY=521 caretCY=850 visible=false
+09-18 14:18:27.858  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=344 visualViewportH=344.7272644042969"})
+09-18 14:18:27.859  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=344 visualViewportH=344.7272644042969
+09-18 14:18:27.859  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=344 scrollY=329 caretVY=521 caretCY=850 visible=false"})
+09-18 14:18:27.859  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=344 scrollY=329 caretVY=521 caretCY=850 visible=false
+09-18 14:18:27.860  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x944px = 343.27274dp
+09-18 14:18:27.860  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=344 scrollY=329 caretVY=521 caretCY=850 visible=false"})
+09-18 14:18:27.860  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=344 scrollY=329 caretVY=521 caretCY=850 visible=false
+09-18 14:18:27.860  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=344 visualViewportH=344.7272644042969"})
+09-18 14:18:27.860  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=344 visualViewportH=344.7272644042969
+09-18 14:18:27.867  6063  6063 D BlockNoteEditor: diag | ime bottom=805px (292.72726.dp)
+09-18 14:18:27.870  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=343 scrollY=329 caretVY=521 caretCY=850 visible=false"})
+09-18 14:18:27.871  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=343 scrollY=329 caretVY=521 caretCY=850 visible=false
+09-18 14:18:27.872  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=343 scrollY=329 caretVY=521 caretCY=850 visible=false"})
+09-18 14:18:27.872  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=343 scrollY=329 caretVY=521 caretCY=850 visible=false
+09-18 14:18:27.873  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=343 visualViewportH=343.2727355957031"})
+09-18 14:18:27.873  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=343 visualViewportH=343.2727355957031
+09-18 14:18:27.873  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=343 scrollY=329 caretVY=521 caretCY=850 visible=false"})
+09-18 14:18:27.873  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=343 scrollY=329 caretVY=521 caretCY=850 visible=false
+09-18 14:18:27.873  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x939px = 341.45456dp
+09-18 14:18:27.874  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=343 scrollY=329 caretVY=521 caretCY=850 visible=false"})
+09-18 14:18:27.874  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=343 scrollY=329 caretVY=521 caretCY=850 visible=false
+09-18 14:18:27.874  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=343 visualViewportH=343.2727355957031"})
+09-18 14:18:27.875  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=343 visualViewportH=343.2727355957031
+09-18 14:18:27.879  6063  6063 D BlockNoteEditor: diag | ime bottom=810px (294.54544.dp)
+09-18 14:18:27.883  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=341 scrollY=330 caretVY=521 caretCY=851 visible=false"})
+09-18 14:18:27.884  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=341 scrollY=330 caretVY=521 caretCY=851 visible=false
+09-18 14:18:27.885  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=341 scrollY=330 caretVY=521 caretCY=851 visible=false"})
+09-18 14:18:27.885  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=341 scrollY=330 caretVY=521 caretCY=851 visible=false
+09-18 14:18:27.885  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=341 visualViewportH=341.4545593261719"})
+09-18 14:18:27.885  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=341 visualViewportH=341.4545593261719
+09-18 14:18:27.885  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=341 scrollY=330 caretVY=521 caretCY=851 visible=false"})
+09-18 14:18:27.886  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=341 scrollY=330 caretVY=521 caretCY=851 visible=false
+09-18 14:18:27.886  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=341 scrollY=330 caretVY=521 caretCY=851 visible=false"})
+09-18 14:18:27.886  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x936px = 340.36365dp
+09-18 14:18:27.886  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=341 scrollY=330 caretVY=521 caretCY=851 visible=false
+09-18 14:18:27.887  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=341 visualViewportH=341.4545593261719"})
+09-18 14:18:27.887  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=341 visualViewportH=341.4545593261719
+09-18 14:18:27.892  6063  6063 D BlockNoteEditor: diag | ime bottom=813px (295.63635.dp)
+09-18 14:18:27.900  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=340 scrollY=331 caretVY=520 caretCY=851 visible=false"})
+09-18 14:18:27.900  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=340 scrollY=331 caretVY=520 caretCY=851 visible=false
+09-18 14:18:27.901  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=340 scrollY=331 caretVY=520 caretCY=851 visible=false"})
+09-18 14:18:27.901  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=340 scrollY=331 caretVY=520 caretCY=851 visible=false
+09-18 14:18:27.902  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=340 visualViewportH=340.3636474609375"})
+09-18 14:18:27.902  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=340 visualViewportH=340.3636474609375
+09-18 14:18:27.902  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x933px = 339.27274dp
+09-18 14:18:27.902  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=340 scrollY=331 caretVY=520 caretCY=851 visible=false"})
+09-18 14:18:27.902  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=340 scrollY=331 caretVY=520 caretCY=851 visible=false
+09-18 14:18:27.903  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=340 scrollY=331 caretVY=520 caretCY=851 visible=false"})
+09-18 14:18:27.903  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=340 scrollY=331 caretVY=520 caretCY=851 visible=false
+09-18 14:18:27.903  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=340 visualViewportH=340.3636474609375"})
+09-18 14:18:27.903  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=340 visualViewportH=340.3636474609375
+09-18 14:18:27.910  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x930px = 338.18182dp
+09-18 14:18:27.916  6063  6063 D BlockNoteEditor: diag | ime bottom=816px (296.72726.dp)
+09-18 14:18:27.920  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=338 scrollY=331 caretVY=519 caretCY=850 visible=false"})
+09-18 14:18:27.920  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=338 scrollY=331 caretVY=519 caretCY=850 visible=false
+09-18 14:18:27.921  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=338 scrollY=331 caretVY=519 caretCY=850 visible=false"})
+09-18 14:18:27.921  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=338 scrollY=331 caretVY=519 caretCY=850 visible=false
+09-18 14:18:27.921  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=338 visualViewportH=338.18182373046875"})
+09-18 14:18:27.922  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=338 visualViewportH=338.18182373046875
+09-18 14:18:27.922  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=338 scrollY=331 caretVY=519 caretCY=850 visible=false"})
+09-18 14:18:27.922  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=338 scrollY=331 caretVY=519 caretCY=850 visible=false
+09-18 14:18:27.923  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=338 scrollY=331 caretVY=519 caretCY=850 visible=false"})
+09-18 14:18:27.923  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=338 scrollY=331 caretVY=519 caretCY=850 visible=false
+09-18 14:18:27.923  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=338 visualViewportH=338.18182373046875"})
+09-18 14:18:27.923  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=338 visualViewportH=338.18182373046875
+09-18 14:18:27.926  6063  6063 D BlockNoteEditor: diag | ime bottom=819px (297.81818.dp)
+09-18 14:18:27.932  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x928px = 337.45456dp
+09-18 14:18:27.938  6063  6063 D BlockNoteEditor: diag | ime bottom=821px (298.54544.dp)
+09-18 14:18:27.942  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=337 scrollY=333 caretVY=518 caretCY=851 visible=false"})
+09-18 14:18:27.942  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=337 scrollY=333 caretVY=518 caretCY=851 visible=false
+09-18 14:18:27.944  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=337 scrollY=333 caretVY=518 caretCY=851 visible=false"})
+09-18 14:18:27.944  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=337 scrollY=333 caretVY=518 caretCY=851 visible=false
+09-18 14:18:27.944  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=337 visualViewportH=337.4545593261719"})
+09-18 14:18:27.944  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=337 visualViewportH=337.4545593261719
+09-18 14:18:27.945  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=337 scrollY=333 caretVY=518 caretCY=851 visible=false"})
+09-18 14:18:27.945  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=337 scrollY=333 caretVY=518 caretCY=851 visible=false
+09-18 14:18:27.945  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x926px = 336.72726dp
+09-18 14:18:27.946  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=337 scrollY=333 caretVY=518 caretCY=851 visible=false"})
+09-18 14:18:27.946  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=337 scrollY=333 caretVY=518 caretCY=851 visible=false
+09-18 14:18:27.946  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=337 visualViewportH=337.4545593261719"})
+09-18 14:18:27.946  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=337 visualViewportH=337.4545593261719
+09-18 14:18:27.950  6063  6063 D BlockNoteEditor: diag | ime bottom=823px (299.27274.dp)
+09-18 14:18:27.955  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=336 scrollY=333 caretVY=518 caretCY=851 visible=false"})
+09-18 14:18:27.955  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=336 scrollY=333 caretVY=518 caretCY=851 visible=false
+09-18 14:18:27.956  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=336 scrollY=333 caretVY=518 caretCY=851 visible=false"})
+09-18 14:18:27.956  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=336 scrollY=333 caretVY=518 caretCY=851 visible=false
+09-18 14:18:27.957  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=336 visualViewportH=336.7272644042969"})
+09-18 14:18:27.957  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=336 visualViewportH=336.7272644042969
+09-18 14:18:27.957  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=336 scrollY=333 caretVY=518 caretCY=851 visible=false"})
+09-18 14:18:27.957  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=336 scrollY=333 caretVY=518 caretCY=851 visible=false
+09-18 14:18:27.958  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x924px = 336.0dp
+09-18 14:18:27.958  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=336 scrollY=333 caretVY=518 caretCY=851 visible=false"})
+09-18 14:18:27.958  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=336 scrollY=333 caretVY=518 caretCY=851 visible=false
+09-18 14:18:27.959  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=336 visualViewportH=336.7272644042969"})
+09-18 14:18:27.959  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=336 visualViewportH=336.7272644042969
+09-18 14:18:27.964  6063  6063 D BlockNoteEditor: diag | ime bottom=825px (300.0.dp)
+09-18 14:18:27.968  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=336 scrollY=333 caretVY=517 caretCY=850 visible=false"})
+09-18 14:18:27.968  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=336 scrollY=333 caretVY=517 caretCY=850 visible=false
+09-18 14:18:27.969  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=336 scrollY=333 caretVY=517 caretCY=850 visible=false"})
+09-18 14:18:27.969  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=336 scrollY=333 caretVY=517 caretCY=850 visible=false
+09-18 14:18:27.970  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=336 visualViewportH=336"})
+09-18 14:18:27.970  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=336 visualViewportH=336
+09-18 14:18:27.970  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=336 scrollY=333 caretVY=517 caretCY=850 visible=false"})
+09-18 14:18:27.970  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=336 scrollY=333 caretVY=517 caretCY=850 visible=false
+09-18 14:18:27.970  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x922px = 335.27274dp
+09-18 14:18:27.971  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=336 scrollY=333 caretVY=517 caretCY=850 visible=false"})
+09-18 14:18:27.971  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=336 scrollY=333 caretVY=517 caretCY=850 visible=false
+09-18 14:18:27.971  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=336 visualViewportH=336"})
+09-18 14:18:27.971  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=336 visualViewportH=336
+09-18 14:18:27.976  6063  6063 D BlockNoteEditor: diag | ime bottom=827px (300.72726.dp)
+09-18 14:18:27.980  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=335 scrollY=333 caretVY=517 caretCY=850 visible=false"})
+09-18 14:18:27.980  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=335 scrollY=333 caretVY=517 caretCY=850 visible=false
+09-18 14:18:27.981  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=335 scrollY=333 caretVY=517 caretCY=850 visible=false"})
+09-18 14:18:27.982  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=335 scrollY=333 caretVY=517 caretCY=850 visible=false
+09-18 14:18:27.982  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=335 visualViewportH=335.2727355957031"})
+09-18 14:18:27.982  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=335 visualViewportH=335.2727355957031
+09-18 14:18:27.983  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=335 scrollY=333 caretVY=517 caretCY=850 visible=false"})
+09-18 14:18:27.983  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x921px = 334.9091dp
+09-18 14:18:27.983  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=335 scrollY=333 caretVY=517 caretCY=850 visible=false
+09-18 14:18:27.984  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=335 scrollY=333 caretVY=517 caretCY=850 visible=false"})
+09-18 14:18:27.984  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=335 scrollY=333 caretVY=517 caretCY=850 visible=false
+09-18 14:18:27.984  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=335 visualViewportH=335.2727355957031"})
+09-18 14:18:27.984  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=335 visualViewportH=335.2727355957031
+09-18 14:18:27.989  6063  6063 D BlockNoteEditor: diag | ime bottom=828px (301.0909.dp)
+09-18 14:18:27.993  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=335 scrollY=334 caretVY=516 caretCY=850 visible=false"})
+09-18 14:18:27.993  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=335 scrollY=334 caretVY=516 caretCY=850 visible=false
+09-18 14:18:27.994  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=335 scrollY=334 caretVY=516 caretCY=850 visible=false"})
+09-18 14:18:27.995  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=335 scrollY=334 caretVY=516 caretCY=850 visible=false
+09-18 14:18:27.995  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=335 visualViewportH=334.9090881347656"})
+09-18 14:18:27.995  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=335 visualViewportH=334.9090881347656
+09-18 14:18:27.995  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=335 scrollY=334 caretVY=516 caretCY=850 visible=false"})
+09-18 14:18:27.995  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=335 scrollY=334 caretVY=516 caretCY=850 visible=false
+09-18 14:18:27.996  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=335 scrollY=334 caretVY=516 caretCY=850 visible=false"})
+09-18 14:18:27.996  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x920px = 334.54544dp
+09-18 14:18:27.996  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=335 scrollY=334 caretVY=516 caretCY=850 visible=false
+09-18 14:18:27.997  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=335 visualViewportH=334.9090881347656"})
+09-18 14:18:27.997  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=335 visualViewportH=334.9090881347656
+09-18 14:18:28.002  6063  6063 D BlockNoteEditor: diag | ime bottom=829px (301.45456.dp)
+09-18 14:18:28.010  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=334 scrollY=335 caretVY=516 caretCY=851 visible=false"})
+09-18 14:18:28.010  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=334 scrollY=335 caretVY=516 caretCY=851 visible=false
+09-18 14:18:28.011  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=334 scrollY=335 caretVY=516 caretCY=851 visible=false"})
+09-18 14:18:28.011  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=334 scrollY=335 caretVY=516 caretCY=851 visible=false
+09-18 14:18:28.012  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=334 visualViewportH=334.5454406738281"})
+09-18 14:18:28.012  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=334 visualViewportH=334.5454406738281
+09-18 14:18:28.012  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=334 scrollY=335 caretVY=516 caretCY=851 visible=false"})
+09-18 14:18:28.012  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=334 scrollY=335 caretVY=516 caretCY=851 visible=false
+09-18 14:18:28.013  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x919px = 334.18182dp
+09-18 14:18:28.013  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=334 scrollY=335 caretVY=516 caretCY=851 visible=false"})
+09-18 14:18:28.013  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=334 scrollY=335 caretVY=516 caretCY=851 visible=false
+09-18 14:18:28.013  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=334 visualViewportH=334.5454406738281"})
+09-18 14:18:28.014  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=334 visualViewportH=334.5454406738281
+09-18 14:18:28.020  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x918px = 333.81818dp
+09-18 14:18:28.026  6063  6063 D BlockNoteEditor: diag | ime bottom=830px (301.81818.dp)
+09-18 14:18:28.030  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=334 scrollY=336 caretVY=515 caretCY=851 visible=false"})
+09-18 14:18:28.030  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=334 scrollY=336 caretVY=515 caretCY=851 visible=false
+09-18 14:18:28.031  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=334 scrollY=336 caretVY=515 caretCY=851 visible=false"})
+09-18 14:18:28.031  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=334 scrollY=336 caretVY=515 caretCY=851 visible=false
+09-18 14:18:28.031  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=334 visualViewportH=333.81817626953125"})
+09-18 14:18:28.031  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=334 visualViewportH=333.81817626953125
+09-18 14:18:28.032  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=334 scrollY=336 caretVY=515 caretCY=851 visible=false"})
+09-18 14:18:28.032  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=334 scrollY=336 caretVY=515 caretCY=851 visible=false
+09-18 14:18:28.033  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=334 scrollY=336 caretVY=515 caretCY=851 visible=false"})
+09-18 14:18:28.033  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=334 scrollY=336 caretVY=515 caretCY=851 visible=false
+09-18 14:18:28.034  6063  6063 D BlockNoteEditor: diag | ime bottom=831px (302.18182.dp)
+09-18 14:18:28.037  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=334 visualViewportH=333.81817626953125"})
+09-18 14:18:28.037  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=334 visualViewportH=333.81817626953125
+09-18 14:18:28.048  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x917px = 333.45456dp
+09-18 14:18:28.053  6063  6063 D BlockNoteEditor: diag | ime bottom=832px (302.54544.dp)
+09-18 14:18:28.055  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=333 scrollY=336 caretVY=514 caretCY=850 visible=false"})
+09-18 14:18:28.055  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=333 scrollY=336 caretVY=514 caretCY=850 visible=false
+09-18 14:18:28.056  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=333 scrollY=336 caretVY=514 caretCY=850 visible=false"})
+09-18 14:18:28.056  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=333 scrollY=336 caretVY=514 caretCY=850 visible=false
+09-18 14:18:28.057  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=333 visualViewportH=333.4545593261719"})
+09-18 14:18:28.057  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=333 visualViewportH=333.4545593261719
+09-18 14:18:28.057  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=333 scrollY=336 caretVY=514 caretCY=850 visible=false"})
+09-18 14:18:28.057  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=333 scrollY=336 caretVY=514 caretCY=850 visible=false
+09-18 14:18:28.058  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=333 scrollY=336 caretVY=514 caretCY=850 visible=false"})
+09-18 14:18:28.058  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=333 scrollY=336 caretVY=514 caretCY=850 visible=false
+09-18 14:18:28.058  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=333 visualViewportH=333.4545593261719"})
+09-18 14:18:28.058  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=333 visualViewportH=333.4545593261719
+09-18 14:18:28.060  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x916px = 333.0909dp
+09-18 14:18:28.065  6063  6063 D BlockNoteEditor: diag | ime bottom=833px (302.9091.dp)
+09-18 14:18:28.067  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=333 scrollY=337 caretVY=513 caretCY=850 visible=false"})
+09-18 14:18:28.067  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=333 scrollY=337 caretVY=513 caretCY=850 visible=false
+09-18 14:18:28.068  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=333 scrollY=337 caretVY=513 caretCY=850 visible=false"})
+09-18 14:18:28.068  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=333 scrollY=337 caretVY=513 caretCY=850 visible=false
+09-18 14:18:28.068  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=333 visualViewportH=333.0909118652344"})
+09-18 14:18:28.068  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=333 visualViewportH=333.0909118652344
+09-18 14:18:28.069  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=333 scrollY=337 caretVY=513 caretCY=850 visible=false"})
+09-18 14:18:28.069  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=333 scrollY=337 caretVY=513 caretCY=850 visible=false
+09-18 14:18:28.070  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=333 scrollY=337 caretVY=513 caretCY=850 visible=false"})
+09-18 14:18:28.070  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=333 scrollY=337 caretVY=513 caretCY=850 visible=false
+09-18 14:18:28.070  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=333 visualViewportH=333.0909118652344"})
+09-18 14:18:28.070  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=333 visualViewportH=333.0909118652344
+09-18 14:18:28.090  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x915px = 332.72726dp
+09-18 14:18:28.096  6063  6063 D BlockNoteEditor: diag | ime bottom=834px (303.27274.dp)
+09-18 14:18:28.097  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=332 scrollY=339 caretVY=512 caretCY=851 visible=false"})
+09-18 14:18:28.097  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=332 scrollY=339 caretVY=512 caretCY=851 visible=false
+09-18 14:18:28.098  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=332 scrollY=339 caretVY=512 caretCY=851 visible=false"})
+09-18 14:18:28.098  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=332 scrollY=339 caretVY=512 caretCY=851 visible=false
+09-18 14:18:28.098  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=332 visualViewportH=332.7272644042969"})
+09-18 14:18:28.098  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=332 visualViewportH=332.7272644042969
+09-18 14:18:28.099  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=332 scrollY=339 caretVY=512 caretCY=851 visible=false"})
+09-18 14:18:28.099  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=332 scrollY=339 caretVY=512 caretCY=851 visible=false
+09-18 14:18:28.100  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=332 scrollY=339 caretVY=512 caretCY=851 visible=false"})
+09-18 14:18:28.100  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=332 scrollY=339 caretVY=512 caretCY=851 visible=false
+09-18 14:18:28.100  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=332 visualViewportH=332.7272644042969"})
+09-18 14:18:28.100  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=332 visualViewportH=332.7272644042969
+09-18 14:18:28.135  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x914px = 332.36365dp
+09-18 14:18:28.144  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=332 scrollY=341 caretVY=509 caretCY=850 visible=false"})
+09-18 14:18:28.144  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=332 scrollY=341 caretVY=509 caretCY=850 visible=false
+09-18 14:18:28.145  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=332 scrollY=341 caretVY=509 caretCY=850 visible=false"})
+09-18 14:18:28.145  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=332 scrollY=341 caretVY=509 caretCY=850 visible=false
+09-18 14:18:28.145  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=332 visualViewportH=332.3636474609375"})
+09-18 14:18:28.145  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=332 visualViewportH=332.3636474609375
+09-18 14:18:28.146  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=332 scrollY=341 caretVY=509 caretCY=850 visible=false"})
+09-18 14:18:28.146  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=332 scrollY=341 caretVY=509 caretCY=850 visible=false
+09-18 14:18:28.147  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=332 scrollY=341 caretVY=509 caretCY=850 visible=false"})
+09-18 14:18:28.147  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=332 scrollY=341 caretVY=509 caretCY=850 visible=false
+09-18 14:18:28.147  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=332 visualViewportH=332.3636474609375"})
+09-18 14:18:28.147  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=332 visualViewportH=332.3636474609375
+09-18 14:18:28.155  6063  6063 D BlockNoteEditor: diag | ime bottom=835px (303.63635.dp)
+09-18 14:18:28.159  6063  6063 D BlockNoteEditor: diag | webview onSizeChanged: 1036x913px = 332.0dp
+09-18 14:18:28.165  6063  6063 D BlockNoteEditor: diag | ime bottom=836px (304.0.dp)
+09-18 14:18:28.167  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=332 scrollY=343 caretVY=508 caretCY=851 visible=false"})
+09-18 14:18:28.167  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=332 scrollY=343 caretVY=508 caretCY=851 visible=false
+09-18 14:18:28.169  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=332 scrollY=343 caretVY=508 caretCY=851 visible=false"})
+09-18 14:18:28.169  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=332 scrollY=343 caretVY=508 caretCY=851 visible=false
+09-18 14:18:28.169  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=332 visualViewportH=332"})
+09-18 14:18:28.169  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=332 visualViewportH=332
+09-18 14:18:28.170  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[pre] innerH=332 scrollY=343 caretVY=508 caretCY=851 visible=false"})
+09-18 14:18:28.170  6063 18646 D BlockNoteEditor: diag | caret[pre] innerH=332 scrollY=343 caretVY=508 caretCY=851 visible=false
+09-18 14:18:28.171  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"caret[post] innerH=332 scrollY=343 caretVY=508 caretCY=851 visible=false"})
+09-18 14:18:28.171  6063 18646 D BlockNoteEditor: diag | caret[post] innerH=332 scrollY=343 caretVY=508 caretCY=851 visible=false
+09-18 14:18:28.171  6063 18646 D BlockNoteEditor: up({"type":"diagnostic","message":"viewport | bnEditor=1680px innerHeight=332 visualViewportH=332"})
+09-18 14:18:28.171  6063 18646 D BlockNoteEditor: diag | viewport | bnEditor=1680px innerHeight=332 visualViewportH=332
+
+

@@ -903,31 +903,64 @@ function EditorCore(props: {
             ` visible=${caretVY >= 0 && caretVY <= window.innerHeight}`,
         });
       };
-      const scrollSelectionIntoView = () => {
-        report("pre");
-        const view = editor.prosemirrorView;
-        if (!view) return;
-        view.dispatch(view.state.tr.scrollIntoView());
-        report("post");
-      };
       /**
-       * **逐帧触发，勿加防抖**（v1.11.9 实测两个方向都踩过后定的）：
+       * rAF 指数逼近（v1.11.9 定案）：每帧向「光标可见」的目标位置走 30%。
        *
-       * - 逐帧**瞬跳**（无 smooth）：键盘 ~300ms 动画内 20 来次小瞬跳，断断续续；
-       * - **防抖 200ms**：滚动被推迟到键盘动画结束后才开始（再叠加 smooth 的
-       *   动画时长），视觉上「键盘完全出现后 WebView 才动」，与键盘不同步；
-       * - **逐帧 + CSS smooth（现状）**：`html { scroll-behavior: smooth }`
-       *   把 PM 的每次瞬时 scrollTo 转成平滑动画，下一帧重新定向时从当前位置
-       *   继续缓动——连续帧拼接成**与键盘同步的连续跟随**，两端皆平滑。
+       * 两轮真机日志已否决的方案：
+       * - PM scrollIntoView 瞬时逐帧执行：20 来次小瞬跳，断续 ❌
+       * - CSS scroll-behavior: smooth（固定 ~500ms 动画）：resize 逐帧触发时
+       *   每帧都重启动画——动画从未跑完即被取消，**收敛不可预期**
+       *   （实测：滑到底侥幸 +277dp 到位；滑到中间只滚了 11% 即停，光标不可见）❌
+       *
+       * 指数逼近无固定时长：目标（随 innerH 逐帧变化）每帧重算、位置逐帧
+       * 收敛，键盘动画结束事件流停止后循环仍会跑到位。收敛即退出，
+       * 下次 resize 再 kick。双向：键盘收起时目标回落、平滑恢复。
        */
+      let raf = 0;
+      let running = false;
+      const step = () => {
+        const view = editor.prosemirrorView;
+        const doc = document.documentElement;
+        if (!view || view.isDestroyed) {
+          running = false;
+          return;
+        }
+        try {
+          const caretTop = view.coordsAtPos(view.state.selection.from).top;
+          const margin = 24; // 光标贴视口底部时，上方预留约一行
+          const target = Math.max(
+            0,
+            Math.round(caretTop + doc.scrollTop - window.innerHeight + margin)
+          );
+          const diff = target - doc.scrollTop;
+          if (Math.abs(diff) <= 1) {
+            doc.scrollTop = target;
+            running = false;
+            report("converged");
+            return;
+          }
+          doc.scrollTop += Math.round(diff * 0.3);
+          raf = requestAnimationFrame(step);
+        } catch {
+          running = false;
+        }
+      };
+      const kickScrollFollow = () => {
+        if (!running) {
+          running = true;
+          step();
+        }
+      };
       report("initial");
-      const onResize = () => scrollSelectionIntoView();
+      const onResize = () => kickScrollFollow();
       const vv = window.visualViewport;
       vv?.addEventListener("resize", onResize);
       window.addEventListener("resize", onResize);
       /** 键盘动画稳定后补一条终态 */
       const settleTimer = window.setTimeout(() => report("settled"), 1500);
       return () => {
+        cancelAnimationFrame(raf);
+        running = false;
         window.clearTimeout(settleTimer);
         vv?.removeEventListener("resize", onResize);
         window.removeEventListener("resize", onResize);
