@@ -108,8 +108,27 @@ export type DownMessage =
    * 无需传参：JS 侧不传 `blockIdentifier`，BlockNote 会取**选区首/末块**或**光标块**，
    * 因而天然支持「多选块一起移动」与嵌套块。到达首/末块时内部安全 no-op。
    */
+  /** 块上移 / 下移（v1.11.5） */
   | { type: "moveBlockUp" }
-  | { type: "moveBlockDown" };
+  | { type: "moveBlockDown" }
+  /**
+   * 设置编辑区最小高度（v1.11.6，单位为 **dp**，宿主下发）
+   *
+   * 背景：`.bn-editor` 是 `contenteditable`，但 BlockNote 未给它任何 `min-height`
+   * ——它的高度**完全由内容决定**。而宿主给 WebView 设了 `heightIn(min = 屏高 × 62%)`，
+   * 于是内容少时（如新灵感只有 1 个空块 ≈ 30dp）编辑器只有 30dp 高，
+   * 下方几百 dp 虽在 WebView 内、却**不在 `contenteditable` 盒子里**：
+   * 点击那片空白不会聚焦光标、也不会把光标移到最后一行（"死区"）。
+   *
+   * 修法：宿主把自己的最小高度值下发，JS 侧写入 CSS 变量
+   * `--bn-editor-min-height`，由 editor.css 的 `.bn-editor { min-height: ... }` 消费，
+   * 让编辑区始终铺满 WebView。
+   *
+   * 为何用宿主下发而不是 `62vh`：`vh` 是相对**视口**的单位，而本项目 WebView
+   * 高度会随内容增长（外层 Column 滚动、WebView 可能撑出屏幕），此时 vh 语义不直观；
+   * 下发一个确定值行为才可预测。1 CSS px = 1 dp（`initial-scale=1.0`），故单位即 dp。
+   */
+  | { type: "setEditorMinHeight"; height: number };
 
 /** 上行消息（JS → Kotlin） */
 export type UpMessage =

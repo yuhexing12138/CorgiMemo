@@ -175,6 +175,16 @@
 - **同一文件多次 Edit 必须串行**（并行写竞态）。
 - 提交：中文提交信息，Write 写临时文件后提交再删除。
 
+- ⚠️ **宿主 `heightIn(min)` 只撑 WebView，撑不到 `.bn-editor`（v1.11.6 修）**：
+  BlockNote 未给 `.bn-editor` 任何 `min-height` —— 它的高度**完全由内容决定**
+  （空文档仅 1 个空块 ≈ 30dp = 16px × 行高 1.5 + `.bn-block-content` 上下各 3px）。
+  而宿主给 WebView 设了 `heightIn(min = 屏高 × 0.62)`。两者不一致时，
+  WebView 内、编辑器盒子**之外**的那片区域点击**不会聚焦光标**（"死区"）。
+  修法：宿主把同一数值经 `setEditorMinHeight`（单位 dp）下发，JS 写入
+  `--bn-editor-min-height`，由 `.bn-editor { min-height: ... !important }` 消费。
+  **不要用 `62vh`** —— 本项目 WebView 高度随内容增长、可能撑出屏幕（外层 Column 滚动），
+  `vh` 语义不直观；用宿主下发的确定值才可预测（1 CSS px = 1 dp，`initial-scale=1.0`）。
+
 ### ⚠️ 验证方式的边界（2026-09-18 教训）
 - **「产物关键字计数」只证明"字符串在文件里"，不证明"浏览器用得上"**。
   本次 `.bn-editor` 背景色 bug 用计数查过两次都显示正常（`#FFFBF5` 计数 = 1），

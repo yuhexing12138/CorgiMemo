@@ -144,6 +144,15 @@ export default function EditorApp() {
   const [initialMarkdown, setInitialMarkdown] = useState("");
   const [readOnly, setReadOnly] = useState(false);
   const [theme, setTheme] = useState<ThemePayload>({ dark: false, primary: "#1976d2" });
+  /**
+   * 编辑区最小高度（dp，v1.11.6）
+   *
+   * 由宿主经 `setEditorMinHeight` 下发。`.bn-editor` 本身没有 min-height、
+   * 高度完全由内容决定，宿主却给 WebView 设了 `heightIn(min)`，
+   * 内容少时会在 WebView 内留下大片**不在 contenteditable 盒子里**的死区
+   * （点击无法聚焦）。下发该值后由 editor.css 的 `.bn-editor { min-height }` 消费。
+   */
+  const [editorMinHeight, setEditorMinHeight] = useState(0);
   const [fontFamily, setFontFamily] = useState("system_default");
   /** 可用字体清单（S5）：id → 字重数组 */
   const [fontWeights, setFontWeights] = useState<Record<string, number[]>>({});
@@ -321,6 +330,13 @@ export default function EditorApp() {
           break;
         case "setFontFamily":
           setFontFamily(msg.fontFamily);
+          break;
+        /**
+         * 编辑区最小高度（v1.11.6）：宿主下发 dp 值，写入 CSS 变量供 editor.css 消费。
+         * 用法与 `SIDE_MENU_*` 无关的那套 CSS 变量一致——CSS 侧不写魔法数字。
+         */
+        case "setEditorMinHeight":
+          setEditorMinHeight(msg.height);
           break;
         case "requestSave":
           pushChanged();
@@ -699,6 +715,7 @@ export default function EditorApp() {
       theme={theme}
       fontFamily={fontFamily}
       fontWeights={fontWeights}
+      minHeight={editorMinHeight}
       onReady={(editor) => {
         editorRef.current = editor;
       }}
@@ -746,6 +763,8 @@ function EditorCore(props: {
   theme: ThemePayload;
   fontFamily: string;
   fontWeights: Record<string, number[]>;
+  /** 编辑区最小高度（dp，v1.11.6）：由宿主下发，写入 `--bn-editor-min-height` */
+  minHeight: number;
   emojiOpen: boolean;
   onEmojiClose: () => void;
   onEmojiPick: (emoji: string) => void;
@@ -836,8 +855,10 @@ function EditorCore(props: {
         ["--editor-bg" as any]: editorBackground,
         ["--editor-fg" as any]: props.theme.dark ? "#e0e0e0" : "#333333",
         ["--editor-border" as any]: props.theme.dark ? "#444444" : "#cccccc",
-        // 内容区左右留白（v1.11.3：左右对称，见 EDITOR_CONTENT_GUTTER）；editor.css 的 .bn-editor 消费
+        // 内容区左右留白（v1.11.5：左右同值 20px，见 EDITOR_CONTENT_GUTTER）；editor.css 的 .bn-editor 消费
         ["--bn-editor-gutter" as any]: `${EDITOR_CONTENT_GUTTER}px`,
+        // 编辑区最小高度（v1.11.6，宿主下发 dp）；让 .bn-editor 铺满 WebView，消除点击死区
+        ["--bn-editor-min-height" as any]: `${props.minHeight}px`,
       }}
     >
       <div style={{ fontFamily: "var(--content-font, system-ui)" }}>

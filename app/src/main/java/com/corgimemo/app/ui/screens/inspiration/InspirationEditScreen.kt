@@ -1855,6 +1855,20 @@ fun InspirationEditScreen(
                 (configuration.screenHeightDp * 0.62f).dp
             }
 
+            /**
+             * 把同一个最小高度下发给 JS（v1.11.6）
+             *
+             * 仅设 `heightIn(min)` 只保证 **WebView** 不塌陷；`.bn-editor` 自身没有
+             * min-height，高度仍由内容决定——于是 WebView 内、编辑器盒子之外的那片区域
+             * 点击不会聚焦光标（"死区"）。下发同一数值让 JS 给 `.bn-editor` 设 min-height，
+             * 编辑区即铺满 WebView，点击任意空白都能聚焦并把光标落到最后一行。
+             *
+             * 依赖 [editorMinHeight]，旋转屏时 screenHeightDp 变化 → 自动重算并重发。
+             */
+            LaunchedEffect(editorMinHeight) {
+                blockNoteController.setEditorMinHeight(editorMinHeight.value)
+            }
+
             BlockNoteEditorWebView(
                 controller = blockNoteController,
                 onMarkdownChanged = { md ->

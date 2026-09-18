@@ -50,6 +50,26 @@
 }
 
 /**
+ * 编辑区最小高度（v1.11.6）
+ *
+ * **问题**：`.bn-editor` 是 `contenteditable`，但 BlockNote 没给它任何 `min-height`
+ * ——高度**完全由内容决定**。宿主却给 WebView 设了 `heightIn(min = 屏高 × 62%)`。
+ * 于是内容少时（新灵感仅 1 个空块 ≈ 30dp）编辑器只有 30dp 高，
+ * WebView 内下方几百 dp 虽可见、却**不在 contenteditable 的盒子里**：
+ * 点击那片空白**不会聚焦光标**，也不会把光标移到最后一行（"死区"）。
+ *
+ * **修法**：宿主把同一个最小高度值经 `setEditorMinHeight` 下发（单位 dp），
+ * JS 写入 `--bn-editor-min-height`，此处消费，使编辑区始终铺满 WebView。
+ * 缺省 0px 时行为与修复前一致（向后兼容旧宿主）。
+ *
+ * ⚠️ 为何不写 `62vh`：本项目 WebView 高度会随内容增长、可能撑出屏幕
+ * （外层 Column 负责滚动），此时 `vh` 的语义不直观；用宿主下发的确定值才可预测。
+ */
+.bn-editor {
+  min-height: var(--bn-editor-min-height, 0px) !important;
+}
+
+/**
  * `.bn-editor` 圆角归零（v1.9）
  *
  * 该圆角本是"居中卡片"语义。全宽铺满后，同色背景上仍会残留圆角边界痕迹

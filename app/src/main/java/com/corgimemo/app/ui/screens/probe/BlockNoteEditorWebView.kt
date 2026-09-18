@@ -244,6 +244,25 @@ class BlockNoteBridgeController {
 
     fun moveBlockDown() = enqueueCommand(JSONObject().put("type", "moveBlockDown"))
 
+    /**
+     * 下发编辑区最小高度（v1.11.6）
+     *
+     * 目的：消除"点击正文下方空白无法聚焦"的死区。
+     * `.bn-editor` 是 `contenteditable` 但 BlockNote 未给它 `min-height`，
+     * 高度完全由内容决定；而宿主给 WebView 设了 `heightIn(min = 屏高 × 62%)`
+     * [com.corgimemo.app.ui.screens.inspiration.InspirationEditScreen]。
+     * 两者不一致时，WebView 内下方区域虽可见却**不属于 contenteditable**，
+     * 点击不会聚焦光标。下发同一个高度值后，JS 侧写入 `.bn-editor { min-height }`
+     * 即可让编辑区铺满 WebView。
+     *
+     * @param heightDp 最小高度的 **dp** 值。WebView 用 `initial-scale=1.0`，
+     *                 故 1 CSS px = 1 dp，JS 侧可直接当作 px 使用。
+     */
+    fun setEditorMinHeight(heightDp: Float) =
+        enqueueCommand(
+            JSONObject().put("type", "setEditorMinHeight").put("height", heightDp.toDouble())
+        )
+
     /** 主题下行（深浅 + 主色 + 编辑区背景色，v1.9 增 background） */
     fun setTheme(dark: Boolean, primary: String, background: String) {
         val theme = JSONObject()
