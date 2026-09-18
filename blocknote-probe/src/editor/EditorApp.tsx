@@ -698,13 +698,16 @@ export default function EditorApp() {
 const SIDE_MENU_HANDLE_WIDTH = 24;
 
 /**
- * 拖拽手柄与正文之间保留的视觉间隙（px，v1.11）
+ * 拖拽手柄与正文之间的额外间隙（px，v1.11 → v1.11.2 调为 0）
  *
- * 官方 `padding-inline: 54px` 恰为 `48（两个按钮）+ 6`，取 6 沿用其手感，
- * 避免手柄紧贴文字。同时 24 + 6 = 30 > 20，可保住嵌套列表
- * 位于 `left: -20px` 的竖向缩进线（见 editor.css 说明）。
+ * 官方 `padding-inline: 54px` 恰为 `48（两个按钮）+ 6`，最初取 6 以沿用其手感。
+ * 后续按用户要求**收紧到 0**：手柄直接贴住编辑区左边缘，内容可用宽度再多 6px。
+ *
+ * ⚠️ 收紧后 `padding-left = 24px`，仍 **> 20px**，故嵌套列表位于
+ * `left: -20px` 的竖向缩进线、以及 toggle 添加按钮的 `margin-left: 22px`
+ * 都不会被裁——这是本值不能再小的下限（<20 会让缩进线消失）。
  */
-const SIDE_MENU_GUTTER_GAP = 6;
+const SIDE_MENU_GUTTER_GAP = 0;
 
 /**
  * 禁用拖拽手柄的点击菜单（v1.11）
@@ -731,7 +734,8 @@ const NoDragHandleMenu: FC = () => null;
  *   手柄在标题、图片等大块上垂直错位。
  *
  * 于是菜单宽度由 48px（2 × 24）降为 **24px**（1 × 24），
- * 左侧留白相应由 54px 降到 30px。
+ * 左侧留白相应由 54px 降到 24px（`SIDE_MENU_HANDLE_WIDTH` + `SIDE_MENU_GUTTER_GAP`，
+ * 后者按用户要求已收紧为 0）。
  */
 const DragHandleOnlySideMenu: FC<SideMenuProps> = () => (
   <SideMenu dragHandleMenu={NoDragHandleMenu}>

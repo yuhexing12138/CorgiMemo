@@ -287,21 +287,25 @@ val contentBackgroundPaint = userPickedBackgroundColor  // 绘制层真值："�
      靠这些属性把菜单高度与块高对齐（如 `heading[data-level=1]` = 108px）。
      自绘会让拖拽手柄在标题、图片等大块上**垂直错位**。
 
-于是所需宽度由 48px 降为 **24px**，左侧留白取 `24 + 6 = 30px`：
+于是所需宽度由 48px 降为 **24px**，左侧留白取 `24 + 0 = 24px`
+（间隙常量初版取 6 沿用官方手感，后按用户要求**收紧为 0**，手柄紧贴左边缘）：
 
 ```css
 .bn-editor {
-  padding-inline-start: var(--bn-side-menu-gutter, 30px) !important; /* 只容一个拖拽手柄 */
+  padding-inline-start: var(--bn-side-menu-gutter, 24px) !important; /* 只容一个拖拽手柄 */
   padding-inline-end: 0 !important;                                  /* 右侧官方纯对称留白，无功能 */
 }
 ```
 
 `--bn-side-menu-gutter` 的值在 `EditorApp.tsx` 由两个常量
-（`SIDE_MENU_HANDLE_WIDTH = 24`、`SIDE_MENU_GUTTER_GAP = 6`）算出后写入，
+（`SIDE_MENU_HANDLE_WIDTH = 24`、`SIDE_MENU_GUTTER_GAP = 0`）算出后写入，
 **CSS 里不出现魔法数字**——日后调整手柄尺寸只改常量。
 
-**效果**：可用宽度从 `W − 108` 变为 `W − 30`（**净增 78px**），手柄完整可见，
-且嵌套缩进线（需 20px）也不被裁。
+**效果**：可用宽度从 `W − 108` 变为 `W − 24`（**净增 84px**），手柄完整可见
+（且紧贴编辑区左边缘），嵌套缩进线（需 20px）也不被裁。
+
+> ⚠️ **24px 是本值的下限**：嵌套列表竖线在 `left:-20px`、toggle 添加按钮
+> `margin-left:22px`，两者都要 20/22px 空间。手柄本身已占 24px，所以间隙不能再为负。
 
 **新增的桥接命令**（协议详见 `bridge-protocol.md` v1.11）：
 `deleteBlock` / `setBlockColor` / `setTableHeader`；可用态与回显由上行 `blockState` 驱动，
@@ -326,7 +330,7 @@ val contentBackgroundPaint = userPickedBackgroundColor  // 绘制层真值："�
 
 | 文件 | 改动 |
 | --- | --- |
-| `blocknote-probe/src/editor/editor.css` | `padding-inline: 0` → `padding-inline-start: var(--bn-side-menu-gutter, 30px)` + `padding-inline-end: 0`（§3.8） |
+| `blocknote-probe/src/editor/editor.css` | `padding-inline: 0` → `padding-inline-start: var(--bn-side-menu-gutter, 24px)` + `padding-inline-end: 0`（§3.8） |
 | `blocknote-probe/src/editor/EditorApp.tsx` | 新增 `SIDE_MENU_HANDLE_WIDTH` / `SIDE_MENU_GUTTER_GAP` 常量 + 写入 `--bn-side-menu-gutter`；`NoDragHandleMenu` / `DragHandleOnlySideMenu` 组件；`sideMenu={false}` + 自渲染 `SideMenuController`；`pushBlockState`（含去重）；三个新下行命令 handler；`onSelectionChange` 接线 |
 | `blocknote-probe/src/editor/bridge.ts` | 下行增 `deleteBlock` / `setBlockColor` / `setTableHeader`；上行增 `blockState` |
 | `app/.../probe/BlockNoteEditorWebView.kt` | 新增 `BlockState` 数据类；controller 增 `deleteBlock` / `setBlockColor` / `setTableHeader` 与 `blockState` 快照；`handleUpMessage` 增 `blockState` 分支 |

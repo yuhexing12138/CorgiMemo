@@ -126,8 +126,10 @@
   留白过小还会连带裁掉嵌套列表竖线（`left:-20px`）与 toggle 添加按钮（`margin-left:22px`）。
 - **v1.11 定案**：`+` 删除（功能早已桥接工具栏），`⋮⋮` **保留**（拖拽重排是原生手势，无法按钮化），
   但其**点击菜单 4 项移入工具栏** → 宽度 48→24px，留白改
-  `padding-inline-start: var(--bn-side-menu-gutter, 30px) !important` + `padding-inline-end: 0 !important`
+  `padding-inline-start: var(--bn-side-menu-gutter, 24px) !important` + `padding-inline-end: 0 !important`
   （变量值在 JS 侧由常量算出，CSS 无魔法数字）。
+  ⚠️ **24px 是该值的下限**：嵌套列表竖线在 `left:-20px`、toggle 添加按钮 `margin-left:22px`，
+  手柄本身已占 24px，故间隙常量只能为 0、不能为负（v1.11.2 已按用户要求收紧到 0）。
   实现细节**详见 `docs/bridge-protocol.md` v1.11 与
   `docs/BlockNote编辑器占满与背景色修复方案.md` §3.8** —— 含三条必知坑：①关默认菜单用官方开关
   `sideMenu={false}` 再自渲染 `SideMenuController`；②自定义菜单**必须复用官方 `SideMenu` 容器**

@@ -37,17 +37,19 @@
  *   但其点击菜单（删除块/块颜色/表头行列）已桥接到工具栏，故菜单被禁用。
  *
  * 于是所需宽度 W 从 48px 降为 **24px**（只剩一个按钮），左侧留白相应取
- * `24 + 6 = 30px`，由 `--bn-side-menu-gutter` 单点提供（值在 EditorApp.tsx
+ * `24 + 0 = 24px`（间隙常量按用户要求已收紧为 0，手柄直接贴左边缘），
+ * 由 `--bn-side-menu-gutter` 单点提供（值在 EditorApp.tsx
  * 由常量算出后写入，避免 CSS 与 JS 各写一份魔法数字而漂移）。
  *
  * 右侧那 54px 是官方为左右对称而留、**不承载任何功能**——它才是手机全宽下
  * 「编辑区明显没占满」的真正来源，故直接归零。
  *
  * 副带好处：嵌套列表的竖向缩进线位于 `left: -20px`（Block.css），
- * 30px > 20px 所以不会被裁；若左侧留白小于 20px，那条线会消失。
+ * `24px > 20px` 所以不会被裁；若左侧留白小于 20px，那条线会消失。
+ * ⚠️ 因此 24px 是本值不可再小的下限（手柄宽 24 已 > 20，两者不冲突）。
  */
 .bn-editor {
-  padding-inline-start: var(--bn-side-menu-gutter, 30px) !important;
+  padding-inline-start: var(--bn-side-menu-gutter, 24px) !important;
   padding-inline-end: 0 !important;
 }
 
