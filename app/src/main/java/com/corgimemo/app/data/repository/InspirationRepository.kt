@@ -4,6 +4,7 @@ import com.corgimemo.app.data.local.db.InspirationDao
 import com.corgimemo.app.data.local.db.InspirationRelationDao
 import com.corgimemo.app.data.model.Inspiration
 import com.corgimemo.app.data.model.InspirationRelation
+import com.corgimemo.app.util.MarkdownParser
 import com.corgimemo.app.data.model.InspirationTagOrder
 import com.corgimemo.app.data.local.db.InspirationTagOrderDao
 import kotlinx.coroutines.flow.Flow
@@ -126,6 +127,35 @@ class InspirationRepository @Inject constructor(
     suspend fun getMaxPosition(isPinned: Boolean): Int? =
         inspirationDao.getMaxPosition(isPinned)
     
+    // ========== 数据迁移（v2026-09-18 BlockNote 迁移兼容） ==========
+
+    /**
+     * 一次性回填灵感正文纯文本。
+     *
+     * 迁移间隙/之前保存的灵感，其 content（纯文本摘要）字段可能为空，
+     * 导致首页列表不显示正文。本方法遍历所有 content 为空、但 contentFormat 非空的灵感，
+     * 用 [MarkdownParser.stripMarkdown] 将富文本 markdown 转为纯文本回填到 content。
+     *
+     * **幂等**：content 已非空（含本次已回填）的灵感会被跳过，可安全在每次启动时调用，
+     * 无需额外标记位。回填后 Room Flow 会自动推送新列表，首页即时刷新。
+     *
+     * @return 实际回填的灵感条数
+     */
+    suspend fun backfillEmptyInspirationContent(): Int {
+        val all = inspirationDao.getAllInspirationsBlocking()
+        var backfilled = 0
+        for (insp in all) {
+            if (insp.content.isBlank() && insp.contentFormat.isNotBlank()) {
+                val plain = MarkdownParser.stripMarkdown(insp.contentFormat)
+                if (plain.isNotBlank()) {
+                    inspirationDao.update(insp.copy(content = plain))
+                    backfilled++
+                }
+            }
+        }
+        return backfilled
+    }
+
     // ========== 关联关系操作 ==========
     
     /**

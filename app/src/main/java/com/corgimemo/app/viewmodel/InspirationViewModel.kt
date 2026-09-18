@@ -489,6 +489,16 @@ class InspirationViewModel @Inject constructor(
     init {
         loadInspirations()
         loadUserDefinedTags()
+        // v2026-09-18 修复：BlockNote 迁移后部分已存灵感的 content（纯文本摘要）字段为空，
+        // 导致首页列表不显示正文。启动时幂等回填（content 已非空则跳过，可重复调用）。
+        viewModelScope.launch {
+            try {
+                val n = inspirationRepository.backfillEmptyInspirationContent()
+                if (n > 0) android.util.Log.d("InspirationViewModel", "backfillEmptyInspirationContent: 回填 $n 条灵感正文")
+            } catch (e: Exception) {
+                android.util.Log.w("InspirationViewModel", "backfillEmptyInspirationContent 失败", e)
+            }
+        }
     }
 
     /**

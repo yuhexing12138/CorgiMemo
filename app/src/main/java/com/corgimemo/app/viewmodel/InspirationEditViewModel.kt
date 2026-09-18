@@ -26,6 +26,7 @@ import com.corgimemo.app.ui.model.ContentBlock /** 内容块：公共定义（�
 import com.corgimemo.app.ui.model.IMAGE_SHRUNK_WIDTH_RATIO /** 缩小态宽度比例（0.5f） */
 import com.corgimemo.app.ui.screens.inspiration.components.BodyBlock /** 编辑器图片块（备注/缩放态来源） */
 import com.corgimemo.app.ui.screens.inspiration.components.BodyBlocksController
+import com.corgimemo.app.ui.screens.inspiration.InspirationTextUtils /** v2026-09-18 修复字数统计：BlockNote 路径下从 contentFormat 抽取纯文本回填 content */
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.model.trigger.Trigger
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -898,6 +899,17 @@ class InspirationEditViewModel @Inject constructor(
                 }
 
                 /**
+                 * v2026-09-18 修复「统计不到字数」：BlockNote 路径下 `_richTextState` 为 null，
+                 * 不会回写 `_content`（上方 setMarkdown 分支被跳过）。故从最终迁移后的
+                 * `_contentFormat`(Markdown) 抽取纯文本回填 `_content`，保证编辑页字数行在
+                 * 打开任意（含迁移前）卡片时即显示正确计数；旧 compose-rich-editor 路径
+                 *（`_richTextState` 非空）仍以其 annotatedString.text 为准，不受影响。
+                 */
+                if (_richTextState == null) {
+                    _content.value = InspirationTextUtils.markdownToPlainText(_contentFormat.value)
+                }
+
+                /**
                  * v2026-09-02 修复「重新进入编辑页正文丢失（仅标题保留）」的根因。
                  *
                  * **旧逻辑**：初始化由 InspirationEditScreen 的
@@ -1076,7 +1088,17 @@ class InspirationEditViewModel @Inject constructor(
             /** v2026-08-01 Phase 4 回退：_imagePaths 不再从 Markdown 解析，
              *  由 addImagePath() 和 contentBlocks 中的 Image 块维护 */
         } else {
-            liveText = _content.value
+            /**
+             * BlockNote 迁移（P1.5）后正文由 WebView 编辑，_richTextState 不再被注入（恒为 null）。
+             * 此时 liveMarkdown（= _contentFormat）已是 onMarkdownChanged 回传的最新 markdown，
+             * 必须转纯文本写入 content —— 首页摘要、搜索、字数统计都依赖该字段。
+             * 旧写法 liveText = _content.value 会保留空串/旧值，导致首页正文不显示
+             * （详情页能显示是因为它直接渲染 contentFormat）。
+             * 复用与 Todo 模块一致的 MarkdownParser.stripMarkdown()。
+             */
+            liveText = com.corgimemo.app.util.MarkdownParser.stripMarkdown(liveMarkdown)
+            _contentFormat.value = liveMarkdown
+            _content.value = liveText
         }
 
         /** 保存前对 contentFormat 进行校验和修复（防止损坏数据） */
