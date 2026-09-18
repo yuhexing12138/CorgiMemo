@@ -128,9 +128,11 @@ adb logcat -s BlockNoteEditor:V | grep "ready received"
   **决策**（用户）：`+` 手柄删除（其功能早已桥接到工具栏）、`⋮⋮` 手柄**保留**用于拖拽重排
   （原生手势，无法按钮化），但它的**点击菜单**（删除块 / 块颜色 / 表头行 / 表头列）
   全部移入工具栏 → 所需左侧留白由 54px 降为 **24px**（= 手柄宽 24 + 间隙 0，
-  由 CSS 变量 `--bn-side-menu-gutter` 单点控制，值在 JS 侧由常量算出）。
+  由 CSS 变量 `--bn-editor-gutter` 单点控制，值在 JS 侧由常量算出）。
   手柄因此**紧贴编辑区左边缘**（`padding-left 24 − 手柄宽 24 = 0`）；
   ⚠️ 24px 是该值的下限——再小就会裁掉嵌套列表位于 `left: -20px` 的竖向缩进线。
+  右侧留白自 v1.11.3 起**与左侧取齐**（同用 `padding-inline`），
+  使文本左右边缘到屏幕的距离一致；代价是内容宽度比"仅左留白"时少 24px。
 
   ⚠️ **`blockState` 的判定口径照抄官方**，避免"官方菜单能点、桥过来的按钮却置灰"：
   块颜色用 `blockHasType(block, ed, block.type, { textColor | backgroundColor })`

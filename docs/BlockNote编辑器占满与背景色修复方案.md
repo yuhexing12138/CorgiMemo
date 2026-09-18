@@ -287,22 +287,26 @@ val contentBackgroundPaint = userPickedBackgroundColor  // 绘制层真值："�
      靠这些属性把菜单高度与块高对齐（如 `heading[data-level=1]` = 108px）。
      自绘会让拖拽手柄在标题、图片等大块上**垂直错位**。
 
-于是所需宽度由 48px 降为 **24px**，左侧留白取 `24 + 0 = 24px`
-（间隙常量初版取 6 沿用官方手感，后按用户要求**收紧为 0**，手柄紧贴左边缘）：
+于是所需宽度由 48px 降为 **24px**，左右留白均取 `24 + 0 = 24px`
+（间隙常量初版取 6 沿用官方手感，后按用户要求**收紧为 0**，手柄紧贴左边缘；
+右侧再按用户要求**与左侧取齐**，v1.11.3）：
 
 ```css
 .bn-editor {
-  padding-inline-start: var(--bn-side-menu-gutter, 24px) !important; /* 只容一个拖拽手柄 */
-  padding-inline-end: 0 !important;                                  /* 右侧官方纯对称留白，无功能 */
+  /* 左右同值：左侧兼任手柄绘制位，右侧为保证文本左右边缘到屏幕距离一致 */
+  padding-inline: var(--bn-editor-gutter, 24px) !important;
 }
 ```
 
-`--bn-side-menu-gutter` 的值在 `EditorApp.tsx` 由两个常量
-（`SIDE_MENU_HANDLE_WIDTH = 24`、`SIDE_MENU_GUTTER_GAP = 0`）算出后写入，
-**CSS 里不出现魔法数字**——日后调整手柄尺寸只改常量。
+`--bn-editor-gutter` 的值在 `EditorApp.tsx` 由两个常量
+（`SIDE_MENU_HANDLE_WIDTH = 24`、`SIDE_MENU_GUTTER_GAP = 0`）相加为
+`EDITOR_CONTENT_GUTTER` 后写入，**CSS 里不出现魔法数字**——日后调整只改常量。
 
-**效果**：可用宽度从 `W − 108` 变为 `W − 24`（**净增 84px**），手柄完整可见
+**效果**：可用宽度从 `W − 108` 变为 `W − 48`（**净增 60px**），手柄完整可见
 （且紧贴编辑区左边缘），嵌套缩进线（需 20px）也不被裁。
+
+> 说明：v1.11.2 曾把右侧归零，可用宽度可达 `W − 24`（净增 84px）；
+> v1.11.3 按用户要求改为左右对称，**主动让出右侧 24px** 换取视觉对称。
 
 > ⚠️ **24px 是本值的下限**：嵌套列表竖线在 `left:-20px`、toggle 添加按钮
 > `margin-left:22px`，两者都要 20/22px 空间。手柄本身已占 24px，所以间隙不能再为负。
@@ -330,8 +334,8 @@ val contentBackgroundPaint = userPickedBackgroundColor  // 绘制层真值："�
 
 | 文件 | 改动 |
 | --- | --- |
-| `blocknote-probe/src/editor/editor.css` | `padding-inline: 0` → `padding-inline-start: var(--bn-side-menu-gutter, 24px)` + `padding-inline-end: 0`（§3.8） |
-| `blocknote-probe/src/editor/EditorApp.tsx` | 新增 `SIDE_MENU_HANDLE_WIDTH` / `SIDE_MENU_GUTTER_GAP` 常量 + 写入 `--bn-side-menu-gutter`；`NoDragHandleMenu` / `DragHandleOnlySideMenu` 组件；`sideMenu={false}` + 自渲染 `SideMenuController`；`pushBlockState`（含去重）；三个新下行命令 handler；`onSelectionChange` 接线 |
+| `blocknote-probe/src/editor/editor.css` | `padding-inline: 0` → `padding-inline: var(--bn-editor-gutter, 24px)`（左右同值，§3.8） |
+| `blocknote-probe/src/editor/EditorApp.tsx` | 新增 `SIDE_MENU_HANDLE_WIDTH` / `SIDE_MENU_GUTTER_GAP` / `EDITOR_CONTENT_GUTTER` 常量 + 写入 `--bn-editor-gutter`；`NoDragHandleMenu` / `DragHandleOnlySideMenu` 组件；`sideMenu={false}` + 自渲染 `SideMenuController`；`pushBlockState`（含去重）；三个新下行命令 handler；`onSelectionChange` 接线 |
 | `blocknote-probe/src/editor/bridge.ts` | 下行增 `deleteBlock` / `setBlockColor` / `setTableHeader`；上行增 `blockState` |
 | `app/.../probe/BlockNoteEditorWebView.kt` | 新增 `BlockState` 数据类；controller 增 `deleteBlock` / `setBlockColor` / `setTableHeader` 与 `blockState` 快照；`handleUpMessage` 增 `blockState` 分支 |
 | `app/.../probe/BlockNoteEditorScreen.kt` | 探针页上行处理器补 `blockState` 分支（仅打 log） |
@@ -344,5 +348,5 @@ val contentBackgroundPaint = userPickedBackgroundColor  // 绘制层真值："�
 > `cd blocknote-probe && npm run build:editor`（或依赖 `:app:buildBlockNoteEditor`）。
 > 验证判据：logcat 的 `ready received | build=<构建时间>` 应为本次时间。
 > ⚠️ 产物是否刷新**用关键字计数判断，不要用 diff 行数**（vite 会重排压缩短变量名，
-> diff 恒显示大量"改动"）。本次核验：`--bn-side-menu-gutter` ×2、
+> diff 恒显示大量"改动"）。核验用：`--bn-editor-gutter` ×2、
 > `deleteBlock`/`setBlockColor`/`setTableHeader`/`blockState` 各 ×2。

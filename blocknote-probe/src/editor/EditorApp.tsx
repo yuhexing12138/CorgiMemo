@@ -691,8 +691,8 @@ export default function EditorApp() {
  * `MantineActionIcon size={24}`，且 `SideMenu` 的容器是 `MantineGroup gap={0}`
  * ——两个按钮之间没有任何间隙。本项目只保留拖拽手柄，故常量即为 24。
  *
- * ⚠️ 这是「左侧留白」的唯一真值来源：它与下方 `SIDE_MENU_GUTTER_GAP` 相加后
- * 写入 CSS 变量 `--bn-side-menu-gutter`，由 editor.css 消费。
+ * ⚠️ 这是「内容区留白」的唯一真值来源：它与下方 `SIDE_MENU_GUTTER_GAP` 相加
+ * 得到 `EDITOR_CONTENT_GUTTER`，写入 CSS 变量 `--bn-editor-gutter` 供 editor.css 消费。
  * 若日后调整手柄图标尺寸，只改这两个常量即可，不要在 CSS 里另写数字。
  */
 const SIDE_MENU_HANDLE_WIDTH = 24;
@@ -708,6 +708,23 @@ const SIDE_MENU_HANDLE_WIDTH = 24;
  * 都不会被裁——这是本值不能再小的下限（<20 会让缩进线消失）。
  */
 const SIDE_MENU_GUTTER_GAP = 0;
+
+/**
+ * 内容区左右留白（px，v1.11 → v1.11.3 改为左右对称）
+ *
+ * = 手柄宽 + 间隙，是 `.bn-editor` 的 `padding-inline` 值，
+ * 经 CSS 变量 `--bn-editor-gutter` 注入（CSS 侧不写魔法数字）。
+ *
+ * 为什么左右用同一个值：
+ * - **左侧**是硬约束——必须 ≥ 手柄宽，否则手柄会被裁（见 editor.css 的长注释）；
+ * - **右侧**原本归零（官方那 54px 对称留白无任何功能，归零能换内容宽度），
+ *   但按用户要求改为与左侧相等，让文本左右边缘到屏幕的距离一致。
+ *
+ * ⚠️ 因此本值同时受两个语义支配：左侧"容纳手柄"、右侧"视觉对称"。
+ * 若两者日后冲突（例如想调大右侧留白但不希望左侧跟着变），
+ * 拆成 `--bn-editor-gutter-start` / `-end` 两个变量即可。
+ */
+const EDITOR_CONTENT_GUTTER = SIDE_MENU_HANDLE_WIDTH + SIDE_MENU_GUTTER_GAP;
 
 /**
  * 禁用拖拽手柄的点击菜单（v1.11）
@@ -734,8 +751,9 @@ const NoDragHandleMenu: FC = () => null;
  *   手柄在标题、图片等大块上垂直错位。
  *
  * 于是菜单宽度由 48px（2 × 24）降为 **24px**（1 × 24），
- * 左侧留白相应由 54px 降到 24px（`SIDE_MENU_HANDLE_WIDTH` + `SIDE_MENU_GUTTER_GAP`，
- * 后者按用户要求已收紧为 0）。
+ * 内容区左侧留白相应由 54px 降到 24px（= `SIDE_MENU_HANDLE_WIDTH` +
+ * `SIDE_MENU_GUTTER_GAP`，后者按用户要求已收紧为 0）；
+ * 右侧留白与之取齐（v1.11.3），详情见 `EDITOR_CONTENT_GUTTER` 的 KDoc。
  */
 const DragHandleOnlySideMenu: FC<SideMenuProps> = () => (
   <SideMenu dragHandleMenu={NoDragHandleMenu}>
@@ -824,8 +842,8 @@ function EditorCore(props: {
         ["--editor-bg" as any]: editorBackground,
         ["--editor-fg" as any]: props.theme.dark ? "#e0e0e0" : "#333333",
         ["--editor-border" as any]: props.theme.dark ? "#444444" : "#cccccc",
-        // 左侧留白（v1.11）：由常量算出单点注入，editor.css 的 .bn-editor 消费
-        ["--bn-side-menu-gutter" as any]: `${SIDE_MENU_HANDLE_WIDTH + SIDE_MENU_GUTTER_GAP}px`,
+        // 内容区左右留白（v1.11.3：左右对称，见 EDITOR_CONTENT_GUTTER）；editor.css 的 .bn-editor 消费
+        ["--bn-editor-gutter" as any]: `${EDITOR_CONTENT_GUTTER}px`,
       }}
     >
       <div style={{ fontFamily: "var(--content-font, system-ui)" }}>
