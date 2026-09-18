@@ -873,10 +873,42 @@ function EditorCore(props: {
      * 动画期间连续触发无害：选区已可见时 PM 不产生滚动。
      */
     useEffect(() => {
+      /**
+       * v1.11.9 诊断（**临时**，定位"滑到底 vs 滑到中间的滚动差异"后移除）：
+       * 逐帧记录光标可见性状态——
+       * - innerH：WebView 视口高（收缩过程）
+       * - scrollY：内容滚动位置（滚动跟随曲线）
+       * - caretVY：光标视口 y（越过 innerH 的时刻 = 出界时机）
+       * - caretCY：光标内容 y（光标深度，两场景的固有差异）
+       * 两条时间线（滑到底 / 滑到中间）并排对比即可定位差异环节。
+       */
+      const report = (tag: string) => {
+        const view = editor.prosemirrorView;
+        const doc = document.documentElement;
+        let caretVY = -1;
+        try {
+          if (view) {
+            caretVY = Math.round(view.coordsAtPos(view.state.selection.from).top);
+          }
+        } catch {
+          /* 编辑器销毁等场景忽略 */
+        }
+        const scrollY = Math.round(doc.scrollTop);
+        sendUp({
+          type: "diagnostic",
+          message:
+            `caret[${tag}] innerH=${window.innerHeight}` +
+            ` scrollY=${scrollY} caretVY=${caretVY}` +
+            ` caretCY=${caretVY < 0 ? -1 : caretVY + scrollY}` +
+            ` visible=${caretVY >= 0 && caretVY <= window.innerHeight}`,
+        });
+      };
       const scrollSelectionIntoView = () => {
+        report("pre");
         const view = editor.prosemirrorView;
         if (!view) return;
         view.dispatch(view.state.tr.scrollIntoView());
+        report("post");
       };
       /**
        * **逐帧触发，勿加防抖**（v1.11.9 实测两个方向都踩过后定的）：
@@ -888,11 +920,15 @@ function EditorCore(props: {
        *   把 PM 的每次瞬时 scrollTo 转成平滑动画，下一帧重新定向时从当前位置
        *   继续缓动——连续帧拼接成**与键盘同步的连续跟随**，两端皆平滑。
        */
+      report("initial");
       const onResize = () => scrollSelectionIntoView();
       const vv = window.visualViewport;
       vv?.addEventListener("resize", onResize);
       window.addEventListener("resize", onResize);
+      /** 键盘动画稳定后补一条终态 */
+      const settleTimer = window.setTimeout(() => report("settled"), 1500);
       return () => {
+        window.clearTimeout(settleTimer);
         vv?.removeEventListener("resize", onResize);
         window.removeEventListener("resize", onResize);
       };
