@@ -55,6 +55,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import com.corgimemo.app.ui.theme.LocalContentTypography
+import com.corgimemo.app.ui.theme.UiDimensions
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -1772,8 +1773,8 @@ fun InspirationEditScreen(
                  * 标题编辑框下沿 → 日期行上沿 的可见空白需 = 6.dp。
                  * - 标题框自身 contentPadding 拆成 top=8.dp（保留顶部呼吸空间，与顶栏间距不变）、
                  *   bottom=0.dp（去掉底部内边距，避免叠加 Spacer 后超标）；
-                 * - 紧跟其下的 `Spacer(Modifier.height(6.dp))` 承担剩余 6.dp，
-                 *   二者相加 = 0 + 6 = 6.dp，与「日期行→WebView」的 6.dp 精确相等。
+                 * - 紧跟其下的 `Spacer(UiDimensions.inspirationTitleToMetaGap)`
+                 *   （6.dp 盒间隙）承担标题→时间行间距。
                  */
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
                     top = 8.dp,
@@ -1814,6 +1815,14 @@ fun InspirationEditScreen(
              * ② 时间行 Text 未显式 lineHeight，merge 了 bodyLarge 的 24.sp 行盒（上下各 ~5dp）；
              * ③ 标题 36.sp 行盒的字形下沉空间 ~7dp（字体固有，只能靠 Spacer 补偿）。
              * ①② 已修；③ 的补偿留待复测后微调两个 Spacer（第二步，数据驱动）。
+             *
+             * v2026-09-18 三次修订（第二步定版，复测数据驱动）：
+             * 修复①②后真机复测（密度 2.2，由正文行距 53px=16px×1.5 与屏高 873dp 双锚点验证）：
+             * 墨迹间距 ≈15.5dp / ≈13.6dp，残差 1.8dp = 正文首行 1.5 倍行距的行盒上方死空间
+             * (~4.3dp) − 时间行上方(~1.8dp)。补偿：时间行→正文 Spacer 6→8.dp，
+             * 两段墨迹间距均 ≈15.5dp（差 0.17dp，亚像素级）。editor.css 首块归零规则实测生效
+             * （若未生效 G2 还会再大 3dp，与实测不符）。
+             * 间距常量收敛至 UiDimensions.inspirationTitleToMetaGap / inspirationMetaToBodyGap。
              */
             val createdAt by viewModel.createdAt.collectAsState()
             val timestampText = remember(createdAt) {
@@ -1825,8 +1834,8 @@ fun InspirationEditScreen(
                 InspirationTextUtils.countInspirationContentChars(content)
             }
 
-            /** v2026-09-18：标题 → 日期行 之间 6.dp 等距（与「日期行→WebView」一致） */
-            Spacer(modifier = Modifier.height(6.dp))
+            /** 标题 → 时间行 盒间隙（常量收敛至 UiDimensions，墨迹间距见其 KDoc） */
+            Spacer(modifier = Modifier.height(UiDimensions.inspirationTitleToMetaGap))
 
             /** 时间戳 + 字数行（中间用竖线分隔，与参考图一致） */
             Row(
@@ -1865,9 +1874,10 @@ fun InspirationEditScreen(
                 )
             }
 
-            /** v2026-09-18：日期行 → WebView 之间 6.dp 等距（与「标题→日期行」一致）。
-             *  编辑器首部留白已在 editor.css 压到 0，此处 Spacer 即最终可见空白。 */
-            Spacer(modifier = Modifier.height(6.dp))
+            /** 时间行 → 正文 盒间隙：比上段多 2dp 墨迹补偿（正文首行行距上方死空间 ~4.3dp），
+             *  两段墨迹间距均 ≈15.5dp（v2026-09-18 截图逐像素定版，见上方三次修订注释）。
+             *  编辑器首部留白已在 editor.css 压到 0（已实测生效），此处 Spacer 即最终盒间隙。 */
+            Spacer(modifier = Modifier.height(UiDimensions.inspirationMetaToBodyGap))
 
             // v2026-09-18 修订：日期行↔WebView 的间距改由上方宿主 Compose 的 6.dp Spacer 承担，
             // 不再依赖 WebView 编辑器自身首部留白（已在 editor.css 归零），避免两段距离来源不一致。
