@@ -1767,11 +1767,19 @@ fun InspirationEditScreen(
                 /**
                  * 水平 padding 设为 0.dp，让标题文字起点 = Column padding(8dp) + 0 = 8dp，
                  * 与下方时间戳+字数 Row 和 RichTextEditor 正文完全左对齐。
-                 * vertical 保持 8dp，标题上下仍有合适的呼吸空间。
+                 *
+                 * v2026-09-18 修订（三段垂直可见空白精确 6.dp）：
+                 * 标题编辑框下沿 → 日期行上沿 的可见空白需 = 6.dp。
+                 * - 标题框自身 contentPadding 拆成 top=8.dp（保留顶部呼吸空间，与顶栏间距不变）、
+                 *   bottom=0.dp（去掉底部内边距，避免叠加 Spacer 后超标）；
+                 * - 紧跟其下的 `Spacer(Modifier.height(6.dp))` 承担剩余 6.dp，
+                 *   二者相加 = 0 + 6 = 6.dp，与「日期行→WebView」的 6.dp 精确相等。
                  */
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    horizontal = 0.dp,
-                    vertical = 8.dp
+                    top = 8.dp,
+                    bottom = 0.dp,
+                    start = 0.dp,
+                    end = 0.dp
                 )
             )
 
@@ -1784,10 +1792,12 @@ fun InspirationEditScreen(
              * - 时间戳来源：ViewModel.createdAt（新建模式 = 进入页面时记录；编辑模式 = 数据库 createdAt）
              * - 视觉样式：12sp 浅灰（Color(0xFF999999)），与详情页 InspirationViewCard 时间戳样式一致
              *
-             * v2026-09-01 修订：标题↔时间↔内容三段空白距离严格相等（以"标题→时间"为基准）。
-             * - 标题 editor 自带 contentPadding(vertical=8.dp) → 标题文本下沿到时间文本上沿 = 8（title padding）+ 8（上方 Spacer）= 16dp
-             * - 下方 Spacer 改为 16dp 凑齐 16dp，让"时间→内容"等于 16dp
-             * - 不要把 BodyBlocksEditor 的 contentPadding top 改 8dp 来"抵消"——它是 per-block 的，会把每个块都加上 8dp 顶距，破坏图片与文字的紧贴关系
+             * v2026-09-18 修订：标题↔日期行↔WebView 三段垂直「可见空白」精确相等，均为 6.dp。
+             * - 标题框 contentPadding 拆为 top=8.dp / bottom=0.dp；其后 `Spacer(6.dp)` 承担 6.dp
+             *   → 标题文本下沿到日期行上沿 = 0 + 6 = 6.dp。
+             * - 日期行之后新增 `Spacer(6.dp)`，WebView 编辑器首部留白（editor.css 已压到 0）不再额外撑高
+             *   → 日期行文本下沿到 WebView 首块文本上沿 = 6.dp。
+             * - 两段均严格 = 6.dp，视觉等距。
              */
             val createdAt by viewModel.createdAt.collectAsState()
             val timestampText = remember(createdAt) {
