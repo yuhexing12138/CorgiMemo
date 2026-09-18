@@ -78,9 +78,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.isSpecified
@@ -281,13 +278,6 @@ fun InspirationEditScreen(
      */
     var inlineImageViewerPath by remember { mutableStateOf<String?>(null) }
 
-    /**
-     * 编辑器滚动容器（内容区 Column）在窗口中的可视边界（v2026-09-09）：
-     * 图片选中工具栏的垂直 clamp 依据——图片中心滚出屏幕上/下展示边界时，
-     * 工具栏贴可视边界固定显示而不是留在屏外中心。onGloballyPositioned 写入、
-     * 工具栏定位时经 lambda 延迟读取（滚动期间不触发重组）。
-     */
-    var editorViewportBounds by remember { mutableStateOf<Rect?>(null) }
     // 是否有录音权限（用于显示录制面板）
     var hasRecordPermission by remember { mutableStateOf(false) }
 
@@ -1552,12 +1542,7 @@ fun InspirationEditScreen(
                 .background(contentBackgroundPaint)
                 /** 内容区内边距在背景之后，不影响背景范围 */
                 .padding(horizontal = 8.dp)
-                .verticalScroll(contentScrollState)
-                /**
-                 * 采集滚动容器窗口 bounds（v2026-09-09）：图片选中工具栏的
-                 * 垂直 clamp 边界（即"屏幕展示边界"，见 editorViewportBounds）。
-                 */
-                .onGloballyPositioned { editorViewportBounds = it.boundsInWindow() },
+                .verticalScroll(contentScrollState),
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             /**
