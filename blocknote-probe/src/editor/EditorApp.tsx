@@ -927,11 +927,23 @@ function EditorCore(props: {
         }
         try {
           const caretTop = view.coordsAtPos(view.state.selection.from).top;
+          const vh = window.innerHeight;
           const margin = 24; // 光标贴视口底部时，上方预留约一行
-          const target = Math.max(
-            0,
-            Math.round(caretTop + doc.scrollTop - window.innerHeight + margin)
-          );
+          /**
+           * ⚠️ 目标必须是「可见性 clamp」而非「无条件贴底」（v1.11.9 修复）：
+           * 贴底公式 `caretTop + scrollTop - vh + margin` 在光标位于视口
+           * 中上部时目标会**小于**当前 scrollY → 内容先被往下滚（光标下移
+           * 贴底），innerH 收缩后才反转为上滚——正是「先往下再往上」的来源。
+           * 正确语义与 PM scrollIntoView 一致：光标可见则不动，出界才滚。
+           */
+          let target = doc.scrollTop; // 默认：光标可见，不动
+          if (caretTop > vh - margin) {
+            // 出界下方：上滚至光标贴视口底部
+            target = Math.round(caretTop + doc.scrollTop - vh + margin);
+          } else if (caretTop < 0) {
+            // 出界上方：下滚至光标贴视口顶部
+            target = Math.round(caretTop + doc.scrollTop);
+          }
           const diff = target - doc.scrollTop;
           if (Math.abs(diff) <= 1) {
             doc.scrollTop = target;
