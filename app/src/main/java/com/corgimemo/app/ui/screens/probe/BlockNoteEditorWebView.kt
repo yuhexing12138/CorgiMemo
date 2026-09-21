@@ -108,6 +108,12 @@ class BlockNoteBridgeController {
     var onMarkdownChanged: ((String) -> Unit)? = null
 
     /**
+     * 正文基础字号变化回调（v2026-09-21）：JS 侧「无选区点正文字号」改全局基础
+     * 字号后上行，宿主据此更新 BodyFontSizeManager 并持久化。参数为 px（1px=1dp）。
+     */
+    var onBaseFontSizeChanged: ((Int) -> Unit)? = null
+
+    /**
      * 撤销/重做可用态（v1.7）：JS 侧历史栈变化后经 `undoState` 上行。
      * true 表示当前历史栈可撤销——宿主左上角按钮据此置灰（对齐 Compose 版 canUndo/canRedo）。
      */
@@ -318,6 +324,16 @@ class BlockNoteBridgeController {
         )
     }
 
+    /**
+     * 正文基础字号切换（v2026-09-21：无选区点「正文字号」= 改全局正文，单位 px）。
+     * JS 侧写入 CSS 变量 `--bn-editor-base-font-size`，作用于未叠加行内样式的全部文字。
+     */
+    fun setBaseFontSize(px: Int) {
+        enqueueCommand(
+            JSONObject().put("type", "setBaseFontSize").put("fontSizePx", px)
+        )
+    }
+
     private fun enqueueCommand(msg: JSONObject) {
         if (ready && !initSent) {
             // ready 前的命令无编辑器可作用，直接丢弃（init 会在 ready 后重放内容）
@@ -438,6 +454,13 @@ class BlockNoteBridgeController {
                      * 排查命令用：`adb logcat -s BlockNoteEditor:V | grep -E "diag|down\("`
                      */
                     Log.d(TAG, "diag | ${msg.optString("message")}")
+                "baseFontSize" ->
+                    /**
+                     * v2026-09-21：JS「无选区点正文字号」改全局基础字号后上行，
+                     * 宿主据此更新 BodyFontSizeManager（内存 → Screen 响应式下发
+                     * 幂等确认）并写 SharedPreferences 持久化。
+                     */
+                    onBaseFontSizeChanged?.invoke(msg.optInt("fontSizePx", 0))
                 "error" -> Log.e(TAG, "js error: ${msg.optString("message")}")
             }
         } catch (e: Exception) {
@@ -471,6 +494,8 @@ class BlockNoteBridgeController {
 fun BlockNoteEditorWebView(
     controller: BlockNoteBridgeController,
     onMarkdownChanged: (String) -> Unit,
+    /** 正文基础字号变化上行（v2026-09-21）：JS 无选区点「正文字号」后宿主更新+持久化 */
+    onBaseFontSizeChanged: (Int) -> Unit = {},
     modifier: Modifier = Modifier,
     backgroundColor: Color = Color.Unspecified,
     suppressIme: Boolean = false,
@@ -501,6 +526,11 @@ fun BlockNoteEditorWebView(
     // onMarkdownChanged 回调更新（保持最新 lambda 引用）
     LaunchedEffect(onMarkdownChanged) {
         controller.onMarkdownChanged = onMarkdownChanged
+    }
+
+    /** onBaseFontSizeChanged 回调更新（v2026-09-21，同上模式） */
+    LaunchedEffect(onBaseFontSizeChanged) {
+        controller.onBaseFontSizeChanged = onBaseFontSizeChanged
     }
 
     /**

@@ -53,6 +53,13 @@ export type DownMessage =
   | { type: "setFontFamily"; fontFamily: string }
   /** 英文/数字字体切换（v2026-09-21：拉丁回退层；空串 = 跟随中文） */
   | { type: "setLatinFontFamily"; latinFontId: string }
+  /**
+   * 正文基础字号切换（v2026-09-21，单位 px，WebView 内 1px=1dp）：
+   * H 面板「正文字号」在**无文字选区**时点选 → JS 侧改全局基础字号
+   * （`.bn-default-styles` 消费的 CSS 变量），作用于所有未叠加行内
+   * fontSize 样式的文字；有选区时仍走 `format("fontSize")` 行内样式。
+   */
+  | { type: "setBaseFontSize"; fontSizePx: number }
   /** 主动要一次快照（返回键/切后台前） */
   | { type: "requestSave" }
   /** 撤销/重做（v1.2：原页面撤销/重做按钮经桥触发） */
@@ -193,6 +200,12 @@ export type UpMessage =
       isHeaderCol: boolean;
     }
   | { type: "error"; message: string }
+  /**
+   * 正文基础字号变化上行（v2026-09-21）：JS 侧「无选区点正文字号」改全局基础
+   * 字号后通知宿主——宿主据此更新 BodyFontSizeManager（内存态下发幂等）并写
+   * SharedPreferences 持久化。
+   */
+  | { type: "baseFontSize"; fontSizePx: number }
   /**
    * 诊断信息上行（v1.11.7）：仅用于 logcat 排错，**不参与业务逻辑**。
    *

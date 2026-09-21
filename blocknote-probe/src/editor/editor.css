@@ -132,6 +132,24 @@
 }
 
 /**
+ * 正文基础字号（v2026-09-21 新增）
+ *
+ * H 面板「正文字号」的**无选区语义**（用户决策）：无选区点档位 = 修改全局正文
+ * 基础字号——宿主下行 `setBaseFontSize`，JS 写入 `--bn-editor-base-font-size`
+ * （挂在 `.editor-page`，此处消费），作用于所有未叠加行内 fontSize 样式的文字；
+ * 行内样式（选中文字后点档位）依旧以 `<span style="font-size">` 覆盖继承。
+ *
+ * ⚠️ 必须覆盖 `.bn-default-styles`：库在它上面有**字面量** `font-size: 16px`
+ * （与 font-family:Inter 同一条规则），不打穿则基础字号只在 .bn-editor 层生效、
+ * 到内容层仍被库默认 16px 压住。`.bn-editor` 兜底防御同前。
+ * `--bn-editor-base-font-size` 缺失时回落 16px（= 库默认，向后兼容）。
+ */
+.bn-default-styles,
+.bn-editor {
+  font-size: var(--bn-editor-base-font-size, 16px) !important;
+}
+
+/**
  * `.bn-editor` 背景兜底
  *
  * 正常情况下 `--bn-colors-editor-background` 已由上方规则（或 JS 侧）写成主题背景色；

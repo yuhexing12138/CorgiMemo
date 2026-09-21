@@ -178,6 +178,8 @@ class CorgiPreferences(
         const val FONT_ID = "font_id"
         /** 🆕 v2026-09-03：「英文/数字字体」id（拉丁回退层；空串 = 系统默认，不叠加） */
         const val LATIN_FONT_ID = "latin_font_id"
+        /** 🆕 v2026-09-21：正文基础字号 px（WebView 内 1px=1dp；默认 16。无选区点「正文字号」时写入） */
+        const val BODY_FONT_SIZE_PX = "body_font_size_px"
     }
 
     // ==================== 数据迁移（DataStore → ESP）====================
@@ -746,6 +748,24 @@ class CorgiPreferences(
     /** 持久化「英文/数字字体」id（由 SettingsViewModel.setLatinFontId 调用，同时驱动内存状态） */
     suspend fun saveLatinFontId(id: String) = withContext(Dispatchers.IO) {
         esp.edit().putString(Keys.LATIN_FONT_ID, id).apply()
+    }
+
+    // ==================== 正文基础字号（v2026-09-21 新增）====================
+
+    /**
+     * 正文基础字号（px）的 Flow。
+     *
+     * 无选区点「正文字号」时写入（App 级排版偏好），作用于编辑页正文 WebView 的
+     * 基础字号——所有未叠加行内 fontSize 样式的文字跟随。默认 16（1px=1dp）。
+     */
+    val bodyFontSizePx: Flow<Int> = callbackFlow {
+        trySend(esp.getInt(Keys.BODY_FONT_SIZE_PX, 16))
+        close()
+    }
+
+    /** 持久化正文基础字号（由 BlockNote 上行触发，经 BodyFontSizeManager 内存态下发） */
+    suspend fun saveBodyFontSizePx(px: Int) = withContext(Dispatchers.IO) {
+        esp.edit().putInt(Keys.BODY_FONT_SIZE_PX, px).apply()
     }
 
     // ==================== 首次引导状态 ====================

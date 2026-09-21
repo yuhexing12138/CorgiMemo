@@ -224,3 +224,17 @@ adb logcat -s BlockNoteEditor:V | grep "ready received"
   "输入中样式"（影响后续输入的文字），**已显示的正文不变**——与加粗/斜体等
   行内格式一致；要改已有文字的字号需先选中文字。
 
+- v2026-09-21（同日续 2）：**新增下行 `setBaseFontSize` 与上行 `baseFontSize`**
+  （「正文字号」双语义，用户决策：无选区点档位 = 改**全局正文基础字号**）。
+
+  - 下行 `setBaseFontSize { fontSizePx }`：宿主启动装载（SettingsViewModel 从偏好
+    读出）与内存态变化时下发；JS 写入 CSS 变量 `--bn-editor-base-font-size`
+    （editor.css 的 `.bn-default-styles`/`.bn-editor` 消费——必须打穿库在
+    `.bn-default-styles` 上的字面量 `font-size:16px`），作用于所有未叠加
+    行内 fontSize 样式的文字；行内样式仍可按文字覆盖（CSS 继承 < 行内 style）。
+  - 上行 `baseFontSize { fontSizePx }`：JS 侧 `case "fontSize"` 按
+    `prosemirrorView.state.selection.empty` 分流——无选区时改基础字号并上行，
+    宿主经 `BodyFontSizeManager`（内存）+ SharedPreferences（持久化）落库，
+    再由 Screen 的响应式下发幂等确认。
+  - 持久化为 **App 级排版偏好**（`body_font_size_px`，默认 16），非灵感实体字段。
+

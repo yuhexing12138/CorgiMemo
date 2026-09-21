@@ -6,6 +6,7 @@ import com.corgimemo.app.backup.BackupManager
 import com.corgimemo.app.backup.BackupManager.ExportFormat
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
 import com.corgimemo.app.model.UserType
+import com.corgimemo.app.ui.theme.BodyFontSizeManager
 import com.corgimemo.app.ui.theme.FontCatalog
 import com.corgimemo.app.ui.theme.FontManager
 import com.corgimemo.app.ui.theme.ThemeManager
@@ -107,6 +108,10 @@ class SettingsViewModel @Inject constructor(
             val loadedLatinFontId = corgiPreferences.latinFontId.first()
             _latinFontId.value = loadedLatinFontId
             FontManager.initLatin(loadedLatinFontId)
+
+            // v2026-09-21 新增：装载「正文基础字号」（App 级排版偏好，编辑页无选区点字号时写入）
+            val loadedBodyFontSizePx = corgiPreferences.bodyFontSizePx.first()
+            BodyFontSizeManager.init(loadedBodyFontSizePx)
 
             // v2026-07-27 新增：加载「单行图片上限」
             _maxImagesPerLine.value = corgiPreferences.maxImagesPerLine.first()

@@ -137,6 +137,7 @@ import com.corgimemo.app.viewmodel.HomeViewModel
 import com.corgimemo.app.viewmodel.SpeechViewModel
 import com.corgimemo.app.viewmodel.InspirationEditViewModel
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationEditBottomBar /** 灵感编辑页底部栏（5 按钮 + 可折叠格式工具栏 + 字体选择面板）*/
+import com.corgimemo.app.ui.theme.BodyFontSizeManager /** 正文基础字号（App 级；无选区点「正文字号」= 改全局）*/
 import com.corgimemo.app.ui.theme.ContentFontManager /** 内容字体（每条灵感单独记录；boldTiers 清除集合与工具栏探测共用同一字体，保证选档/取消语义一致）*/
 import com.corgimemo.app.ui.screens.inspiration.components.InspirationImageGallery /** 灵感专用的沉浸式全屏图片画廊（编辑态预览复用） */
 import com.corgimemo.app.ui.screens.inspiration.InspirationTextUtils /** v2026-07-31 新增：标题与正文之间"时间戳+字数"行所需的字数统计工具 */
@@ -659,6 +660,17 @@ fun InspirationEditScreen(
      */
     LaunchedEffect(contentFontEntry.id) {
         blockNoteController.setFontFamily(contentFontEntry.id)
+    }
+
+    /**
+     * 正文基础字号响应式下发（v2026-09-21：无选区点「正文字号」= 改全局正文）：
+     * [BodyFontSizeManager.baseFontSizePx] 变化（JS 上行经 VM 写入、启动装载）
+     * 即下发 WebView；初次组合也会执行一次（与 JS 默认值相同时幂等无害），
+     * ready 前由桥缓存、ready 后随 init 补发——早于编辑器挂载，无跳动。
+     */
+    val bodyFontSizePx by BodyFontSizeManager.baseFontSizePx.collectAsState()
+    LaunchedEffect(bodyFontSizePx) {
+        blockNoteController.setBaseFontSize(bodyFontSizePx)
     }
 
     /**
@@ -2046,6 +2058,8 @@ fun InspirationEditScreen(
                     viewModel.setContentFormat(md)
                     viewModel.setContent(InspirationTextUtils.markdownToPlainText(md))
                 },
+                /** v2026-09-21：无选区点「正文字号」→ JS 上行基础字号 → VM 更新内存+持久化 */
+                onBaseFontSizeChanged = viewModel::onBaseFontSizeChanged,
                 modifier = Modifier
                     .fillMaxWidth()
                     /**

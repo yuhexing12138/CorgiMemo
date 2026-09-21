@@ -158,3 +158,36 @@ object ContentFontManager {
     fun typefaceForWeight(context: Context, weight: Int): Typeface =
         _currentEntry.value.typefaceForWeight(context, weight)
 }
+
+/**
+ * 正文基础字号管理器（v2026-09-21 新增，App 级排版偏好）。
+ *
+ * **语义（用户决策）**：H 面板「正文字号」在**无文字选区**时点选 = 修改全局正文基础字号——
+ * 编辑页正文 WebView 中所有**未叠加行内 fontSize 样式**的文字跟随变化；有选区时仍是
+ * 行内样式（addStyles，只作用于选中文字），二者层级清晰（CSS 继承 < 行内 style）。
+ *
+ * **数据流（单向）**：JS 侧判定"无选区"→ 应用 CSS 变量 + 上行 `baseFontSize` →
+ * 本单例更新（编辑页 Screen 订阅 [baseFontSizePx] 响应式下发，幂等）→ 宿主写
+ * SharedPreferences 持久化。启动时由 SettingsViewModel 从偏好装载（[init]）。
+ *
+ * 单位约定：px（WebView 内 1px=1dp；档位 sp 值与 px 数值直接对应）。
+ */
+object BodyFontSizeManager {
+    /** 默认正文基础字号（与 HeadingPanel 的 DEFAULT_BODY_SP = MaterialTheme bodyLarge 一致） */
+    const val DEFAULT_PX = 16
+
+    private val _baseFontSizePx = MutableStateFlow(DEFAULT_PX)
+
+    /** 当前正文基础字号（px；编辑页 Screen 订阅并下发 WebView） */
+    val baseFontSizePx: StateFlow<Int> = _baseFontSizePx.asStateFlow()
+
+    /** 启动时装载持久化的基础字号（SettingsViewModel 调用） */
+    fun init(px: Int) {
+        if (px > 0) _baseFontSizePx.value = px
+    }
+
+    /** 更新基础字号（内存态；持久化由收到上行消息的宿主侧写 SharedPreferences） */
+    fun set(px: Int) {
+        if (px > 0) _baseFontSizePx.value = px
+    }
+}

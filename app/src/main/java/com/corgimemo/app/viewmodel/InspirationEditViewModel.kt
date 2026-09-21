@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.corgimemo.app.data.local.db.ContentBlockDao
 import com.corgimemo.app.data.local.db.ContentBlockEntity
 import com.corgimemo.app.data.local.datastore.CorgiPreferences
+import com.corgimemo.app.ui.theme.BodyFontSizeManager
 import com.corgimemo.app.data.model.CardDetail
 import com.corgimemo.app.data.model.CardRelation
 import com.corgimemo.app.data.model.CardSearchResult
@@ -695,6 +696,20 @@ class InspirationEditViewModel @Inject constructor(
     fun onLatinFontSelected(latinId: String) {
         ContentFontManager.setLatinFont(latinId)
         _isDirty.value = true
+    }
+
+    /**
+     * 正文基础字号变化回调（v2026-09-21 新增，App 级排版偏好）：
+     * JS 侧「无选区点正文字号」改全局基础字号后上行，先更新
+     * [BodyFontSizeManager] 内存态（编辑页 Screen 的响应式下发随之幂等确认），
+     * 再写 SharedPreferences 持久化（跨会话保留）。
+     */
+    fun onBaseFontSizeChanged(px: Int) {
+        if (px <= 0) return
+        BodyFontSizeManager.set(px)
+        viewModelScope.launch {
+            corgiPreferences.saveBodyFontSizePx(px)
+        }
     }
 
     // ==================== 加载方法 ====================

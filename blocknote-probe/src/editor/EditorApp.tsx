@@ -156,6 +156,17 @@ export default function EditorApp() {
   const [fontFamily, setFontFamily] = useState("system_default");
   /** 英文/数字字体 id（v2026-09-21：拉丁回退层；空串 = 跟随中文） */
   const [latinFontId, setLatinFontId] = useState("");
+  /**
+   * 正文基础字号（v2026-09-21，px；默认 16）：H 面板「正文字号」在**无文字选区**
+   * 时点选 → 修改此值（全局正文基础字号，作用于未叠加行内样式的全部文字）。
+   * 与行内 fontSize 样式层级清晰：CSS 继承 < 行内 style。
+   */
+  const [baseFontSize, setBaseFontSize] = useState(16);
+  /**
+   * baseFontSize 的 ref 镜像：pushBlockState 是空依赖 useCallback，其上行
+   * fontSizePx 在无行内样式时要回落**当前**基础字号——经 ref 读最新值。
+   */
+  const baseFontSizeRef = useRef(16);
   /** 可用字体清单（S5）：id → 字重数组 */
   const [fontWeights, setFontWeights] = useState<Record<string, number[]>>({});
   /** 表情选择面板显隐（v1.5 openEmojiPicker 下行切换） */
@@ -289,14 +300,15 @@ export default function EditorApp() {
         /**
          * 当前选区字号（v2026-09-21：H 面板「正文字号」档位回显）：
          * `getActiveStyles().fontSize` 为 "18px" 形式字符串 → 解析为整数 px
-         * （WebView 内 1px=1dp，宿主档位为 sp 值，数值直接对应）；无样式 → 0
-         * （宿主回落默认档 16）。随 blockState 走同一去重与上行时机
+         * （WebView 内 1px=1dp，宿主档位为 sp 值，数值直接对应）；
+         * 无行内样式 → 回落**当前基础字号**（baseFontSizeRef，全局正文字号）——
+         * 档位高亮据此正确点亮。随 blockState 走同一去重与上行时机
          * （选区变化 / 内容变化，含 addStyles 引起的 mark 变化）。
          */
         fontSizePx: (() => {
           const fs = ed.getActiveStyles()?.fontSize as string | undefined;
           const m = typeof fs === "string" ? /^(\d+(?:\.\d+)?)px$/.exec(fs) : null;
-          return m ? Math.round(parseFloat(m[1])) : 0;
+          return m ? Math.round(parseFloat(m[1])) : baseFontSizeRef.current;
         })(),
         canSetBlockColor: supportsTextColor || supportsBgColor,
         blockTextColor: supportsTextColor
@@ -352,6 +364,10 @@ export default function EditorApp() {
           setTheme(msg.theme);
           setFontFamily(msg.fontFamily);
           setLatinFontId(msg.latinFontId ?? "");
+          if (typeof (msg as any).baseFontSizePx === "number" && (msg as any).baseFontSizePx > 0) {
+            setBaseFontSize((msg as any).baseFontSizePx);
+            baseFontSizeRef.current = (msg as any).baseFontSizePx;
+          }
           if (msg.fonts) {
             const map: Record<string, number[]> = {};
             for (const f of msg.fonts) map[f.id] = f.weights;
@@ -375,6 +391,19 @@ export default function EditorApp() {
         case "setLatinFontFamily":
           setLatinFontId(msg.latinFontId);
           break;
+        /**
+         * 正文基础字号下行（v2026-09-21）：宿主在启动装载（SettingsViewModel 从
+         * 偏好读出）与内存态变化时下发；编辑页组合期即下发一次（值相同幂等），
+         * ready 前由桥缓存、ready 后随 init 补发——早于 EditorCore 挂载，无跳动。
+         */
+        case "setBaseFontSize": {
+          const px = (msg as any).fontSizePx;
+          if (typeof px === "number" && px > 0) {
+            setBaseFontSize(px);
+            baseFontSizeRef.current = px;
+          }
+          break;
+        }
         /**
          * 编辑区最小高度（v1.11.6）：宿主下发 dp 值，写入 CSS 变量供 editor.css 消费。
          * 用法与 `SIDE_MENU_*` 无关的那套 CSS 变量一致——CSS 侧不写魔法数字。
@@ -471,11 +500,30 @@ export default function EditorApp() {
             case "strike":
               ed.toggleStyles({ strike: true });
               break;
-            case "fontSize":
-              // value = "18px"（px 字面量），"default" / 空清除
-              if (value && value !== "default") ed.addStyles({ fontSize: value });
-              else ed.removeStyles({ fontSize: "16px" });
+            case "fontSize": {
+              /**
+               * 字号档位点选（v2026-09-21 用户决策升级为双语义）：
+               * - **有文字选区** → 行内样式（仅选中文字）："18px" / "default" = 清除回落
+               * - **无选区（光标态）** → **全局正文字号**：改基础字号（CSS 变量驱动，
+               *   作用于未叠加行内样式的全部文字），上行 baseFontSize 让宿主持久化，
+               *   并主动刷一次 blockState（基础字号不产生文档变更，需手动触发回显）
+               */
+              const pm = ed.prosemirrorView;
+              const hasSelection = pm ? !pm.state.selection.empty : true;
+              if (!hasSelection) {
+                const px =
+                  value && value !== "default" ? parseInt(value, 10) : 16;
+                const next = Number.isFinite(px) ? px : 16;
+                setBaseFontSize(next);
+                baseFontSizeRef.current = next;
+                sendUp({ type: "baseFontSize", fontSizePx: next });
+                pushBlockState();
+              } else {
+                if (value && value !== "default") ed.addStyles({ fontSize: value });
+                else ed.removeStyles({ fontSize: "16px" });
+              }
               break;
+            }
             case "textColor":
               // value = "#rrggbb"（自由值）或 "default"=清除
               if (value && value !== "default") ed.addStyles({ textColor: value });
@@ -764,6 +812,7 @@ export default function EditorApp() {
       theme={theme}
       fontFamily={fontFamily}
       latinFontId={latinFontId}
+      baseFontSize={baseFontSize}
       fontWeights={fontWeights}
       minHeight={editorMinHeight}
       onReady={(editor) => {
@@ -814,6 +863,8 @@ function EditorCore(props: {
   fontFamily: string;
   /** 英文/数字字体 id（v2026-09-21：拉丁回退层；空串 = 跟随中文） */
   latinFontId: string;
+  /** 正文基础字号（v2026-09-21：无选区点「正文字号」改全局；CSS 变量消费） */
+  baseFontSize: number;
   fontWeights: Record<string, number[]>;
   /** 编辑区最小高度（dp，v1.11.6）：由宿主下发，写入 `--bn-editor-min-height` */
   minHeight: number;
@@ -1151,6 +1202,9 @@ function EditorCore(props: {
       className="editor-page"
       style={{
         ["--content-font" as any]: fontStack,
+        // 正文基础字号（v2026-09-21：无选区点「正文字号」改全局；editor.css 的
+        // .bn-default-styles/.bn-editor 消费——行内 fontSize 样式仍可按文字覆盖）
+        ["--bn-editor-base-font-size" as any]: `${props.baseFontSize}px`,
         ["--editor-primary" as any]: props.theme.primary,
         ["--editor-bg" as any]: editorBackground,
         ["--editor-fg" as any]: props.theme.dark ? "#e0e0e0" : "#333333",
