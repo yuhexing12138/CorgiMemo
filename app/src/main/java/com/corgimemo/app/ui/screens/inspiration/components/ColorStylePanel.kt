@@ -32,10 +32,10 @@ import com.corgimemo.app.ui.theme.ThemeManager
  * 编辑页「颜色」面板（内联面板，非弹窗；v2026-09-21 由弹窗 ColorStyleDialog 改造而来）
  *
  * 由 [InspirationEditBottomBar] 插入在「格式工具栏」与「相机行」之间，与
- * [FontPickerPanel]（T）、[FontSizeColorPanel]（Aa）**三者互斥、占同一槽位、同高度**
- * （面板高度 = 键盘高度，互斥切换不跳动）——即与 T / Aa 完全一致的展示形态。
+ * [FontPickerPanel]（T）、[HeadingPanel]（H）**三者互斥、占同一槽位、同高度**
+ * （面板高度 = 键盘高度，互斥切换不跳动）——即与 T / H 完全一致的展示形态。
  *
- * **布局（与 FontSizeColorPanel 同规格）**：
+ * **布局（与 [FontPickerPanel] 同规格）**：
  * - 面板头（40dp）：左「颜色」标题 + 「点选即时生效」提示，右「完成」文字按钮
  * - 分隔线（1dp，outlineVariant 50%）
  * - 内容区：`weight(1f)` 占满剩余高度并纵向滚动，内含四组色板
@@ -50,7 +50,7 @@ import com.corgimemo.app.ui.theme.ThemeManager
  * | 块级 | 段落文字色 | 光标所在**整段** | `setBlockColor(textColor = 色名｜"default")` |
  * | 块级 | 段落背景色 | 光标所在**整段**的底 | `setBlockColor(backgroundColor = 色名｜"default")` |
  *
- * **生效语义**（与 Aa 面板一致）：点选**即时生效且不收起面板**，便于连续微调；
+ * **生效语义**（与 H 面板一致）：点选**即时生效且不收起面板**，便于连续微调；
  * 收起由面板头「完成」或再点一次工具栏「A」按钮触发。故本面板只负责展示与回调，
  * 真正的 SpanStyle / 块 props 写入由调用方（InspirationEditScreen）完成。
  *

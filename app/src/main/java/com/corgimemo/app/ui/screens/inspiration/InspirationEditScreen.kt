@@ -81,7 +81,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange /** 标题单行化后重算光标 / 选区位置（v2026-09-15）*/
@@ -110,9 +109,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.ui.components.AppSnackbarHost
 import com.corgimemo.app.ui.screens.inspiration.components.DEFAULT_BODY_SP
-/** 底部内联面板标识（v2026-09-21）：T / Aa / A 三面板互斥所用的单一状态类型 */
+/** 底部内联面板标识（v2026-09-21）：T / H / A 三面板互斥所用的单一状态类型 */
 import com.corgimemo.app.ui.screens.inspiration.components.EditBottomPanel
-import com.corgimemo.app.ui.screens.inspiration.components.TEXT_COLORS
 /**
  * v2026-08-01 Phase 3：以下 import 已移除（关联改为 @ Trigger 内联插入）
  * - LinkedCardsRow（关联 Chip 流展示，改用 @ atomic token）
@@ -167,14 +165,11 @@ import kotlin.math.roundToInt
  * 路线 4 不再涉及内联渲染与 ▢ 占位字符，故整段删除。
  */
 
-/** Compose Color → "#RRGGBB"（BlockNote textColor 自由值格式；忽略 alpha） */
-private fun composeColorToHex(c: Color): String = String.format(
-    Locale.US,
-    "#%02X%02X%02X",
-    (c.red * 255).toInt(),
-    (c.green * 255).toInt(),
-    (c.blue * 255).toInt()
-)
+/**
+ * ⚠️ v2026-09-21：原 `composeColorToHex`（Compose Color → "#RRGGBB"）已删除——
+ * 它只服务于 Aa 面板的预设色下行；行内色的「色名 → hex」转换现由
+ * [com.corgimemo.app.ui.screens.inspiration.components.blockColorHexOf] 承担（与色板同源）。
+ */
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -201,7 +196,7 @@ fun InspirationEditScreen(
     /**
      * 当前展开的底部内联面板（v2026-09-21 收敛为单一状态，取代原先三个 boolean）
      *
-     * T / Aa / A 三个按钮各自展开一个面板（[EditBottomPanel]），三者**互斥且共用同一槽位**。
+     * T / H / A 三个按钮各自展开一个面板（[EditBottomPanel]），三者**互斥且共用同一槽位**。
      * 原先用 `isFontPanelExpanded` / `isSizeColorPanelExpanded` / `isColorPanelExpanded`
      * 三个 boolean 表达，互斥只能靠"记得把另两个一并置 false"维持——真漏过一次
      * （从 A 切到 T / Aa 时两个面板同时可见、把按钮行顶下去）。
@@ -666,28 +661,15 @@ fun InspirationEditScreen(
         pendingCjkFontId != contentFontEntry.id || pendingLatinFontId != contentLatinFontId
 
     /**
-     * 字号/颜色面板回显状态（v2026-09-04）：直接从 [richTextState.currentSpanStyle] 派生
-     * （真实来源 = 光标/选区的 SpanStyle），**不另持双份状态**，面板高亮天然跟随正文。
-     * - 字号：未指定回落 [DEFAULT_BODY_SP]（正文默认 16sp）
-     * - 颜色：与 [TEXT_COLORS] 预设匹配 → 下标高亮；不匹配的已指定色 → 自定义色 hex
-     *   （自定义色高亮时预设色让位，与面板内互斥语义一致）
+     * 「H」面板里「正文字号」档位的回显（v2026-09-04 引入，v2026-09-21 随字号迁入 H 面板）：
+     * 直接从 [richTextState.currentSpanStyle] 派生（真实来源 = 光标/选区的 SpanStyle），
+     * **不另持双份状态**，档位高亮天然跟随正文；未指定时回落 [DEFAULT_BODY_SP]（正文默认 16sp）。
+     *
+     * ⚠️ 原先同处派生的「颜色回显」（currentColorIdx / customColorHex）已随 Aa 面板删除：
+     * 行内色入口统一收敛到「A」面板，其回显依赖 JS 上行、不使用 richTextState。
      */
     val currentFontSizeSp = richTextState.currentSpanStyle.fontSize
         .takeIf { it.isSpecified }?.value?.roundToInt() ?: DEFAULT_BODY_SP
-
-    val currentSpanColor = richTextState.currentSpanStyle.color
-    val currentColorIdx = if (currentSpanColor.isSpecified) {
-        TEXT_COLORS.indexOfFirst { it.color == currentSpanColor }.coerceAtLeast(0)
-    } else {
-        0
-    }
-    val customColorHex = if (currentSpanColor.isSpecified &&
-        TEXT_COLORS.none { it.color == currentSpanColor }
-    ) {
-        String.format(Locale.US, "#%06X", currentSpanColor.toArgb() and 0xFFFFFF)
-    } else {
-        null
-    }
 
     /**
      * v2026-08-01 Phase 2：注册 # hashtag trigger + 编辑器内容初始化
@@ -1282,8 +1264,6 @@ fun InspirationEditScreen(
                 currentLatinId = pendingLatinFontId,
                 hasPendingChange = hasPendingFontChange,
                 currentFontSize = currentFontSizeSp,
-                currentColorIdx = currentColorIdx,
-                customColorHex = customColorHex,
                 richTextState = richTextState,
                 onPhotoClick = {
                     showImagePicker = true
@@ -1363,62 +1343,36 @@ fun InspirationEditScreen(
                     openPanel = null
                 },
                 /**
-                 * 字号与颜色按钮（工具栏 Aa，位于 T 与 A 之间）：
-                 * 切换字号颜色面板展开/收起。互斥、收键盘、收起都在 [togglePanel] 里统一处理，
-                 * 本面板无专属副作用，故回调只有一行。
-                 * 展开后由 [isFormatPanelOpen] 抑制键盘（v2026-09-21）。
+                 * ⚠️ v2026-09-21：原「Aa 字号与颜色」按钮回调（onSizeColorPanelClick /
+                 * onSizeColorPanelDismiss）已随按钮与面板一并删除——字号迁入「H」面板（见下
+                 * onFontSizeSelect），颜色与新「A」面板的「选中文字色」重叠。
                  */
-                onSizeColorPanelClick = {
-                    togglePanel(EditBottomPanel.SIZE_COLOR)
-                },
-                /** 字号颜色面板头「完成」：收起面板（字号/颜色已即时生效，无 pending 两段式）；
-                 *  收起即解除键盘抑制（v2026-09-21），但不主动弹回键盘 */
-                onSizeColorPanelDismiss = {
-                    openPanel = null
-                },
                 /**
-                 * 标题按钮（H，v2026-09-21 新增）→ 切换**内联标题面板**
+                 * 标题按钮（H，v2026-09-21 新增）→ 切换**内联「标题与字号」面板**
                  *
-                 * 面板内的 9 个标题键（普通标题 H1–H6 / 可折叠标题 1–3）复用既有的
-                 * 块类型转换回调 [onTransform] 下发 `heading1`–`heading6` / `toggleHeading` 系列，
+                 * 面板内容分三类：「正文字号」（8 档，原 Aa 面板迁来）、「普通标题 H1–H6」、
+                 * 「可折叠标题」；标题键复用既有的块类型转换回调 [onTransform] 下发
+                 * `heading1`–`heading6` / `toggleHeading` 系列，字号复用 [onFontSizeSelect]，
                  * 因此这里只负责开关面板，无新增下行通道。
                  */
                 onHeadingPanelClick = {
                     togglePanel(EditBottomPanel.HEADING)
                 },
-                /** 标题面板头「完成」：收起面板（标题点选即转换块类型，无 pending 两段式） */
+                /** 标题与字号面板头「完成」：收起面板（点选即生效，无 pending 两段式） */
                 onHeadingPanelDismiss = {
                     openPanel = null
                 },
                 /**
-                 * 字号点选（即时生效，与加粗字重写入同构）：
+                 * 正文字号点选（v2026-09-21 由 Aa 面板迁入「H」面板；即时生效，与加粗字重写入同构）：
                  * 先枚举清除全部档位字号（removeSpanStyle 仅在值匹配时生效，防叠加残留），
                  * 再写目标档；点默认档（[DEFAULT_BODY_SP] = 16sp）只清除不写入（回落正文默认）。
                  */
                 onFontSizeSelect = { sp ->
-                    // 字号面板点选 → fontSize 下行（默认档 = 清除，回落正文默认）
+                    // 正文字号档位点选 → fontSize 下行（默认档 = 清除，回落正文默认）
                     blockNoteController.format(
                         "fontSize",
                         if (sp == DEFAULT_BODY_SP) "default" else "${sp.sp}px"
                     )
-                },
-                /**
-                 * 预设色点选（即时生效）：下发 textColor 自由值；
-                 * 「默认」项（color = null）下发 default 清除（回落主题文字色）。
-                 */
-                onPresetColorSelect = { idx ->
-                    val targetColor = TEXT_COLORS.getOrNull(idx)?.color
-                    blockNoteController.format(
-                        "textColor",
-                        if (targetColor == null) "default" else composeColorToHex(targetColor)
-                    )
-                },
-                /**
-                 * 自定义取色（拖动每帧回调，即时生效）：直接下发 hex
-                 * （WebView 端 addStyles 幂等，拖动高频无需去重）。
-                 */
-                onCustomColorSelect = { hex ->
-                    blockNoteController.format("textColor", hex)
                 },
                 /**
                  * 中文字体选择：只更新 pending 高亮（分离式预览，正文此时不换字）；
@@ -1513,7 +1467,7 @@ fun InspirationEditScreen(
                 /**
                  * 四组颜色点选（v2026-09-21）
                  *
-                 * ⚠️ 与弹窗时代的行为差异：点选后**不再关闭**面板——与 Aa 面板的
+                 * ⚠️ 与弹窗时代的行为差异：点选后**不再关闭**面板——与 H 面板的
                  * "点选即时生效、面板保持展开"一致，便于连续微调；收起由「完成」或
                  * 再点一次 A 按钮触发。
                  *
@@ -1836,7 +1790,7 @@ fun InspirationEditScreen(
                     }
                     /**
                      * 面板展开期间禁用标题点击（v2026-09-21）：
-                     * 「T / Aa」面板以键盘高度占据键盘位，此时若点标题重新聚焦，
+                     * 「T / H / A」面板以键盘高度占据键盘位，此时若点标题重新聚焦，
                      * 软键盘会把面板顶走（与正文 [suppressIme] 同一诉求）。
                      *
                      * 在 `PointerEventPass.Initial` 阶段（父→子）消费指针事件即可，
@@ -2080,7 +2034,7 @@ fun InspirationEditScreen(
                 backgroundColor = contentBackgroundColor,
                 /**
                  * 面板展开期间抑制软键盘（v2026-09-21）：
-                 * 用户在正文中聚焦光标 / 多选时不再唤起 IME，键盘不会把「T / Aa」面板
+                 * 用户在正文中聚焦光标 / 多选时不再唤起 IME，键盘不会把「T / H / A」面板
                  * 顶走、也不会压缩 WebView 视口；**光标与选区能力完全保留**。
                  * 收起面板后本参数回 false，键盘不主动弹回（用户再点正文即恢复）。
                  */
@@ -2189,7 +2143,7 @@ fun InspirationEditScreen(
             /**
              * ⚠️ v2026-09-21：此处原有的「颜色」AlertDialog 弹窗接线已删除。
              *
-             * 按需求，「A」按钮的展示形态改为与 T / Aa 一致的**内联面板**
+             * 按需求，「A」按钮的展示形态改为与 T / H 一致的**内联面板**
              * （[com.corgimemo.app.ui.screens.inspiration.components.ColorStylePanel]），
              * 由 [InspirationEditBottomBar] 在"上行二c"槽位承载，无需在页面里再声明弹窗。
              *

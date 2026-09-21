@@ -32,12 +32,14 @@
 - 约定：抑制期间**保留光标与选区**；解除只恢复"可唤起"能力，**不主动弹回**键盘。
 
 ## 底部栏面板入口（2026-09-21）
-- 四个内联面板：工具栏按钮顺序 **T → Aa → H → A → B…**，四者互斥、占同一槽位、同高度（= 键盘高度）：
+- 三个内联面板：工具栏按钮顺序 **T → H → A → B…**（v2026-09-21 删除 Aa 后），三者互斥、占同一槽位、同高度（= 键盘高度）：
   - **颜色**：「A」→ `ColorStylePanel` 四组色板——**选中文字色 / 选中背景色**（行内，`format("textColor"/"backgroundColor", hex|"default")`）+ **段落文字色 / 段落背景色**（块级，`setBlockColor(textColor=/backgroundColor= 色名|"default")`）。⚠️ 两种维度不同、互不覆盖，别混。
-  - **标题**（v2026-09-21 新增）：「H」→ `HeadingPanel` 两类——**普通标题 H1–H6**（action `heading1`–`heading6`）+ **可折叠标题**（action `toggleHeading` / `toggleHeading2` / `toggleHeading3`；⚠️ 1 级无后缀数字是既有约定）。9 格**都用移动前的 Ri 图标**（`RiH1`–`RiH6`，两类图标相同，靠分区标题「普通标题 / 可折叠标题」区分），**无底色、无格子框**（只有图标 + 44dp 点击区），选中态 = 图标转暖橙。格宽统一：可折叠 3 格 + 3 个等权 Spacer 对齐 6 列网格。原工具栏「组三 Headings / 组四 Subheadings」9 键已整体删除。
+  - **标题与字号**（v2026-09-21 新增）：「H」→ `HeadingPanel` **三个分区**——① **正文字号**：8 档 `FONT_SIZE_TIERS`（v2026-09-21 由 Aa 面板迁来），每格 = `RiFontSize` 图标 + 档位数值，下行 `format("fontSize", "${sp}px"|"default")`，默认档 16sp = `DEFAULT_BODY_SP` 下发 `default`；② **普通标题 H1–H6**（action `heading1`–`heading6`）；③ **可折叠标题**（action `toggleHeading` / `toggleHeading2` / `toggleHeading3`；⚠️ 1 级无后缀数字是既有约定）。所有格子**都用 Ri 图标、无底色无格子框**（44dp 点击区），选中态 = 内容转暖橙。标题格宽统一（可折叠 3 格 + 3 个等权 Spacer 对齐 6 列网格），字号 8 格一行 `SpaceBetween` 等分。原工具栏「组三 / 组四」9 键已删除。
 - ⚠️ 「A」曾是 **AlertDialog 弹窗**（`ColorStyleDialog`，已删）；参数 `onOpenColorStyleDialog/showColorStyleDialog` 已改名 `onColorPanelClick/isColorPanelOpen`。面板内点选**不收起**（与 Aa 一致），靠「完成」或再点该按钮收起。
-- 四面板互斥：**单一状态 `openPanel: EditBottomPanel?`（FONT / SIZE_COLOR / COLOR / HEADING）**，`isFormatPanelOpen = openPanel != null` → 驱动 WebView `suppressIme` 与标题消费指针（键盘让位）。⚠️ 曾用多个 boolean 表达互斥，漏关一处即出「从 A 切到 T/Aa 面板叠加」；收敛后互斥由状态本身保证，**别退回多 boolean**。
-- 四面板切换统一走 Screen 内**局部函数 `togglePanel(panel)`**（同值→置 null 收起；否则替换并 `keyboardController?.hide()`；收起不弹回键盘）；面板专属副作用（字体面板展开前重置 pending）在调用**之前**执行。⚠️ 局部函数**必须先声明后引用**（Kotlin 局部函数声明顺序即可见性）。
+- ⚠️ **Aa（字号与颜色）按钮与 `FontSizeColorPanel` 已整体删除**（v2026-09-21）：字号迁入 H 面板——`FONT_SIZE_TIERS` / `DEFAULT_BODY_SP` 现定义在 `HeadingPanel.kt`（后者被 InspirationEditScreen 引用，**须保持 public**）；颜色部分（12 预设色 `TEXT_COLORS` + 自定义 HSV 取色）与 A 面板「选中文字色」重叠，一并删除。连带移除 `EditBottomPanel.SIZE_COLOR`、`currentColorIdx` / `customColorHex` / `onPresetColorSelect` / `onCustomColorSelect`、宿主私有 `composeColorToHex`、`TEXT_COLORS` import、`androidx.compose.ui.graphics.isSpecified` import。
+- 图标库 `BlockNotePlusMenuIcons`（v2026-09-21 追加 `RiFontSize`）：属性 + `defs` map 两处都要加（map 是 `vectorFor(name)` 的唯一数据源），path 取自 `react-icons/ri/index.mjs`；**必须同时改 `blocknote-probe/tools/extract-ri-icons.cjs` 的 WANT 清单**（加 `["font_size","RiFontSize"]`），否则下次重跑生成器会把新图标丢掉。
+- 面板互斥：**单一状态 `openPanel: EditBottomPanel?`（FONT / COLOR / HEADING；v2026-09-21 移除 SIZE_COLOR）**，`isFormatPanelOpen = openPanel != null` → 驱动 WebView `suppressIme` 与标题消费指针（键盘让位）。⚠️ 曾用多个 boolean 表达互斥，漏关一处即出「面板叠加」；收敛后互斥由状态本身保证，**别退回多 boolean**。
+- 面板切换统一走 Screen 内**局部函数 `togglePanel(panel)`**（同值→置 null 收起；否则替换并 `keyboardController?.hide()`；收起不弹回键盘）；面板专属副作用（字体面板展开前重置 pending）在调用**之前**执行。⚠️ 局部函数**必须先声明后引用**（Kotlin 局部函数声明顺序即可见性）。
 - ⋮ 菜单（`BlockOpsMenuButton`）**已无颜色项**，只剩删除块 / 上移 / 下移 / 表头行·列；`onSetBlockColor` 参数链（Toolbar→BottomBar→Screen）已全部删除。
 - 共用色板 `components/BlockColorPicker.kt`：`internal BlockColorPalette`（BlockNote 官方明暗各 9 色 + `names`）/ `BlockColorRow`（标签 + 默认斜杠点 + 9 色点）/ `blockColorHexOf(name,isDark,background)`（色名→"#RRGGBB"，供行内色下行）/ private `BlockColorDot(size, …)`。
 - 色板排版（v2026-09-21，改前先读常量）：**色点边长按可用宽度自适应**——`BoxWithConstraints.maxWidth` → `(available − gap×(n−1)) / n` 并 clamp 到 `MinColorDotSize=24dp` / `MaxColorDotSize=36dp`；分布用 `Arrangement.SpaceBetween` 且**首尾留白固定 `ColorRowHorizontalPadding=12dp`**（与面板头标题对齐，用户要求保持），点间距 `ColorDotGap=8dp`。被 clamp 截断时剩余空间由 SpaceBetween 平均吸收，观感仍均匀。斜杠字号 = `size×0.5`（等比缩放）。

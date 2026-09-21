@@ -57,7 +57,6 @@ import com.corgimemo.app.ui.theme.ContentFontManager
 import com.corgimemo.app.ui.theme.FontWeightProbe
 import com.mohamedrejeb.richeditor.model.RichTextState
 import compose.icons.LucideIcons
-import compose.icons.lucideicons.CaseSensitive
 import compose.icons.lucideicons.SeparatorHorizontal
 import compose.icons.lucideicons.SquareCheck
 import compose.icons.lucideicons.Type
@@ -77,10 +76,11 @@ import compose.icons.lucideicons.Type
  * 分类区之间以竖线分隔，分类区内部不设分割线：
  *
  * **功能分组**（v2026-09-17 按浮层格式工具栏重桥；分组内容 v2026-09-21 有调整）:
- * 1. **第一分类区（浮动格式工具栏 11 键全量桥接，图标与顺序严格一致）**:
- *    T(字体面板)、Aa(字号颜色面板)、B(RiBold)、I(RiItalic)、U(RiUnderline)、S(RiStrikethrough)、
- *    对齐×3(RiAlignLeft/Center/Right)、Color(A)、Nest(RiIndentIncrease)、UnNest(RiIndentDecrease)、Link(RiLink)
- *    ＋ v2026-09-21 增补 H(标题面板)，插在 Aa 与 A 之间
+ * 1. **第一分类区（浮动格式工具栏 11 键全量桥接 + 宿主增补，顺序 v2026-09-21 调整）**:
+ *    T(字体面板)、H(标题与字号面板)、A(颜色面板)、B(RiBold)、I(RiItalic)、U(RiUnderline)、
+ *    S(RiStrikethrough)、对齐×3(RiAlignLeft/Center/Right)、Nest(RiIndentIncrease)、
+ *    UnNest(RiIndentDecrease)、Link(RiLink)
+ *    （原 Aa(字号与颜色面板) 及其按钮已整体删除：字号迁入 H 面板，颜色并入 A 面板）
  * 2. **Basic blocks**: 有序/无序/任务列表、段落、代码块、分割线、引用、折叠列表、分页
  * 3. **Advanced / Media / Others**: 表格；图片/视频/音频/文件；表情
  *
@@ -101,7 +101,6 @@ import compose.icons.lucideicons.Type
  * @param openPanel 当前展开的内联面板（null = 全部收起）；T / Aa / H / A 四个按钮的激活态
  *   直接由它派生，互斥由状态本身保证（v2026-09-21 由三个 boolean 收敛而来，见 [EditBottomPanel]）
  * @param onFontPickerClick 字体选择按钮回调（展开/收起字体面板；同时由调用方收起软键盘）
- * @param onSizeColorPanelClick 字号与颜色按钮回调（展开/收起字号与颜色面板；同时由调用方收起软键盘）
  * @param onHeadingPanelClick 标题按钮回调（展开/收起标题面板；同时由调用方收起软键盘）
  * @param onSetFontWeight 设置字重档位回调（参数为当前字体 [com.corgimemo.app.ui.theme.FontEntry.boldTiers] 候选档位；
  *      其中经像素探测无独立字形的档位在工具栏中置灰禁用，不会回调）
@@ -129,9 +128,8 @@ fun RichTextFormatToolbar(
      */
     openPanel: EditBottomPanel? = null,
     onFontPickerClick: () -> Unit = {},
-    onSizeColorPanelClick: () -> Unit = {},
     /**
-     * 标题按钮（H）回调（v2026-09-21 新增）：切换**底部内联「标题」面板**
+     * 标题按钮（H）回调（v2026-09-21 新增）：切换**底部内联「标题与字号」面板**
      * （[HeadingPanel]）展开/收起。
      *
      * 面板内的 9 个标题键（普通标题 H1–H6 / 可折叠标题 1–3）经既有的
@@ -323,13 +321,13 @@ fun RichTextFormatToolbar(
                 onClick = onFontPickerClick,
                 contentDescription = "字体"
             )
-            /** Aa（字号与颜色面板，暂不动） */
-            FormatIconButton(
-                imageVector = LucideIcons.CaseSensitive,
-                isActive = openPanel == EditBottomPanel.SIZE_COLOR,
-                onClick = onSizeColorPanelClick,
-                contentDescription = "字号与颜色"
-            )
+            /**
+             * ⚠️ v2026-09-21：「Aa（字号与颜色）」按钮及其面板**已整体删除**。
+             *
+             * 原因：该面板里的「字号」已迁入「H」面板（作为**正文字号**设置），
+             * 剩下的 12 个预设色 + 自定义取色器与「A」面板的「选中文字色」功能重叠，
+             * 属重复入口——按用户决定直接删除，颜色统一走「A」面板。
+             */
             /**
              * H（标题面板，v2026-09-21 新增）
              *

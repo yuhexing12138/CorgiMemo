@@ -43,6 +43,9 @@ const WANT = [
   ["align_right", "RiAlignRight"],
   ["nest", "RiIndentIncrease"],
   ["unnest", "RiIndentDecrease"],
+  // v2026-09-21 追加：宿主「标题与字号」面板的「正文字号」档位图标
+  // （不在 BlockNote 浮层里，但需要与其余图标同一套渲染管线）
+  ["font_size", "RiFontSize"],
 ];
 
 

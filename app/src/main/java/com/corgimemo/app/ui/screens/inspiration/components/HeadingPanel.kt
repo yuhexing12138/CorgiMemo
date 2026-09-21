@@ -44,6 +44,28 @@ private val HeadingCellHeight = 44.dp
 /** 面板内容左右内边距：与面板头标题左边缘对齐 */
 private val HeadingPanelHorizontalPadding = 12.dp
 
+/* ===== 正文字号档位（v2026-09-21 由 FontSizeColorPanel 迁入）===== */
+
+/**
+ * 正文字号候选档位（sp，对照已审核原型 8 档），默认档 = [DEFAULT_BODY_SP]。
+ *
+ * 原属「字号与颜色」面板（Aa）；该面板已整体删除（其颜色部分与新「A」面板的
+ * 「选中文字色」重叠），字号部分迁入本面板，作为**正文字号**设置入口。
+ */
+val FONT_SIZE_TIERS = listOf(12, 14, 16, 18, 20, 24, 28, 32)
+
+/**
+ * 正文默认字号（MaterialTheme bodyLarge = 16sp，与原型「正文默认 16sp」一致）。
+ *
+ * ⚠️ 本常量被 [com.corgimemo.app.ui.screens.inspiration.InspirationEditScreen]
+ * 直接引用（判断"是否默认档" → 下发 `default` 清除而不是写死 px），
+ * 故**保持 public**，随字号功能一起从 FontSizeColorPanel 迁来。
+ */
+const val DEFAULT_BODY_SP = 16
+
+/** 「正文字号」格子的图标名（Remix `RiFontSize`，与其余图标走同一渲染管线） */
+private const val TextSizeIconName = "RiFontSize"
+
 /**
  * 「普通标题」条目：Ri 图标名 → 下行 action（v2026-09-21 由工具栏「组三 Headings」迁入）
  *
@@ -82,7 +104,7 @@ private val CollapsibleHeadingItems = listOf(
  * 编辑页「标题」面板（内联面板；v2026-09-21 新增）
  *
  * 由 [InspirationEditBottomBar] 插入在「格式工具栏」与「相机行」之间，与
- * [FontPickerPanel]（T）、[FontSizeColorPanel]（Aa）、[ColorStylePanel]（A）
+ * [FontPickerPanel]（T）、[ColorStylePanel]（A）
  * **四者互斥、占同一槽位、同高度**（面板高度 = 键盘高度，互斥切换不跳动）。
  *
  * **来源**：原工具栏里的「组三 Headings（RiH1–RiH6）」与「组四 Subheadings（▸1–▸3）」
@@ -104,14 +126,16 @@ private val CollapsibleHeadingItems = listOf(
  *
  * @param panelHeight 面板总高度（= 键盘高度；内容超出纵向滚动）
  * @param onTransform 块类型转换回调（参数为 action：heading1–6 / toggleHeading / toggleHeading2 / 3）
+ * @param onFontSizeSelect **正文字号**档位点选回调（参数为档位 sp 值，v2026-09-21 由 Aa 面板迁入）
  * @param onDone 点击面板头「完成」（收起面板）
  * @param currentBlockType 当前光标块类型（JS 侧 `blockState` 上行，v2026-09-21 起用于回显）：
  *   与 [currentHeadingLevel] 配合区分两类标题——`heading` = 普通标题、`toggleHeading*` = 可折叠标题。
  *   **同一级别数字在两类里含义不同，必须靠 blockType 区分，不能只看 level**
  * @param currentHeadingLevel 当前光标块的标题级别（普通标题 1–6 / 可折叠标题 1–3；
  *   0 = 非标题块 → 不高亮任何格子）
+ * @param currentFontSize 当前生效字号（sp；未指定时回落 [DEFAULT_BODY_SP]，用于字号档位高亮）
  * @param enabled 面板**内容区**是否可用（v2026-09-21 新增）：宿主锁定态传 false——
- *   九个标题格子整片降到 38% 不透明度，并在 `PointerEventPass.Initial` 阶段拦截点击
+ *   所有格子整片降到 38% 不透明度，并在 `PointerEventPass.Initial` 阶段拦截点击
  *   （与格式工具栏的 `toolbarEnabled` 口径一致）。⚠️ 面板头「完成」不受影响，
  *   锁定态下仍可收起面板，否则面板会"关不掉"。
  * @param modifier Modifier
@@ -120,9 +144,11 @@ private val CollapsibleHeadingItems = listOf(
 internal fun HeadingPanel(
     panelHeight: Dp,
     onTransform: (String) -> Unit,
+    onFontSizeSelect: (Int) -> Unit,
     onDone: () -> Unit,
     currentBlockType: String = "",
     currentHeadingLevel: Int = 0,
+    currentFontSize: Int = DEFAULT_BODY_SP,
     enabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
@@ -175,14 +201,14 @@ internal fun HeadingPanel(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "标题",
+                    text = "标题与字号",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "点选即转换",
+                    text = "点选即生效",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline,
                     maxLines = 1,
@@ -213,7 +239,34 @@ internal fun HeadingPanel(
                     .alpha(if (enabled) 1f else 0.38f)
                     .then(contentBlocker)
             ) {
-                /** ---- 第一类：普通标题（H1–H6，6 格等分整行） ---- */
+                /**
+                 * ---- 第一类：正文字号（v2026-09-21 由 Aa 面板迁入） ----
+                 *
+                 * 8 档**一字排开**（一行 8 等分）。字号无法只靠图标表达档位，故每格 =
+                 * [TextSizeIconName] 图标 + 档位数值；若不排两行是因为 8 档两行会把面板
+                 * 撑到必须滚动（面板高 ≈ 键盘高度）。
+                 *
+                 * 用 `SpaceBetween` 而非 `spacedBy(gap)`：格子无底色/无边框，视觉间距由
+                 * 居中的内容本身决定，等分即天然均匀，无需再留固定间隙。
+                 */
+                HeadingSectionTitle(text = "正文字号")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    FONT_SIZE_TIERS.forEach { tier ->
+                        TextSizeCell(
+                            tier = tier,
+                            selected = currentFontSize == tier,
+                            onClick = { onFontSizeSelect(tier) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                /** ---- 第二类：普通标题（H1–H6，6 格等分整行） ---- */
                 HeadingSectionTitle(text = "普通标题")
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -233,7 +286,7 @@ internal fun HeadingPanel(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 /**
-                 * ---- 第二类：可折叠标题（1/2/3） ----
+                 * ---- 第三类：可折叠标题（图标沿用 RiH1–RiH3） ----
                  *
                  * 格子宽度刻意与上一行保持一致（用户要求"格式与普通标题保持一致"）：
                  * 三个格子各占 1 份、再补三个等权 [Spacer] 占位，使整行仍是 6 列网格，
@@ -327,6 +380,56 @@ private fun HeadingCell(
             Text(
                 text = label,
                 fontSize = 13.sp,
+                color = contentColor
+            )
+        }
+    }
+}
+
+/**
+ * 正文字号档位格子（图标 + 数值竖排，v2026-09-21 新增）
+ *
+ * 与 [HeadingCell] 同一视觉语言：**无底色、无格子框**，只有内容本体 +
+ * [HeadingCellHeight] 高的整格点击区；选中态 = 图标与数值一并转暖橙。
+ *
+ * 为什么还要数值：字号档位（12–32sp）无法只靠图标表达，数值是唯一的档位标识；
+ * 图标只承担"这是字号设置"的语义（用户要求从 Ri 里选合适的图标）。
+ *
+ * @param tier 档位字号（sp）
+ * @param selected 是否为当前生效档位
+ * @param onClick 点选回调（参数为档位 sp，由调用方写 SpanStyle）
+ * @param modifier Modifier（由调用方传 `weight(1f)` 决定格宽）
+ */
+@Composable
+private fun TextSizeCell(
+    tier: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val accent = Color(0xFFFF9A5C)
+    val contentColor = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant
+    val vector = remember { BlockNotePlusMenuIcons.vectorFor(TextSizeIconName) }
+
+    Box(
+        modifier = modifier
+            .height(HeadingCellHeight)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        /** 图标与数值竖排：8 等分后每格约 42dp 宽，竖排比横排更省横向空间 */
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (vector != null) {
+                Icon(
+                    imageVector = vector,
+                    contentDescription = null,
+                    tint = contentColor,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Text(
+                text = tier.toString(),
+                fontSize = 10.sp,
                 color = contentColor
             )
         }
