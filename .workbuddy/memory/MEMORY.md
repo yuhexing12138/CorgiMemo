@@ -40,6 +40,7 @@
 ## Compose 陷阱
 - remember{} calculation lambda 内读 MaterialTheme/LocalXxx 报错→组合读取提到 remember 外；remember key 勿传每次重组的新实例。
 - 局部函数/变量先声明后引用；isXxx 属性与 setXxx 函数 JVM 撞签名（用 add/toggleXxx）；kotlinx delay 只收 Long；internal 跨模块不可见→语义化 API 收进库；ParagraphStyle range 注入 lineHeight 会被编辑器 textStyle 压制（须剥 default）。
+- ⚠️ TextUnit（`Int.sp`）的 toString 是 `"18.0.sp"` 格式——字符串插值 `"${x.sp}px"` 会拼出 `"18.0.sppx"` 非法值（H 面板字号不生效真因，v2026-09-21）；桥接 CSS 值一律数值直接插值。
 
 ## 图片附件页
 - MainActivity configChanges 不含 uiMode→旋转不重建，改 requestedOrientation。

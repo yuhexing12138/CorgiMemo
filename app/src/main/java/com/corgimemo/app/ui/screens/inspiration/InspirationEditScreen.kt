@@ -1408,15 +1408,21 @@ fun InspirationEditScreen(
                     openPanel = null
                 },
                 /**
-                 * 正文字号点选（v2026-09-21 由 Aa 面板迁入「H」面板；即时生效，与加粗字重写入同构）：
-                 * 先枚举清除全部档位字号（removeSpanStyle 仅在值匹配时生效，防叠加残留），
-                 * 再写目标档；点默认档（[DEFAULT_BODY_SP] = 16sp）只清除不写入（回落正文默认）。
+                 * 正文字号点选（v2026-09-21 由 Aa 面板迁入「H」面板；即时生效）：
+                 * 经 Bridge 下发 `format("fontSize", <css 值>)`，JS 侧
+                 * `addStyles({fontSize})` / `removeStyles({fontSize:"16px"})`；
+                 * 点默认档（[DEFAULT_BODY_SP] = 16sp）只清除不写入（回落正文默认）。
+                 *
+                 * ⚠️ 值必须是 **Int 直接插值的 `"${sp}px"`**（v2026-09-21 修复）：
+                 * 原写法 `"${sp.sp}px"` 中 `sp.sp` 是 [TextUnit]，插值调用其
+                 * `toString()` 得到 `"18.0.sp"`，拼出 `"18.0.sppx"` 非法 CSS 值——
+                 * 浏览器忽略 font-size，表现为「所有非默认档字号全部不生效」。
                  */
                 onFontSizeSelect = { sp ->
                     // 正文字号档位点选 → fontSize 下行（默认档 = 清除，回落正文默认）
                     blockNoteController.format(
                         "fontSize",
-                        if (sp == DEFAULT_BODY_SP) "default" else "${sp.sp}px"
+                        if (sp == DEFAULT_BODY_SP) "default" else "${sp}px"
                     )
                 },
                 /**
