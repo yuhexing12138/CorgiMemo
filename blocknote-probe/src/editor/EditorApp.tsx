@@ -354,49 +354,11 @@ export default function EditorApp() {
         case "setTheme":
           setTheme(msg.theme);
           break;
-        case "setFontFamily": {
+        case "setFontFamily":
+          /** 字体链四点诊断（font | 临时埋点）已随 2026-09-21 验证通过移除；
+           *  再排查时参考 docs/bridge-protocol.md 与 logcat console 转发。 */
           setFontFamily(msg.fontFamily);
-          /**
-           * v2026-09-21 字体链诊断（临时）：一次分辨四个环节，排查「正文不换字」——
-           * - `id`：宿主实际下发的字体 id（值错 → Kotlin 侧问题）
-           * - `faceCss`：@font-face 注入的 CSS 长度（-1=style 标签缺失；0=清单空）
-           * - `check` / `loaded`：document.fonts 对 `ff-<id>` 的注册与真实加载结果
-           *   （check=false → @font-face 未注册或 id 失配；loaded=0 → 声明在但加载失败）
-           * - `pageVar` / `rootFf` / `contentFf`：--content-font 变量值、.bn-root 与
-           *   ProseMirror 内容元素的 computed font-family（CSS 是否真的生效）
-           * 延迟 600ms：等 React 提交 + font-display:swap 解析窗口。
-           */
-          const fid = msg.fontFamily;
-          setTimeout(async () => {
-            const faces = document.getElementById("content-fonts");
-            const root = document.querySelector(".bn-root");
-            const inner =
-              document.querySelector(".bn-editor .ProseMirror") ??
-              document.querySelector(".bn-editor");
-            const page = document.querySelector(".editor-page");
-            let loadInfo = "skip";
-            try {
-              if (fid !== "system_default") {
-                const loaded = await document.fonts.load(`16px "ff-${fid}"`);
-                loadInfo = `loaded=${loaded.length}`;
-              }
-            } catch (e: any) {
-              loadInfo = `loadErr=${e?.message ?? e}`;
-            }
-            sendUp({
-              type: "diagnostic",
-              message:
-                `font | id=${fid}` +
-                ` faceCss=${faces?.textContent?.length ?? -1}` +
-                ` check=${fid !== "system_default" ? document.fonts.check(`16px "ff-${fid}"`) : "n/a"}` +
-                ` ${loadInfo}` +
-                ` pageVar=${page ? getComputedStyle(page).getPropertyValue("--content-font") : "n/a"}` +
-                ` rootFf=${root ? getComputedStyle(root).fontFamily.slice(0, 70) : "n/a"}` +
-                ` contentFf=${inner ? getComputedStyle(inner).fontFamily.slice(0, 70) : "n/a"}`,
-            });
-          }, 600);
           break;
-        }
         /** 英文/数字字体切换（v2026-09-21：拉丁回退层下行；空串 = 跟随中文） */
         case "setLatinFontFamily":
           setLatinFontId(msg.latinFontId);
