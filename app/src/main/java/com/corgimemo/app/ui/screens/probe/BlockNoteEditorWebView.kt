@@ -123,14 +123,22 @@ class BlockNoteBridgeController {
     private var pendingInit: JSONObject? = null
     private var pendingCommands = mutableListOf<JSONObject>()
 
-    /** 装载编辑器内容（宿主在内容就绪后调用；ready 前调用会缓存待 ready 补发） */
-    fun load(markdown: String) {
+    /**
+     * 装载编辑器内容（宿主在内容就绪后调用；ready 前调用会缓存待 ready 补发）。
+     *
+     * @param markdown 正文初始内容（markdown 快照）
+     * @param fontFamilyId 初始内容字体 id（v2026-09-21 修复：原硬编码 "system_default"
+     *   导致已保存字体的灵感在正文永远回显系统默认。调用方传
+     *   `ContentFontManager.currentEntry.value.id`——编辑模式此时 loadInspiration 已
+     *   setFonts 装载本条字体，新建模式 VM 构造已 resetToDefault，两路均为正确初值）
+     */
+    fun load(markdown: String, fontFamilyId: String) {
         latestMarkdown = markdown
         val init = JSONObject()
             .put("type", "init")
             .put("markdown", markdown)
             .put("readOnly", false)
-            .put("fontFamily", "system_default")
+            .put("fontFamily", fontFamilyId)
             .put("fonts", fontsPayload())
         pendingInit = init
         flushIfReady()
@@ -417,11 +425,12 @@ class BlockNoteBridgeController {
  * 可嵌入的 BlockNote WebView 编辑器（迁移 P1.5）
  *
  * 宿主页面保持自身 UI 不变，仅以本组件替换正文区：
- * - 内容装载：宿主在数据就绪后调 [controller].load(markdown)（见 [BlockNoteBridgeController]）
+ * - 内容装载：宿主在数据就绪后调 [controller].load(markdown, fontFamilyId)（见 [BlockNoteBridgeController]）
  * - 内容变更：JS 防抖 800ms 后经 [BlockNoteBridgeController.onMarkdownChanged] 上行
  * - 撤销/重做/保存：controller 命令
  * - 主题：跟随 App 主题（ThemeManager 深浅 + 六色主色，变化自动下行）
- * - 字体：fonts 清单下行 + shouldInterceptRequest 字体流（res/font 单份存储）
+ * - 字体：fonts 清单下行 + shouldInterceptRequest 字体流（res/font 单份存储）；
+ *   init 携带初始字体回显，后续切换经 [BlockNoteBridgeController.setFontFamily]
  *
  * @param backgroundColor 宿主编辑区实际背景色（v1.9）：由宿主下行到 JS，
  *   让 WebView 内部 `.bn-editor` 与 body 与宿主主题背景一致，消除"画中画"白底框；

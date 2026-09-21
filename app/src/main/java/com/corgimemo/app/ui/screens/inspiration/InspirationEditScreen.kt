@@ -210,7 +210,17 @@ fun InspirationEditScreen(
     androidx.compose.runtime.LaunchedEffect(contentLoaded) {
         if (contentLoaded && !blockNoteLoadStarted) {
             blockNoteLoadStarted = true
-            blockNoteController.load(if (inspirationId == null) "" else viewModel.contentFormat.value)
+            /**
+             * v2026-09-21 修复：init fontFamily 原硬编码 "system_default"，已保存字体的
+             * 灵感在正文永远回显系统默认。此处 ContentFontManager 已装载本条字体
+             * （编辑模式 loadInspiration 内 setFonts 先于 contentLoaded 置位；新建模式
+             * VM 构造 resetToDefault）——直接读单例当前值，避免捕获下方才声明的局部态。
+             * 后续字体变化（面板「应用」）由下方 LaunchedEffect(contentFontEntry.id) 响应式下发。
+             */
+            blockNoteController.load(
+                if (inspirationId == null) "" else viewModel.contentFormat.value,
+                ContentFontManager.currentEntry.value.id
+            )
         }
     }
     // 新建模式：无 loadInspiration 调用，直接标记内容就绪（空文档）
@@ -638,6 +648,18 @@ fun InspirationEditScreen(
      */
     val contentFontEntry by ContentFontManager.currentEntry.collectAsState()
     val contentLatinFontId by ContentFontManager.currentLatinId.collectAsState()
+
+    /**
+     * 正文 WebView 字体响应式跟随（v2026-09-21 修复「T 面板调整字体正文不生效」）：
+     * [ContentFontManager] 是字体的**单一真相源**——它一变（面板「应用」经 VM 回调写入、
+     * loadInspiration 装载他条灵感、新建模式复位默认），此处随 key 变化重新执行，
+     * 把新字体 id 下发 WebView（JS 侧切换 `--content-font`；未 ready 时由桥缓存、ready 后补发）。
+     *
+     * 初次组合也会执行一次：与 [load] init 携带的字体 id 相同，重复下发幂等无害。
+     */
+    LaunchedEffect(contentFontEntry.id) {
+        blockNoteController.setFontFamily(contentFontEntry.id)
+    }
 
     /**
      * v2026-09-04 分离式预览：字体面板「pending」本地态（取代旧的「点选即预览」位图复刻）。
@@ -1325,10 +1347,18 @@ fun InspirationEditScreen(
                 },
                 /**
                  * 字体面板头按钮（「应用」/「完成」，语义见 [hasPendingFontChange]）：
-                 * **有改动 = 应用但不收起**——一次性把 pending 写入内容字体，正文立即换字、
-                 * 格式工具栏字重按钮（B1/B2/B3 档位 + 像素探测可用态）随 [ContentFontManager]
-                 * 同步，面板保持展开以便连续点选多款字体对比；**无改动 = 收起面板**
-                 * （键盘不自动弹回，由输入框焦点决定）。
+                 * **有改动 = 应用但不收起**——把 pending 经 VM 回调写入 [ContentFontManager]
+                 * （v2026-09-21 修复：原实现只给正文 WebView 单发 setFontFamily、完全绕过
+                 * 字体状态链，导致标题排版不变、字重探测不跟随、字体不持久化、重开面板回显
+                 * 旧字体）。VM 回调内部会：更新 ContentFontManager（标题
+                 * LocalContentTypography 与 B1/B2/B3 字重探测即时跟随）、置脏（保存时写回
+                 * `inspirations.fontId/latinFontId`）；正文 WebView 换字由上方
+                 * LaunchedEffect(contentFontEntry.id) 响应式下发，不再此处单发。
+                 *
+                 * 应用后 ContentFontManager 与 pending 一致 → remember key 变化自动重置
+                 * pending → [hasPendingFontChange] 归 false → 按钮变回「完成」，面板保持
+                 * 展开便于连续对比；**无改动 = 「完成」= 收起面板**（键盘不自动弹回，由
+                 * 输入框焦点决定）。
                  *
                  * 面板收起即解除键盘抑制（[isFormatPanelOpen] → false，v2026-09-21）：
                  * 仅恢复"可唤起"能力，不主动弹回键盘——用户再点一次正文/标题即恢复输入。
@@ -1336,11 +1366,14 @@ fun InspirationEditScreen(
                 onFontPanelDismiss = {
                     val cjkChanged = pendingCjkFontId != contentFontEntry.id
                     val latinChanged = pendingLatinFontId != contentLatinFontId
-                    // 「应用」= setFontFamily 下行（字体流，正文即时换字）
                     if (cjkChanged || latinChanged) {
-                        blockNoteController.setFontFamily(pendingCjkFontId)
+                        /** 「应用」：pending 写入字体状态链（标题排版/字重探测/持久化随动） */
+                        viewModel.onCjkFontSelected(pendingCjkFontId)
+                        viewModel.onLatinFontSelected(pendingLatinFontId)
+                    } else {
+                        /** 「完成」：无待应用改动，收起面板 */
+                        openPanel = null
                     }
-                    openPanel = null
                 },
                 /**
                  * ⚠️ v2026-09-21：原「Aa 字号与颜色」按钮回调（onSizeColorPanelClick /
