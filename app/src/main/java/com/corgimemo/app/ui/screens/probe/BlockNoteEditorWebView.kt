@@ -133,14 +133,17 @@ class BlockNoteBridgeController {
      *   导致已保存字体的灵感在正文永远回显系统默认。调用方传
      *   `ContentFontManager.currentEntry.value.id`——编辑模式此时 loadInspiration 已
      *   setFonts 装载本条字体，新建模式 VM 构造已 resetToDefault，两路均为正确初值）
+     * @param latinFontId 初始英文/数字字体 id（v2026-09-21：拉丁回退层；
+     *   空串 = 未选拉丁、跟随中文字体。调用方传 `ContentFontManager.currentLatinId.value`）
      */
-    fun load(markdown: String, fontFamilyId: String) {
+    fun load(markdown: String, fontFamilyId: String, latinFontId: String = "") {
         latestMarkdown = markdown
         val init = JSONObject()
             .put("type", "init")
             .put("markdown", markdown)
             .put("readOnly", false)
             .put("fontFamily", fontFamilyId)
+            .put("latinFontId", latinFontId)
             .put("fonts", fontsPayload())
         pendingInit = init
         flushIfReady()
@@ -294,6 +297,18 @@ class BlockNoteBridgeController {
     fun setFontFamily(fontId: String) {
         enqueueCommand(
             JSONObject().put("type", "setFontFamily").put("fontFamily", fontId)
+        )
+    }
+
+    /**
+     * 英文/数字字体切换（v2026-09-21：拉丁回退层下行通道）。
+     *
+     * 此前 JS 只有单 fontFamily 通道、@font-face 清单也不含拉丁字体——
+     * 「英文/数字字体」在编辑页正文永远无法生效。空串 = 未选拉丁（跟随中文字体）。
+     */
+    fun setLatinFontFamily(latinId: String) {
+        enqueueCommand(
+            JSONObject().put("type", "setLatinFontFamily").put("latinFontId", latinId)
         )
     }
 
@@ -547,7 +562,19 @@ private fun primaryColorHex(key: String): String = when (key) {
 /** 下行：Kotlin → JS（evaluateJavascript 调 Bridge 宿主） */
 private fun sendDown(webView: WebView?, msg: JSONObject) {
     val wv = webView ?: return
-    Log.d(TAG, "down(${msg.optString("type")})")
+    /**
+     * v2026-09-21 诊断增强：down 日志补参数值。原先只打 type，排查
+     * 「setFontFamily 下发了什么值 / init 携带几个字体」时是盲区。
+     * init 含 markdown 全文，特判只打关键字段（字体 id + 字体清单条数）。
+     */
+    val summary = if (msg.optString("type") == "init") {
+        "init(markdown=${msg.optString("markdown").length}ch" +
+            ", fontFamily=${msg.optString("fontFamily")}" +
+            ", fonts=${msg.optJSONArray("fonts")?.length() ?: -1})"
+    } else {
+        msg.toString().take(200)
+    }
+    Log.d(TAG, "down($summary)")
     wv.evaluateJavascript("window.BlockNoteEditorHost.onMessage(${msg})", null)
 }
 

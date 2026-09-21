@@ -154,6 +154,8 @@ export default function EditorApp() {
    */
   const [editorMinHeight, setEditorMinHeight] = useState(0);
   const [fontFamily, setFontFamily] = useState("system_default");
+  /** 英文/数字字体 id（v2026-09-21：拉丁回退层；空串 = 跟随中文） */
+  const [latinFontId, setLatinFontId] = useState("");
   /** 可用字体清单（S5）：id → 字重数组 */
   const [fontWeights, setFontWeights] = useState<Record<string, number[]>>({});
   /** 表情选择面板显隐（v1.5 openEmojiPicker 下行切换） */
@@ -337,6 +339,7 @@ export default function EditorApp() {
           setReadOnly(msg.readOnly);
           setTheme(msg.theme);
           setFontFamily(msg.fontFamily);
+          setLatinFontId(msg.latinFontId ?? "");
           if (msg.fonts) {
             const map: Record<string, number[]> = {};
             for (const f of msg.fonts) map[f.id] = f.weights;
@@ -351,8 +354,52 @@ export default function EditorApp() {
         case "setTheme":
           setTheme(msg.theme);
           break;
-        case "setFontFamily":
+        case "setFontFamily": {
           setFontFamily(msg.fontFamily);
+          /**
+           * v2026-09-21 字体链诊断（临时）：一次分辨四个环节，排查「正文不换字」——
+           * - `id`：宿主实际下发的字体 id（值错 → Kotlin 侧问题）
+           * - `faceCss`：@font-face 注入的 CSS 长度（-1=style 标签缺失；0=清单空）
+           * - `check` / `loaded`：document.fonts 对 `ff-<id>` 的注册与真实加载结果
+           *   （check=false → @font-face 未注册或 id 失配；loaded=0 → 声明在但加载失败）
+           * - `pageVar` / `rootFf` / `contentFf`：--content-font 变量值、.bn-root 与
+           *   ProseMirror 内容元素的 computed font-family（CSS 是否真的生效）
+           * 延迟 600ms：等 React 提交 + font-display:swap 解析窗口。
+           */
+          const fid = msg.fontFamily;
+          setTimeout(async () => {
+            const faces = document.getElementById("content-fonts");
+            const root = document.querySelector(".bn-root");
+            const inner =
+              document.querySelector(".bn-editor .ProseMirror") ??
+              document.querySelector(".bn-editor");
+            const page = document.querySelector(".editor-page");
+            let loadInfo = "skip";
+            try {
+              if (fid !== "system_default") {
+                const loaded = await document.fonts.load(`16px "ff-${fid}"`);
+                loadInfo = `loaded=${loaded.length}`;
+              }
+            } catch (e: any) {
+              loadInfo = `loadErr=${e?.message ?? e}`;
+            }
+            sendUp({
+              type: "diagnostic",
+              message:
+                `font | id=${fid}` +
+                ` faceCss=${faces?.textContent?.length ?? -1}` +
+                ` check=${fid !== "system_default" ? document.fonts.check(`16px "ff-${fid}"`) : "n/a"}` +
+                ` ${loadInfo}` +
+                ` pageVar=${page ? getComputedStyle(page).getPropertyValue("--content-font") : "n/a"}` +
+                ` rootFf=${root ? getComputedStyle(root).fontFamily.slice(0, 70) : "n/a"}` +
+                ` contentFf=${inner ? getComputedStyle(inner).fontFamily.slice(0, 70) : "n/a"}`,
+            });
+          }, 600);
+          break;
+        }
+        /** 英文/数字字体切换（v2026-09-21：拉丁回退层下行；空串 = 跟随中文） */
+        case "setLatinFontFamily":
+          setLatinFontId(msg.latinFontId);
           break;
         /**
          * 编辑区最小高度（v1.11.6）：宿主下发 dp 值，写入 CSS 变量供 editor.css 消费。
@@ -742,6 +789,7 @@ export default function EditorApp() {
       readOnly={readOnly}
       theme={theme}
       fontFamily={fontFamily}
+      latinFontId={latinFontId}
       fontWeights={fontWeights}
       minHeight={editorMinHeight}
       onReady={(editor) => {
@@ -790,6 +838,8 @@ function EditorCore(props: {
   readOnly: boolean;
   theme: ThemePayload;
   fontFamily: string;
+  /** 英文/数字字体 id（v2026-09-21：拉丁回退层；空串 = 跟随中文） */
+  latinFontId: string;
   fontWeights: Record<string, number[]>;
   /** 编辑区最小高度（dp，v1.11.6）：由宿主下发，写入 `--bn-editor-min-height` */
   minHeight: number;
@@ -1106,17 +1156,27 @@ function EditorCore(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
 
-  // 字体栈：系统默认 → system-ui；自定义字体 → "ff-{id}"（@font-face 已注入）
-  const contentFont =
-    props.fontFamily === "system_default"
-      ? "system-ui"
-      : `"ff-${props.fontFamily}", system-ui`;
+  /**
+   * 字体栈组装（v2026-09-21 升级为三层回退链）：
+   * - 拉丁层：`ff-<latinId>`（**在前**——拉丁字形优先走英文/数字字体，与 Compose 侧
+   *   combinedFamily 的「拉丁主体 + 中文兜底」语义一致）；空串 = 未选，不叠加
+   * - 中文层：`ff-<fontId>`；系统默认时为 system-ui（无内置 @font-face）
+   * - 兜底：system-ui
+   * 各字体族的 @font-face 由 applyFontFaces 按 init fonts 清单生成（清单已含拉丁）。
+   */
+  const fontStack = [
+    props.latinFontId ? `"ff-${props.latinFontId}"` : null,
+    props.fontFamily === "system_default" ? null : `"ff-${props.fontFamily}"`,
+    "system-ui",
+  ]
+    .filter(Boolean)
+    .join(", ");
 
   return (
     <div
       className="editor-page"
       style={{
-        ["--content-font" as any]: contentFont,
+        ["--content-font" as any]: fontStack,
         ["--editor-primary" as any]: props.theme.primary,
         ["--editor-bg" as any]: editorBackground,
         ["--editor-fg" as any]: props.theme.dark ? "#e0e0e0" : "#333333",

@@ -642,9 +642,14 @@ object FontCatalog {
      * 供 BlockNote WebView 的 `shouldInterceptRequest` 字体流拦截使用（P0-S5）：
      * JS 侧按「id + 字重」请求 `https://corgimemo.local/fonts/{id}/{weight}.ttf`，
      * Kotlin 侧查此表命中 `openRawResource(resId)` 回流，零 APK 体积增量。
+     *
+     * v2026-09-21：扩为「中文正文 + 拉丁回退」全量（[entries] + [latinEntries]）——
+     * 拉丁字体此前不在清单里，JS 侧永远生成不出 `ff-<latinId>` 的 @font-face，
+     * 「英文/数字字体」在 WebView 中无法生效（同一 map 也供清单下行与流拦截，
+     * 扩容后两处同时打通；三款拉丁 id 与中文字体 id 无重叠，合并安全）。
      */
     fun bridgeFontResMap(): Map<String, Map<Int, Int>> =
-        entries.associate { it.id to it.resByWeight }
+        (entries + latinEntries).associate { it.id to it.resByWeight }
 
     /** 全部可选「英文/数字字体」（拉丁回退层；空表示不覆盖，英文/数字走正文字体自带拉丁字形） */
     val latinEntries: List<FontEntry> = listOf(

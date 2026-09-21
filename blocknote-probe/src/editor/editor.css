@@ -105,27 +105,29 @@
 /**
  * 正文内容字体跟随宿主（v2026-09-21 修复「T 面板调整字体正文不生效」）
  *
- * **根因**：BlockNote 库 CSS 对 `.bn-root` 有硬性声明——
- *     `.bn-root { font-family: var(--bn-font-family) }`
- * 其中 `--bn-font-family: "Inter", "SF Pro Display", ... sans-serif`（库默认）。
- * 而宿主的字体链是「`init.fontFamily` / `setFontFamily` 下行 → React state →
- * `.editor-page` 的内联 style 写入 `--content-font` → 内层 div
- * `font-family: var(--content-font)` **靠继承**传给 `.bn-root`」——
- * 继承链在 `.bn-root` 处被上面这条库规则**直接覆盖**，正文永远用库默认字体，
- * `ff-<id>` 的 @font-face（init fonts 清单生成）从未被真正引用过。
+ * **字体从 `.editor-page` 到内容元素之间有三层库声明要逐层打穿**（缺一即"正文不生效"）：
  *
- * **为什么一直没暴露**：宿主 init 原硬编码 `system_default` → `--content-font`
- * 也是 system-ui，覆盖前后"看起来没区别"；v2026-09-21 init 携带真实字体后，
- * 标题（Compose 侧 LocalContentTypography）正常换字、正文纹丝不动，问题才显形。
+ * ① `.bn-root`：BlockNote 库 CSS 有
+ *        `.bn-root { font-family: var(--bn-font-family) }`（默认 Inter 系），
+ *    宿主的 `--content-font`（init/setFontFamily 下行 → React state → 内联 style）
+ *    靠**继承**下发，在 .bn-root 被该规则覆盖。
+ *    ⚠️ 历史未暴露的原因：宿主 init 原硬编码 system_default，覆盖前后"看不出区别"。
  *
- * **修法**：`.bn-root` 上重新声明 font-family，优先消费宿主下发的
- * `--content-font`（CSS 自定义属性可从 `.editor-page` 祖先继承到此处），
- * 缺失时回落库默认 `--bn-font-family`（向后兼容探针页/旧宿主）。
- * `.bn-editor` / `.bn-block-content` 等正文节点均无自身 font-family 声明，
- * 从 `.bn-root` 继承即可全覆盖；`.bn-mantine` 的菜单/输入控件保持库默认不动。
- * `!important` 对冲库后续版本把该声明挪位/加码的风险（对齐本文件既有覆盖惯例）。
+ * ② `.bn-default-styles`（**第三轮真凶**，诊断日志 contentFf=Inter 定位）：
+ *    `@blocknote/core/editor.css` 给该类**字面量**声明 `font-family: Inter, ...`
+ *    （BlockNoteEditor 构造时挂在编辑器容器上，`defaultStyles` 选项默认开启）。
+ *    它位于 .bn-root 与 .ProseMirror 之间——元素**自身**声明永远压过祖先继承，
+ *    所以仅修 ① 时诊断显示 `rootFf=ff-xxx` 正确、`contentFf=Inter` 错误。
+ *
+ * ③ `.bn-editor`：兜底防御（当前无自身 font-family 声明，防止库后续版本引入）。
+ *
+ * **修法**：三层全部重新声明为 `var(--content-font, var(--bn-font-family))`，
+ * 优先消费宿主字体、缺失时回落库默认（向后兼容探针页/旧宿主）；
+ * `!important` 对冲库版本变化（对齐本文件既有覆盖惯例）。
  */
-.bn-root {
+.bn-root,
+.bn-default-styles,
+.bn-editor {
   font-family: var(--content-font, var(--bn-font-family)) !important;
 }
 

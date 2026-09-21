@@ -39,12 +39,20 @@ export type DownMessage =
       theme: ThemePayload;
       /** 字体 id（FontCatalog.id；"system_default" = 系统默认） */
       fontFamily: string;
+      /**
+       * 英文/数字字体 id（v2026-09-21：拉丁回退层；可选，旧宿主缺省 = 跟随中文）。
+       * JS 侧组装字体栈时**拉丁在前**：拉丁字形走 ff-<latinId>、中文回落 ff-<fontFamily>，
+       * 与 Compose 侧 combinedFamily 的「拉丁主体 + 中文兜底」语义一致。
+       */
+      latinFontId?: string;
       /** 可用字体清单（S5）：JS 据此生成 @font-face，字体文件走 shouldInterceptRequest 流 */
       fonts?: Array<{ id: string; weights: number[] }>;
     }
   | { type: "setReadOnly"; readOnly: boolean }
   | { type: "setTheme"; theme: ThemePayload }
   | { type: "setFontFamily"; fontFamily: string }
+  /** 英文/数字字体切换（v2026-09-21：拉丁回退层；空串 = 跟随中文） */
+  | { type: "setLatinFontFamily"; latinFontId: string }
   /** 主动要一次快照（返回键/切后台前） */
   | { type: "requestSave" }
   /** 撤销/重做（v1.2：原页面撤销/重做按钮经桥触发） */

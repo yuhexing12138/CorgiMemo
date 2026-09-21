@@ -219,7 +219,8 @@ fun InspirationEditScreen(
              */
             blockNoteController.load(
                 if (inspirationId == null) "" else viewModel.contentFormat.value,
-                ContentFontManager.currentEntry.value.id
+                ContentFontManager.currentEntry.value.id,
+                ContentFontManager.currentLatinId.value
             )
         }
     }
@@ -659,6 +660,17 @@ fun InspirationEditScreen(
      */
     LaunchedEffect(contentFontEntry.id) {
         blockNoteController.setFontFamily(contentFontEntry.id)
+    }
+
+    /**
+     * 正文 WebView 拉丁字体响应式跟随（v2026-09-21：补「英文/数字字体」下行通道）：
+     * [ContentFontManager.currentLatinId] 变化（面板「应用」经 VM 回调写入、
+     * loadInspiration 装载、新建复位）即下发；空串 = 跟随中文字体，与
+     * `inspirations.latinFontId` 的默认语义一致。初次组合与 [load] init 携带值
+     * 相同，重复下发幂等无害。
+     */
+    LaunchedEffect(contentLatinFontId) {
+        blockNoteController.setLatinFontFamily(contentLatinFontId)
     }
 
     /**
