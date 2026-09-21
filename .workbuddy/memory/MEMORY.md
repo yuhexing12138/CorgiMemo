@@ -34,14 +34,14 @@
 ## 底部栏面板入口（2026-09-21）
 - 四个内联面板：工具栏按钮顺序 **T → Aa → H → A → B…**，四者互斥、占同一槽位、同高度（= 键盘高度）：
   - **颜色**：「A」→ `ColorStylePanel` 四组色板——**选中文字色 / 选中背景色**（行内，`format("textColor"/"backgroundColor", hex|"default")`）+ **段落文字色 / 段落背景色**（块级，`setBlockColor(textColor=/backgroundColor= 色名|"default")`）。⚠️ 两种维度不同、互不覆盖，别混。
-  - **标题**（v2026-09-21 新增）：「H」→ `HeadingPanel` 两类——**普通标题 H1–H6**（action `heading1`–`heading6`）+ **可折叠标题 1–3**（action `toggleHeading` / `toggleHeading2` / `toggleHeading3`；⚠️ 1 级无后缀数字是既有约定）。原工具栏「组三 Headings / 组四 Subheadings」9 键已整体删除；面板内格子宽度统一（可折叠 3 格 + 3 个等权 Spacer 对齐 6 列网格）。
+  - **标题**（v2026-09-21 新增）：「H」→ `HeadingPanel` 两类——**普通标题 H1–H6**（action `heading1`–`heading6`）+ **可折叠标题**（action `toggleHeading` / `toggleHeading2` / `toggleHeading3`；⚠️ 1 级无后缀数字是既有约定）。9 格**都用移动前的 Ri 图标**（`RiH1`–`RiH6`，两类图标相同，靠分区标题「普通标题 / 可折叠标题」区分），**无底色、无格子框**（只有图标 + 44dp 点击区），选中态 = 图标转暖橙。格宽统一：可折叠 3 格 + 3 个等权 Spacer 对齐 6 列网格。原工具栏「组三 Headings / 组四 Subheadings」9 键已整体删除。
 - ⚠️ 「A」曾是 **AlertDialog 弹窗**（`ColorStyleDialog`，已删）；参数 `onOpenColorStyleDialog/showColorStyleDialog` 已改名 `onColorPanelClick/isColorPanelOpen`。面板内点选**不收起**（与 Aa 一致），靠「完成」或再点该按钮收起。
 - 四面板互斥：**单一状态 `openPanel: EditBottomPanel?`（FONT / SIZE_COLOR / COLOR / HEADING）**，`isFormatPanelOpen = openPanel != null` → 驱动 WebView `suppressIme` 与标题消费指针（键盘让位）。⚠️ 曾用多个 boolean 表达互斥，漏关一处即出「从 A 切到 T/Aa 面板叠加」；收敛后互斥由状态本身保证，**别退回多 boolean**。
 - 四面板切换统一走 Screen 内**局部函数 `togglePanel(panel)`**（同值→置 null 收起；否则替换并 `keyboardController?.hide()`；收起不弹回键盘）；面板专属副作用（字体面板展开前重置 pending）在调用**之前**执行。⚠️ 局部函数**必须先声明后引用**（Kotlin 局部函数声明顺序即可见性）。
 - ⋮ 菜单（`BlockOpsMenuButton`）**已无颜色项**，只剩删除块 / 上移 / 下移 / 表头行·列；`onSetBlockColor` 参数链（Toolbar→BottomBar→Screen）已全部删除。
 - 共用色板 `components/BlockColorPicker.kt`：`internal BlockColorPalette`（BlockNote 官方明暗各 9 色 + `names`）/ `BlockColorRow`（标签 + 默认斜杠点 + 9 色点）/ `blockColorHexOf(name,isDark,background)`（色名→"#RRGGBB"，供行内色下行）/ private `BlockColorDot(size, …)`。
 - 色板排版（v2026-09-21，改前先读常量）：**色点边长按可用宽度自适应**——`BoxWithConstraints.maxWidth` → `(available − gap×(n−1)) / n` 并 clamp 到 `MinColorDotSize=24dp` / `MaxColorDotSize=36dp`；分布用 `Arrangement.SpaceBetween` 且**首尾留白固定 `ColorRowHorizontalPadding=12dp`**（与面板头标题对齐，用户要求保持），点间距 `ColorDotGap=8dp`。被 clamp 截断时剩余空间由 SpaceBetween 平均吸收，观感仍均匀。斜杠字号 = `size×0.5`（等比缩放）。
-- 行内色**无状态上行**（桥未上行行内样式）→ 传 `showSelection=false`，否则「默认」恒高亮误导；块级色靠 `blockState.blockTextColor/blockBackgroundColor` 回显。⚠️ 标题面板**不做激活态回显**：`blockState` 只上行块类型（如 heading）、没有 heading level，无法判断"当前是否 H3"；若要回显需 JS 侧补 level 字段。
+- 行内色**无状态上行**（桥未上行行内样式）→ 传 `showSelection=false`，否则「默认」恒高亮误导；块级色靠 `blockState.blockTextColor/blockBackgroundColor` 回显；**标题回显**靠 `blockState.headingLevel`（v2026-09-21 新增，见 docs/bridge-protocol.md 的 v2026-09-21 条）：`blockType` 分流「普通/可折叠」两类 + level 定位格子，⚠️ **不能只看 level**（两类都有 1/2/3，会同时亮）。
 - ⚠️ **锁定态（isLocked）与面板**：`HeadingPanel` / `ColorStylePanel` 有 `enabled` 参数（BottomBar 传 `toolbarEnabled`）——禁用时**仅内容区** `alpha(0.38f)` + `PointerEventPass.Initial` 消费指针（同 `disabledBlocker` 范式），**面板头「完成」保持可点**（否则锁定态下面板关不掉）。T / Aa 两个面板**尚无 enabled**（既有行为，未统一）。
 
 ## 块级拖拽（自维护 fork BlocksReorderableList.kt）

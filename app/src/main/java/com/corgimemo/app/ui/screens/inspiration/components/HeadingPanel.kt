@@ -1,7 +1,5 @@
 package com.corgimemo.app.ui.screens.inspiration.components
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,26 +9,29 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.corgimemo.app.ui.screens.probe.BlockNotePlusMenuIcons
 
 /* ===== 标题面板排版常量（v2026-09-21）===== */
 
@@ -44,32 +45,37 @@ private val HeadingCellHeight = 44.dp
 private val HeadingPanelHorizontalPadding = 12.dp
 
 /**
- * 「普通标题」条目：显示标签 → 下行 action（v2026-09-21 由工具栏「组三 Headings」迁入）
+ * 「普通标题」条目：Ri 图标名 → 下行 action（v2026-09-21 由工具栏「组三 Headings」迁入）
  *
+ * 图标名与工具栏移动前**逐字一致**（`RiH1`–`RiH6`，取自
+ * [BlockNotePlusMenuIcons]；与浮层/工具栏渲染逐字节同款），
+ * 面板里用同一套图标渲染，视觉与移动前保持连续（用户要求）。
  * action 与桥协议既有取值一致（见 [RichTextFormatToolbar] 的 `onTransform` KDoc）：
  * `heading1`–`heading6`。
  */
 private val NormalHeadingItems = listOf(
-    "H1" to "heading1",
-    "H2" to "heading2",
-    "H3" to "heading3",
-    "H4" to "heading4",
-    "H5" to "heading5",
-    "H6" to "heading6"
+    "RiH1" to "heading1",
+    "RiH2" to "heading2",
+    "RiH3" to "heading3",
+    "RiH4" to "heading4",
+    "RiH5" to "heading5",
+    "RiH6" to "heading6"
 )
 
 /**
- * 「可折叠标题」条目：显示标签 → 下行 action（v2026-09-21 由工具栏「组四 Subheadings」迁入）
+ * 「可折叠标题」条目：Ri 图标名 → 下行 action（v2026-09-21 由工具栏「组四 Subheadings」迁入）
  *
- * ⚠️ 标签只用数字而非工具栏原有的 `▸1`：真机上 `▸` 字形渲染异常（截图中显示为 `-1`），
- * 且本面板已有「可折叠标题」分区标题说明语义，数字更干净。
+ * 图标同样用 `RiH1`–`RiH3`（用户要求：不用文字标签、也不用工具栏原有的 `▸1`
+ * —— 后者真机渲染异常，截图中显示成 `-1`）；两类标题的区分靠分区标题
+ * 「普通标题 / 可折叠标题」，图标保持一致。
+ *
  * action 取值沿用原实现：`toggleHeading` / `toggleHeading2` / `toggleHeading3`
  * （注意 1 级没有后缀数字，是 BlockNote 侧的既有约定，别"顺手改整齐"）。
  */
 private val CollapsibleHeadingItems = listOf(
-    "1" to "toggleHeading",
-    "2" to "toggleHeading2",
-    "3" to "toggleHeading3"
+    "RiH1" to "toggleHeading",
+    "RiH2" to "toggleHeading2",
+    "RiH3" to "toggleHeading3"
 )
 
 /**
@@ -99,6 +105,11 @@ private val CollapsibleHeadingItems = listOf(
  * @param panelHeight 面板总高度（= 键盘高度；内容超出纵向滚动）
  * @param onTransform 块类型转换回调（参数为 action：heading1–6 / toggleHeading / toggleHeading2 / 3）
  * @param onDone 点击面板头「完成」（收起面板）
+ * @param currentBlockType 当前光标块类型（JS 侧 `blockState` 上行，v2026-09-21 起用于回显）：
+ *   与 [currentHeadingLevel] 配合区分两类标题——`heading` = 普通标题、`toggleHeading*` = 可折叠标题。
+ *   **同一级别数字在两类里含义不同，必须靠 blockType 区分，不能只看 level**
+ * @param currentHeadingLevel 当前光标块的标题级别（普通标题 1–6 / 可折叠标题 1–3；
+ *   0 = 非标题块 → 不高亮任何格子）
  * @param enabled 面板**内容区**是否可用（v2026-09-21 新增）：宿主锁定态传 false——
  *   九个标题格子整片降到 38% 不透明度，并在 `PointerEventPass.Initial` 阶段拦截点击
  *   （与格式工具栏的 `toolbarEnabled` 口径一致）。⚠️ 面板头「完成」不受影响，
@@ -110,9 +121,23 @@ internal fun HeadingPanel(
     panelHeight: Dp,
     onTransform: (String) -> Unit,
     onDone: () -> Unit,
+    currentBlockType: String = "",
+    currentHeadingLevel: Int = 0,
     enabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    /**
+     * 当前块对应的标题级别（0 = 两类都不高亮）
+     *
+     * 两类标题在 JS 侧是**不同块类型**（`heading` vs `toggleHeading*`），
+     * 而级别数字（1/2/3）在两类里都出现，故必须用 blockType 分流，
+     * 否则"当前是 H2"会让两类的 H2 格子同时亮起。
+     */
+    val currentNormalLevel =
+        if (currentBlockType == "heading") currentHeadingLevel else 0
+    val currentCollapsibleLevel =
+        if (currentBlockType.startsWith("toggleHeading")) currentHeadingLevel else 0
+
     /**
      * 禁用态拦截（仅内容区）：锁定态下九个标题格子不接受点击。
      *
@@ -194,9 +219,11 @@ internal fun HeadingPanel(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(HeadingCellGap)
                 ) {
-                    NormalHeadingItems.forEach { (label, action) ->
+                    NormalHeadingItems.forEachIndexed { index, (riName, action) ->
                         HeadingCell(
-                            label = label,
+                            riName = riName,
+                            label = "H${index + 1}",
+                            selected = currentNormalLevel == index + 1,
                             onClick = { onTransform(action) },
                             modifier = Modifier.weight(1f)
                         )
@@ -217,9 +244,11 @@ internal fun HeadingPanel(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(HeadingCellGap)
                 ) {
-                    CollapsibleHeadingItems.forEach { (label, action) ->
+                    CollapsibleHeadingItems.forEachIndexed { index, (riName, action) ->
                         HeadingCell(
-                            label = label,
+                            riName = riName,
+                            label = "H${index + 1}",
+                            selected = currentCollapsibleLevel == index + 1,
                             onClick = { onTransform(action) },
                             modifier = Modifier.weight(1f)
                         )
@@ -252,38 +281,54 @@ private fun HeadingSectionTitle(text: String) {
 }
 
 /**
- * 单个标题格子（等宽）
+ * 单个标题格子
  *
- * 视觉对齐面板其余部分：圆角 8dp、1dp 描边、surfaceVariant 半透明底，
- * 文字居中；点击整格可点（44dp 高度保证触摸目标）。
+ * 内容为 **Ri 图标**（与工具栏移动前同款矢量图标，用户要求保持连续）。
+ * v2026-09-21 按用户要求**去掉底色与格子框**：面板里只留图标本体，视觉更轻；
+ * 选中态改用**图标颜色**标识（暖橙），与工具栏按钮的激活态语义完全一致。
  *
- * @param label 格子文字（"H1"…"H6" / "1"…"3"）
+ * 格子仍保留 [HeadingCellHeight] 高度且**整格可点**（`clickable` 挂在 Box 上），
+ * 触摸目标不受影响，只是不再绘制可见的框。
+ *
+ * @param riName Ri 图标名（`RiH1`–`RiH6`，取自 [BlockNotePlusMenuIcons]）
+ * @param label 无障碍描述 / 图标缺失时的兜底文字（"H1"…"H6"）
+ * @param selected 是否为当前光标块对应的标题（true = 图标转暖橙）
  * @param onClick 点击回调（转换为对应标题块类型）
  * @param modifier Modifier（由调用方传 `weight(1f)` 决定格宽）
  */
 @Composable
 private fun HeadingCell(
+    riName: String,
     label: String,
+    selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    /** 激活色与工具栏/色板统一（暖橙）；未选中取与工具栏未激活按钮一致的 onSurfaceVariant */
+    val accent = Color(0xFFFF9A5C)
+    val contentColor = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant
+    val vector = remember(riName) { BlockNotePlusMenuIcons.vectorFor(riName) }
+
     Box(
         modifier = modifier
             .height(HeadingCellHeight)
-            .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
-                shape = RoundedCornerShape(8.dp)
-            )
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = label,
-            fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurface
-        )
+        if (vector != null) {
+            Icon(
+                imageVector = vector,
+                contentDescription = label,
+                tint = contentColor,
+                modifier = Modifier.size(22.dp)
+            )
+        } else {
+            /** 图标缺失兜底：退回文字标签（与工具栏 [RichTextFormatToolbar] 的 RiFormatButton 同策略） */
+            Text(
+                text = label,
+                fontSize = 13.sp,
+                color = contentColor
+            )
+        }
     }
 }

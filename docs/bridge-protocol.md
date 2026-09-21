@@ -35,7 +35,7 @@
 | `ready` | `{}` | 编辑器脚本就绪并已绑定下行宿主（Kotlin 侧解除 loading、随后发 `init`） |
 | `changed` | `{ markdown }` | 内容变更快照；**JS 侧防抖 800ms**；由 `blocksToMd` 生成（含分割线样式编码） |
 | `undoState` | `{ canUndo, canRedo }` | 撤销/重做可用态（v1.7）；历史栈变化后上报，宿主左上角按钮据此置灰 |
-| `blockState` | `{ blockType, canSetBlockColor, blockTextColor?, blockBackgroundColor?, canToggleHeader, isHeaderRow, isHeaderCol }` | 当前光标块状态（v1.11）；驱动宿主工具栏「块操作」菜单的可用态与回显。**仅在状态变化时上报**（JS 侧按 JSON 串去重） |
+| `blockState` | `{ blockType, headingLevel?, canSetBlockColor, blockTextColor?, blockBackgroundColor?, canToggleHeader, isHeaderRow, isHeaderCol }` | 当前光标块状态（v1.11；`headingLevel` 为 v2026-09-21 新增）。驱动宿主工具栏「块操作」菜单的可用态与回显、以及「标题面板」的选中态。`headingLevel`：`blockType === "heading"` → 1–6；`blockType` 以 `toggleHeading` 开头 → 1–3（1 级兜底 1）；非标题块 → 0。**仅在状态变化时上报**（JS 侧按 JSON 串去重） |
 | `error` | `{ message }` | JS 异常上报（Kotlin 侧打 logcat / 展示错误态） |
 
 > `ready` 载荷自 v1.8 起带可选 `build` 字段（构建指纹，见下），故其类型为 `{ build?: string }`。
@@ -81,8 +81,17 @@ Kotlin 收 changed → 落库（P0 内存态，P1 接 Repository）
 
 ## 构建指纹（v1.8）
 
-`assets/blocknote-web/editor/editor.html` 是**静态资源**——Gradle 只负责原样打包，**不会**触发
-npm/vite 重建。因此「JS 源码改了但真机行为没变」的根因通常就是产物没重建（真机已踩过一次）。
+`assets/blocknote-web/editor/editor.html` 是 vite 打出的**单文件内联产物**，源码在 `blocknote-probe/`。
+
+**v1.8 起 Gradle 会自动重建它**：`app/build.gradle.kts` 注册了 `buildBlockNoteEditor`
+（`Exec` 执行 `npm run build:editor`），并让所有 `merge*Assets` 任务 `dependsOn` 它——
+因此 `assembleDebug/Release` 会自动带上最新产物，**不再需要人工记得跑 npm**；
+源码未变时该任务 UP-TO-DATE（增量，45s 只在真改 JS 时花）。构建失败**不阻断** App 编译
+（仅告警并沿用既有产物），手动强制重建：`./gradlew :app:buildBlockNoteEditor --rerun-tasks`。
+
+> ⚠️ v1.8 **之前** Gradle 确实不触发重建，出现过「JS 源码已改、App 也重编、真机仍是旧 bundle」
+> 的事故。若现在仍遇到「JS 改了没生效」，按这两条排查：① `ready` 上行里的构建指纹是否最新（见下）；
+> ② WebView 缓存（卸载重装 / 清数据）。
 
 为了让这个问题一眼可查，构建期由 `vite.editor.config.ts` 的 `define` 注入全局常量
 `__BUILD_FINGERPRINT__`，格式为：
@@ -182,3 +191,23 @@ adb logcat -s BlockNoteEditor:V | grep "ready received"
 
   > 注：若日后确需触屏拖拽，只能自写 touchstart/move/end 逻辑并用 `moveBlocks()` 落位，
   > 原生 DnD 事件流触屏下拿不到，无法桥接。
+- v2026-09-21：**`blockState` 新增可选字段 `headingLevel`**（供宿主「标题面板」回显选中态）。
+
+  **动机**：标题面板把工具栏原来的 9 个标题键（H1–H6 + 可折叠标题 1–3）收进一处，
+  但原有 `blockState` 只上行 `blockType`（如 `heading`）、**没有级别**——
+  宿主无法判断"当前块是不是 H3"，面板里九个格子只能一律不高亮。
+
+  **口径**（JS 侧 `pushBlockState`）：
+  - `blockType === "heading"` → `headingLevel = props.level`（1–6）
+  - `blockType` 以 `toggleHeading` 开头 → `props.level`，**1 级兜底 1**
+    （可折叠标题是**独立块类型**，且 1 级在 `transform` 写入时没有带 `props.level`）
+  - 非标题块 → `0`（宿主据此不高亮任何格子）
+  - `props.level` 非有限数或 ≤ 0 时按 0 处理，避免 NaN 污染 JS 侧的 JSON 去重键
+
+  ⚠️ **两类标题必须靠 `blockType` 区分，不能只看 level**：级别数字 1/2/3 在
+  `heading` 与 `toggleHeading*` 里都出现，只按 level 判断会让两类的同名格子同时亮起。
+
+  Kotlin 侧 `BlockState` 增加 `headingLevel: Int = 0`（缺省 0 = 不高亮），
+  `HeadingPanel` 用 `blockType` 分流 + `headingLevel` 定位格子。字段**可选**：
+  旧 JS 产物（未带上行）时 `optInt(…, 0)` 兜底为 0，宿主行为退化为"无回显"，不会异常。
+

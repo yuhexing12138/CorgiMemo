@@ -163,6 +163,14 @@ export type UpMessage =
       type: "blockState";
       /** 光标块类型（BlockNote 的 block.type，如 paragraph / heading / table / image） */
       blockType: string;
+      /**
+       * 光标块的标题级别（v2026-09-21 新增，供宿主「标题面板」回显选中态）：
+       * - `blockType === "heading"` → 1–6（普通标题，取 `props.level`）
+       * - `blockType` 以 `toggleHeading` 开头 → 1–3（可折叠标题是**独立块类型**，
+       *   其中 1 级在 JS 侧未显式写 `props.level`，此处兜底为 1）
+       * - 非标题块 → 0（宿主据此不高亮任何标题格子）
+       */
+      headingLevel?: number;
       /** 当前块是否支持块级颜色（块 spec 声明了 textColor 或 backgroundColor） */
       canSetBlockColor: boolean;
       /** 当前块的文本色（预设色名；"default" 或 undefined = 默认色） */

@@ -239,6 +239,9 @@ export default function EditorApp() {
    *   （官方 `BlockColorsItem` 的写法）
    * - 表头   → `block.type === "table" && editor.settings.tables.headers`
    *   （官方 `TableHeadersItem` 的写法；官方目前只支持 1 行 / 1 列，故用布尔）
+   * - 标题级别 → v2026-09-21 新增 `headingLevel`：普通标题取 `props.level`（1–6），
+   *   可折叠标题（独立块类型 `toggleHeading*`）取 `props.level` 并兜底 1，非标题块为 0；
+   *   宿主「标题面板」据此高亮当前块对应的标题格子
    *
    * 用 JSON 串做去重键：只有选区跨块移动、或有色/表头状态真的变了才上行，
    * 同一块内移动光标不产生流量。
@@ -259,8 +262,28 @@ export default function EditorApp() {
       const isTable = block.type === "table";
       const props = (block.props ?? {}) as Record<string, unknown>;
       const content = (block.content ?? {}) as Record<string, unknown>;
+      /**
+       * 标题级别（v2026-09-21 新增）：供宿主「标题面板」回显"当前块是不是 Hx"。
+       *
+       * ⚠️ 两类标题在 BlockNote 里的表示方式**不同**（见下方 transform 分支）：
+       * - 普通标题：`type === "heading"`，级别在 `props.level`（1–6）；
+       * - 可折叠标题：`type` 是**独立块类型** `toggleHeading` / `toggleHeading2` /
+       *   `toggleHeading3`，其中 1 级在写入时**没有**带 `props.level`，故兜底为 1。
+       *
+       * 非标题块一律上行 0（宿主据此不高亮任何格子）。
+       * `props.level` 容错：非有限数或 ≤0 时按 0 处理，避免 NaN 上行污染去重键。
+       */
+      const rawLevel = Number(props.level);
+      const safeLevel = Number.isFinite(rawLevel) && rawLevel > 0 ? rawLevel : 0;
+      const headingLevel =
+        block.type === "heading"
+          ? safeLevel
+          : block.type.startsWith("toggleHeading")
+            ? safeLevel || 1
+            : 0;
       const payload = {
         blockType: block.type as string,
+        headingLevel,
         canSetBlockColor: supportsTextColor || supportsBgColor,
         blockTextColor: supportsTextColor
           ? (props.textColor as string | undefined)

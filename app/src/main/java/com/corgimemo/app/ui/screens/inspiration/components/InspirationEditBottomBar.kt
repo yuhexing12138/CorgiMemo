@@ -442,6 +442,12 @@ fun InspirationEditBottomBar(
                     /** 9 个标题键复用既有的块类型转换通道（action = heading1–6 / toggleHeading 系列） */
                     onTransform = onTransform,
                     onDone = onHeadingPanelDismiss,
+                    /**
+                     * 选中态回显（v2026-09-21）：来自 JS 上行的当前光标块——
+                     * blockType 区分「普通标题 / 可折叠标题」两类，headingLevel 定位到具体格子。
+                     */
+                    currentBlockType = blockState.blockType,
+                    currentHeadingLevel = blockState.headingLevel,
                     /** 锁定态内容区置灰并拦点击（v2026-09-21）：与格式工具栏同一口径 */
                     enabled = toolbarEnabled
                 )

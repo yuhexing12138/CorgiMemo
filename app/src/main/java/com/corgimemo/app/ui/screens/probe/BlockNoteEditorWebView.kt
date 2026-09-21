@@ -68,6 +68,9 @@ private const val EDITOR_URL = "file:///android_asset/blocknote-web/editor/edito
  * - 表头取决于是否 table 块（且 `settings.tables.headers` 为真）。
  *
  * @param blockType 光标块类型（BlockNote 的 block.type，如 paragraph / heading / table / image）
+ * @param headingLevel 光标块的标题级别（v2026-09-21 新增；供「标题面板」回显选中态）：
+ *   `blockType == "heading"` 时为 1–6（普通标题）；`blockType` 以 `toggleHeading` 开头时为 1–3
+ *   （可折叠标题，JS 侧对未显式写 level 的 1 级兜底为 1）；非标题块为 0（不高亮任何格子）
  * @param canSetBlockColor 是否支持块级颜色（决定「块颜色」入口是否可点）
  * @param blockTextColor 当前块文本色（预设色名；空串 = 默认色，用于色板回显）
  * @param blockBackgroundColor 当前块背景色（预设色名；空串 = 无背景色）
@@ -77,6 +80,8 @@ private const val EDITOR_URL = "file:///android_asset/blocknote-web/editor/edito
  */
 data class BlockState(
     val blockType: String = "",
+    /** 标题级别（v2026-09-21 新增）：heading → 1–6；toggleHeading* → 1–3；非标题块 → 0 */
+    val headingLevel: Int = 0,
     val canSetBlockColor: Boolean = false,
     val blockTextColor: String = "",
     val blockBackgroundColor: String = "",
@@ -382,6 +387,8 @@ class BlockNoteBridgeController {
                     // 注意 optString 对缺失字段返回 ""，正好与 BlockState 的默认值语义一致。
                     blockState = BlockState(
                         blockType = msg.optString("blockType"),
+                        /** v2026-09-21：标题级别（缺失/非法时 0 → 面板不高亮任何格子） */
+                        headingLevel = msg.optInt("headingLevel", 0),
                         canSetBlockColor = msg.optBoolean("canSetBlockColor", false),
                         blockTextColor = msg.optString("blockTextColor"),
                         blockBackgroundColor = msg.optString("blockBackgroundColor"),
