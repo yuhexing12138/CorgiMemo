@@ -103,6 +103,33 @@
 }
 
 /**
+ * 正文内容字体跟随宿主（v2026-09-21 修复「T 面板调整字体正文不生效」）
+ *
+ * **根因**：BlockNote 库 CSS 对 `.bn-root` 有硬性声明——
+ *     `.bn-root { font-family: var(--bn-font-family) }`
+ * 其中 `--bn-font-family: "Inter", "SF Pro Display", ... sans-serif`（库默认）。
+ * 而宿主的字体链是「`init.fontFamily` / `setFontFamily` 下行 → React state →
+ * `.editor-page` 的内联 style 写入 `--content-font` → 内层 div
+ * `font-family: var(--content-font)` **靠继承**传给 `.bn-root`」——
+ * 继承链在 `.bn-root` 处被上面这条库规则**直接覆盖**，正文永远用库默认字体，
+ * `ff-<id>` 的 @font-face（init fonts 清单生成）从未被真正引用过。
+ *
+ * **为什么一直没暴露**：宿主 init 原硬编码 `system_default` → `--content-font`
+ * 也是 system-ui，覆盖前后"看起来没区别"；v2026-09-21 init 携带真实字体后，
+ * 标题（Compose 侧 LocalContentTypography）正常换字、正文纹丝不动，问题才显形。
+ *
+ * **修法**：`.bn-root` 上重新声明 font-family，优先消费宿主下发的
+ * `--content-font`（CSS 自定义属性可从 `.editor-page` 祖先继承到此处），
+ * 缺失时回落库默认 `--bn-font-family`（向后兼容探针页/旧宿主）。
+ * `.bn-editor` / `.bn-block-content` 等正文节点均无自身 font-family 声明，
+ * 从 `.bn-root` 继承即可全覆盖；`.bn-mantine` 的菜单/输入控件保持库默认不动。
+ * `!important` 对冲库后续版本把该声明挪位/加码的风险（对齐本文件既有覆盖惯例）。
+ */
+.bn-root {
+  font-family: var(--content-font, var(--bn-font-family)) !important;
+}
+
+/**
  * `.bn-editor` 背景兜底
  *
  * 正常情况下 `--bn-colors-editor-background` 已由上方规则（或 JS 侧）写成主题背景色；

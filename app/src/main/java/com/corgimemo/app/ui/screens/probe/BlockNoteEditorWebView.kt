@@ -10,7 +10,9 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
+import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -637,6 +639,27 @@ private fun createEditorWebView(
                 Log.e(TAG, "load error: ${request?.url} ${error?.description}")
             }
         }
+
+        /**
+         * console 转发（v2026-09-21）：JS 侧 console.log/warn/error 全量转 logcat。
+         *
+         * 背景：@font-face 字体加载失败（404 / CORS 拒绝 / 解码失败）Chromium **只打
+         * console，不触发 onReceivedError**——没有这条通道，正文字体「换了个寂寞」时
+         * 完全黑盒。现在 `adb logcat -s chromium`（或本 TAG）可直接看到字体流的真实结果，
+         * 配合 [shouldInterceptRequest] 的拦截日志即可闭环诊断字体链路。
+         */
+        setWebChromeClient(object : WebChromeClient() {
+            override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                /** console 级别 → logcat 优先级（ERROR→E / WARNING→W / 其余→D） */
+                val priority = when (message.messageLevel()) {
+                    ConsoleMessage.MessageLevel.ERROR -> Log.ERROR
+                    ConsoleMessage.MessageLevel.WARNING -> Log.WARN
+                    else -> Log.DEBUG
+                }
+                Log.println(priority, TAG, "console[${message.lineNumber()}] ${message.message()}")
+                return true
+            }
+        })
 
         loadUrl(EDITOR_URL)
     }

@@ -12,6 +12,7 @@
 - 9 OFL 中文+3 拉丁；FontCatalog/FontManager/buildTypography；预览铁律：统一 FontPreviewEngine（有界池+位图 LruCache），禁批量 ResourcesCompat.getFont（驻留→OOM）；合成族 combinedFamilyFonts（latin+cjk fallback）；用户内容走 ContentFontManager+LocalContentTypography。
 - ⚠️ **单一真相源=ContentFontManager**，四路消费：标题 LocalContentTypography、字重探测、面板回显、VM 保存持久化。v2026-09-21 实测根因：T 面板「应用」只给 WebView 单发 setFontFamily、**绕过状态链**（VM onCjkFontSelected/onLatinFontSelected 定义后 0 调用点）→ 标题不换字/字体不持久化/重开面板回显旧值/「应用」恒亮。修复：onFontPanelDismiss 走 VM 回调；新增 LaunchedEffect(contentFontEntry.id) 响应式下发 WebView；load(markdown, fontFamilyId) init 携带回显（原硬编码 system_default）。教训：改面板/桥时「谁更新真相源」必须闭环；孤儿函数=断链信号。
 - 遗留：拉丁字体无 WebView 下行通道（JS 仅单 fontFamily 通道；fontsPayload/bridgeFontResMap 不含 latinEntries→无 ff-<latin> @font-face）。要支持需改 JS+重建 editor.html。
+- ⚠️ WebView 字体三关（缺一即"正文不生效"）：①桥下发（init/setFontFamily）②CSS 继承链——库 CSS `.bn-root{font-family:var(--bn-font-family)}` 会斩断 `--content-font` 继承，editor.css 已覆盖 `.bn-root{font-family:var(--content-font,var(--bn-font-family))!important}`（v2026-09-21「标题生效正文不生效」第二层根因；历史未暴露因 init 原硬编码 system_default 覆盖无视觉差）③@font-face 资源可达——字体加载失败只打 console 不触发 onReceivedError，已加 WebChromeClient console 转发（logcat TAG=BlockNoteEditor）。
 - WebView 字体流：JS 请求 https://corgimemo.local/fonts/{id}/{weight}.ttf → shouldInterceptRequest openRawResource 回流；@font-face 由 init fonts 清单生成。
 
 ## 主题色 / 编辑态块 / TaskList
