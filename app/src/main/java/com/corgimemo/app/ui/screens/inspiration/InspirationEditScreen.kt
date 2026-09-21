@@ -604,8 +604,37 @@ fun InspirationEditScreen(
      */
     val isFormatPanelOpen = openPanel != null
 
-    /** 软键盘控制器：展开字体面板前收起键盘（面板高度 = 键盘高度，二者不同屏共存） */
+    /** 软键盘控制器：展开任一面板前收起键盘（面板高度 = 键盘高度，二者不同屏共存） */
     val keyboardController = LocalSoftwareKeyboardController.current
+
+    /**
+     * 切换底部内联面板（v2026-09-21 抽取）
+     *
+     * 收敛了三处按钮回调里重复的「同值置 null，否则置该值」样板，并统一承载
+     * **所有面板完全一致**的两件事：
+     * 1. **互斥切换**：点已展开的面板 → 收起（置 null）；点别的面板 → 直接替换。
+     *    因为 [openPanel] 是单一状态，"替换"本身就完成了互斥，无需手动关另两个面板
+     *    （收敛前正是漏关导致过"从 A 切到 T / Aa 面板叠加"）。
+     * 2. **键盘让位**：**仅在展开分支**收起软键盘——面板高度 = 键盘高度，二者不同屏共存。
+     *    收起分支**不主动弹回**键盘，沿用既定约定：用户再点正文 / 标题才恢复输入。
+     *
+     * ⚠️ 各面板的**专属副作用**不放在这里，由调用方在调用本函数**之前**执行
+     * （目前只有字体面板：展开前要把 pending 重置为当前内容字体，见 onFontPickerClick）。
+     *
+     * ⚠️ 必须是局部函数，且**定义在三个按钮回调之前**——Kotlin 局部函数的声明顺序
+     * 即可见性，放在下方会报 Unresolved reference。
+     *
+     * @param panel 目标面板；若与当前展开的面板相同则收起，否则切换到它
+     */
+    fun togglePanel(panel: EditBottomPanel) {
+        if (openPanel == panel) {
+            /** 收起：面板消失后键盘由输入框焦点决定，不主动弹回 */
+            openPanel = null
+        } else {
+            keyboardController?.hide()
+            openPanel = panel
+        }
+    }
 
     /**
      * 当前内容字体（[ContentFontManager]「当前」状态 = 正在编辑的这条灵感的字体）。
@@ -1303,19 +1332,16 @@ fun InspirationEditScreen(
                  * 展开后由 [isFormatPanelOpen] → `suppressIme` 继续压住键盘（v2026-09-21）：
                  * 用户此时在正文聚焦光标 / 多选也不会把键盘唤回来。
                  *
-                 * 三面板互斥：写入 [openPanel] 即**天然替换**掉另两个面板——收敛前需手动把
-                 * 另两个 boolean 置 false，正是"从 A 切到 T / Aa 时面板叠加"的成因。
+                 * 互斥切换与收键盘都交给统一的 [togglePanel]（v2026-09-21 抽取）；
+                 * 此处只保留字体面板**专属**的副作用：展开前把 pending 重置为当前内容字体
+                 * （面板高亮须与正文实际字体一致；收起分支不需要重置）。
                  */
                 onFontPickerClick = {
-                    if (openPanel == EditBottomPanel.FONT) {
-                        openPanel = null
-                    } else {
-                        // 展开前把 pending 重置为当前内容字体（面板高亮与正文实际字体一致）
+                    if (openPanel != EditBottomPanel.FONT) {
                         pendingCjkFontId = contentFontEntry.id
                         pendingLatinFontId = contentLatinFontId
-                        keyboardController?.hide()
-                        openPanel = EditBottomPanel.FONT
                     }
+                    togglePanel(EditBottomPanel.FONT)
                 },
                 /**
                  * 字体面板头按钮（「应用」/「完成」，语义见 [hasPendingFontChange]）：
@@ -1338,17 +1364,12 @@ fun InspirationEditScreen(
                 },
                 /**
                  * 字号与颜色按钮（工具栏 Aa，位于 T 与 A 之间）：
-                 * 切换字号颜色面板展开/收起；与 T、A 两个面板**互斥**（由 [openPanel] 单一状态保证）；
-                 * 展开时收起软键盘（面板高度 = 键盘高度，不同屏共存）。
-                 * 展开后同样由 [isFormatPanelOpen] 抑制键盘（v2026-09-21）。
+                 * 切换字号颜色面板展开/收起。互斥、收键盘、收起都在 [togglePanel] 里统一处理，
+                 * 本面板无专属副作用，故回调只有一行。
+                 * 展开后由 [isFormatPanelOpen] 抑制键盘（v2026-09-21）。
                  */
                 onSizeColorPanelClick = {
-                    if (openPanel == EditBottomPanel.SIZE_COLOR) {
-                        openPanel = null
-                    } else {
-                        keyboardController?.hide()
-                        openPanel = EditBottomPanel.SIZE_COLOR
-                    }
+                    togglePanel(EditBottomPanel.SIZE_COLOR)
                 },
                 /** 字号颜色面板头「完成」：收起面板（字号/颜色已即时生效，无 pending 两段式）；
                  *  收起即解除键盘抑制（v2026-09-21），但不主动弹回键盘 */
@@ -1465,17 +1486,11 @@ fun InspirationEditScreen(
                 /**
                  * 颜色按钮（A）→ 切换**内联颜色面板**（v2026-09-21：原为打开 AlertDialog 弹窗）
                  *
-                 * 与 T / Aa 的互斥由 [openPanel] 单一状态保证（无需手动关另两个面板）；
-                 * 展开时收起软键盘——面板高度 = 键盘高度，二者不同屏共存；
-                 * 展开后由 [isFormatPanelOpen] 继续抑制键盘。
+                 * 互斥、收键盘、收起都交给统一的 [togglePanel]（本面板无专属副作用）；
+                 * 展开后由 [isFormatPanelOpen] 继续抑制正文/标题唤起键盘。
                  */
                 onColorPanelClick = {
-                    if (openPanel == EditBottomPanel.COLOR) {
-                        openPanel = null
-                    } else {
-                        keyboardController?.hide()
-                        openPanel = EditBottomPanel.COLOR
-                    }
+                    togglePanel(EditBottomPanel.COLOR)
                 },
                 /** 颜色面板头「完成」：收起面板（颜色点选即时生效，无 pending 两段式） */
                 onColorPanelDismiss = {
