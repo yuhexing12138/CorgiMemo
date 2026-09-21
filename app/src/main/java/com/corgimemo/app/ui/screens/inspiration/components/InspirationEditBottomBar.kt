@@ -189,11 +189,10 @@ fun InspirationEditBottomBar(
      */
     onDeleteBlock: () -> Unit = {},
     /**
-     * 设置当前块的**块级**颜色（v1.11）：原 ⋮⋮ 菜单的「颜色」项。
-     * @param textColor 块级文本色（色名；"default" 清除）；null = 不改动该维度
-     * @param backgroundColor 块级背景色（色名；"default" 清除）；null = 不改动该维度
+     * ⚠️ v2026-09-21 已删除 `onSetBlockColor` 参数：
+     * 块级（段落）颜色入口由 ⋮ 菜单整体移入「A」按钮的颜色对话框
+     * （「段落文字色 / 段落背景色」，见 [ColorStyleDialog]），底部栏不再需要透传它。
      */
-    onSetBlockColor: (String?, String?) -> Unit = { _, _ -> },
     /**
      * 切换表头行 / 表头列（v1.11）：原 ⋮⋮ 菜单的「表头行 / 表头列」项。
      * @param target "row" = 表头行，"column" = 表头列
@@ -278,7 +277,6 @@ fun InspirationEditBottomBar(
                     onInsertLink = onInsertLink,
                     onToggleCodeSpan = onToggleCodeSpan,
                     onDeleteBlock = onDeleteBlock,
-                    onSetBlockColor = onSetBlockColor,
                     onSetTableHeader = onSetTableHeader,
                     onMoveBlockUp = onMoveBlockUp,
                     onMoveBlockDown = onMoveBlockDown,

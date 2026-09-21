@@ -31,6 +31,12 @@
 - 实现类 `private ImeSuppressibleWebView`（BlockNoteEditorWebView.kt），JS 注入必须覆盖三时机：状态变化 / onPageFinished / 桥 ready（此时编辑器 DOM 才挂载）。
 - 约定：抑制期间**保留光标与选区**；解除只恢复"可唤起"能力，**不主动弹回**键盘。
 
+## 颜色入口与色板组件（2026-09-21）
+- 入口唯一化：颜色全部集中在底部工具栏「A」按钮 → `ColorStyleDialog` 四组——**选中文字色 / 选中背景色**（行内，`format("textColor"/"backgroundColor", hex|"default")`）+ **段落文字色 / 段落背景色**（块级，`setBlockColor(textColor=/backgroundColor= 色名|"default")`）。⚠️ 两种维度不同、互不覆盖，别混。
+- ⋮ 菜单（`BlockOpsMenuButton`）**已无颜色项**，只剩删除块 / 上移 / 下移 / 表头行·列；`onSetBlockColor` 参数链（Toolbar→BottomBar→Screen）已全部删除。
+- 共用色板 `components/BlockColorPicker.kt`：`internal BlockColorPalette`（BlockNote 官方明暗各 9 色 + `names`）/ `BlockColorRow`（标签 + 默认斜杠点 + 9 色点，色点行用 **FlowRow** 以适配 AlertDialog 窄宽度）/ `blockColorHexOf(name,isDark,background)`（色名→"#RRGGBB"，供行内色下行）/ private `BlockColorDot`。
+- 行内色**无状态上行**（桥未上行行内样式）→ 传 `showSelection=false`，否则「默认」恒高亮误导；块级色靠 `blockState.blockTextColor/blockBackgroundColor` 回显。
+
 ## 块级拖拽（自维护 fork BlocksReorderableList.kt）
 - settle() 改「抓快照→立即 onSettle→滑行交 BlocksGlideController」；拖拽期间绝不能改列表（库 intervals 定长）；itemKey 身兼身份锚定+滑行归属+zIndex。
 
