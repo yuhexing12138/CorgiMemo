@@ -74,6 +74,7 @@
   - 编辑器首部留白：.bn-editor{padding:0}，首块 .bn-block-content{padding:3px 0} 上 3px；宿主用 Compose Spacer 控制间距时需在 editor.css 把首部压 0 才能精确等距（v2026-09-18 灵感编辑页三段间距即此做法；⚠️ 但盒间距等距≠墨迹视觉等距，见视觉/渲染教训）。
 
 ## 工具/协作教训
+- ⚠️ **新增 layout / Modifier API 后必须逐项核对 import**（2026-09-21 实测）：Compose 的布局扩展分属 `foundation.layout`（fillMaxWidth / padding / size / BoxWithConstraints / FlowRow…）、`ui.draw`（clip）、`foundation`（background / border / clickable）、`foundation.shape`（CircleShape）等多个包，**漏 import 只在编译期暴露**。本项目约定助手不主动编译，故极易漏到用户构建时才炸（实例：BlockColorPicker.kt 引入 BoxWithConstraints 时新增的 `fillMaxWidth()` 漏了 import）。核对法：对新增/大改的文件按用到的 API 名逐条比对 import 区，别凭"看起来应该在"。
 - 遇「API 看起来应该有但没反应」先查它在不在（grep public xxx），别论证语义。
 - catch{return} 是隐形杀手：静默失败至少上行一次诊断。
 - 连续 2 次猜测→改码→失败，停猜加埋点取真实数据。
