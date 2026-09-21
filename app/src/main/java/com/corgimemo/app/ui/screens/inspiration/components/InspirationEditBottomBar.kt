@@ -48,6 +48,11 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  * - 上行二b（可折叠）：FontSizeColorPanel 字号与颜色面板（v2026-09-04 新增，
  *   仅当 isSizeColorPanelOpen=true 时显示；与字体面板**互斥、占同一槽位、同高度**；
  *   字号/颜色点选即时生效，面板头只保留「完成」收起）
+ * - 上行二c（可折叠）：ColorStylePanel 颜色面板（v2026-09-21 新增，
+ *   仅当 isColorPanelOpen=true 时显示；与前两个面板**互斥、占同一槽位、同高度**；
+ *   四组色板＝选中文字色/选中背景色（行内）+ 段落文字色/段落背景色（块级），
+ *   点选即时生效且不收起面板，面板头只保留「完成」收起。
+ *   由原「A」按钮的 AlertDialog 弹窗改造而来，展示形态与 T / Aa 统一）
  * - 下行（始终显示）：6 个核心按钮
  *   - 📷 相机（onPhotoClick）
  *   - 🎤 麦克风（onVoiceClick）
@@ -58,9 +63,10 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  *
  * **交互规则**：
  * - 只有 ⋮ 按钮切换工具栏展开/折叠
- * - 字体选择按钮（工具栏 B 左侧）切换字体面板展开/收起，同时由调用方收起软键盘
- * - 字号与颜色按钮（字体按钮与 B 之间）切换字号颜色面板展开/收起，与字体面板互斥，同时由调用方收起软键盘
- * - 两个面板展开期间**键盘让位**（v2026-09-21）：调用方据此抑制正文 WebView 与顶部标题
+ * - 字体选择按钮（工具栏 T）切换字体面板展开/收起，同时由调用方收起软键盘
+ * - 字号与颜色按钮（工具栏 Aa，位于 T 与 A 之间）切换字号颜色面板展开/收起，与另两面板互斥，同时由调用方收起软键盘
+ * - 颜色按钮（工具栏 A，位于 Aa 与 B 之间，v2026-09-21 由"对齐×3 之后"移入）切换颜色面板展开/收起，同样互斥
+ * - 三个面板展开期间**键盘让位**（v2026-09-21）：调用方据此抑制正文 WebView 与顶部标题
  *   重新唤起软键盘，避免键盘把面板顶走、并压缩 WebView 视口；面板收起后仅恢复
  *   "可唤起"能力，不主动弹回键盘
  * - 其他按钮的操作不影响工具栏状态
@@ -116,6 +122,8 @@ fun InspirationEditBottomBar(
     isFormatExpanded: Boolean,
     isFontPanelOpen: Boolean,
     isSizeColorPanelOpen: Boolean,
+    /** 颜色面板是否展开（v2026-09-21 新增；三面板互斥占同一槽位，由调用方保证） */
+    isColorPanelOpen: Boolean,
     currentCjkId: String,
     currentLatinId: String,
     hasPendingChange: Boolean,
@@ -162,10 +170,23 @@ fun InspirationEditBottomBar(
     onTransformParagraph: () -> Unit = {},
     /** 块类型按钮可用性（BlockNote 模式 true，Compose 模式 false 置灰） */
     onTransformEnabled: Boolean = false,
-    /** BlockNote 迁移（P1.5）：颜色按钮打开色板对话框 */
-    onOpenColorStyleDialog: () -> Unit = {},
-    /** 色板对话框显隐（受控态） */
-    showColorStyleDialog: Boolean = false,
+    /**
+     * 颜色面板（A 按钮）切换回调（v2026-09-21 新增，取代原 `onOpenColorStyleDialog`）
+     *
+     * ⚠️ 语义变化：原为「打开色板 AlertDialog」，现改为与 T / Aa 一致的**内联面板**切换
+     * （[ColorStylePanel]）——调用方需同时收起另两个面板（三者互斥占同一槽位）并收起软键盘。
+     */
+    onColorPanelClick: () -> Unit = {},
+    /** 颜色面板头「完成」回调（收起面板；颜色点选即时生效，无 pending 两段式） */
+    onColorPanelDismiss: () -> Unit = {},
+    /** 选中文字色点选（行内，v2026-09-21）：参数 "#RRGGBB"，null = 恢复默认 */
+    onInlineTextColorSelect: (String?) -> Unit = {},
+    /** 选中背景色点选（行内，v2026-09-21）：参数 "#RRGGBB"，null = 恢复默认 */
+    onInlineBackgroundColorSelect: (String?) -> Unit = {},
+    /** 段落文字色点选（块级，v2026-09-21）：参数 BlockNote 色名，null = 清除 */
+    onBlockTextColorSelect: (String?) -> Unit = {},
+    /** 段落背景色点选（块级，v2026-09-21）：参数 BlockNote 色名，null = 清除 */
+    onBlockBackgroundColorSelect: (String?) -> Unit = {},
     /** BlockNote 迁移（P1.5）：媒体插入请求（"image"/"video"/"audio"/"file" → 宿主选择器） */
     onInsertMedia: (String) -> Unit = {},
     /** BlockNote 迁移（P1.5）：打开表情选择面板 */
@@ -191,7 +212,7 @@ fun InspirationEditBottomBar(
     /**
      * ⚠️ v2026-09-21 已删除 `onSetBlockColor` 参数：
      * 块级（段落）颜色入口由 ⋮ 菜单整体移入「A」按钮的颜色对话框
-     * （「段落文字色 / 段落背景色」，见 [ColorStyleDialog]），底部栏不再需要透传它。
+     * （「段落文字色 / 段落背景色」，见 [ColorStylePanel]），底部栏不再需要透传它。
      */
     /**
      * 切换表头行 / 表头列（v1.11）：原 ⋮⋮ 菜单的「表头行 / 表头列」项。
@@ -265,8 +286,8 @@ fun InspirationEditBottomBar(
                     onTransformEnabled = onTransformEnabled,
                     onInsertMedia = onInsertMedia,
                     onOpenEmojiPicker = onOpenEmojiPicker,
-                    onOpenColorStyleDialog = onOpenColorStyleDialog,
-                    showColorStyleDialog = showColorStyleDialog,
+                    onColorPanelClick = onColorPanelClick,
+                    isColorPanelOpen = isColorPanelOpen,
                     boldSingleTier = boldSingleTier,
                     canIncreaseIndent = canIncreaseIndent,
                     canDecreaseIndent = canDecreaseIndent,
@@ -328,6 +349,36 @@ fun InspirationEditBottomBar(
                     onPresetColorSelect = onPresetColorSelect,
                     onCustomColorSelect = onCustomColorSelect,
                     onDone = onSizeColorPanelDismiss
+                )
+            }
+
+            /**
+             * 上行二c：颜色面板（v2026-09-21 新增）
+             *
+             * 与字体面板（T）、字号颜色面板（Aa）**三者互斥、占同一槽位、同高度**
+             * （同用 keyboardHeight，互斥切换不跳动）。
+             *
+             * 来源：原「A」按钮的 AlertDialog 弹窗——按需求把展示形态改为与 T / Aa 一致的内联面板；
+             * 内容为四组色板：选中文字色 / 选中背景色（行内）与 段落文字色 / 段落背景色（块级），
+             * 后两组原先在 ⋮ 菜单的「背景色 / 文字色」，v2026-09-21 一并移入。
+             * 点选即时生效且**不收起面板**（与 Aa 一致，便于连续微调），
+             * 收起由面板头「完成」或再点一次 A 按钮触发。
+             */
+            AnimatedVisibility(
+                visible = isColorPanelOpen,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                ColorStylePanel(
+                    panelHeight = keyboardHeight,
+                    /* 段落色回显来自 JS 上行的当前光标块状态（行内色无状态上行，不回显） */
+                    currentBlockTextColor = blockState.blockTextColor,
+                    currentBlockBackgroundColor = blockState.blockBackgroundColor,
+                    onPickInlineTextColor = onInlineTextColorSelect,
+                    onPickInlineBackgroundColor = onInlineBackgroundColorSelect,
+                    onPickBlockTextColor = onBlockTextColorSelect,
+                    onPickBlockBackgroundColor = onBlockBackgroundColorSelect,
+                    onDone = onColorPanelDismiss
                 )
             }
 

@@ -109,8 +109,6 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.ui.components.AppSnackbarHost
-/** 颜色对话框（v2026-09-21）：四组色板 = 选中文字色/背景色 + 段落文字色/背景色 */
-import com.corgimemo.app.ui.screens.inspiration.components.ColorStyleDialog
 import com.corgimemo.app.ui.screens.inspiration.components.DEFAULT_BODY_SP
 import com.corgimemo.app.ui.screens.inspiration.components.TEXT_COLORS
 /**
@@ -198,8 +196,14 @@ fun InspirationEditScreen(
     /** BlockNote 模式链接对话框（P1.5 浮层桥接：🔗 按钮 → URL 输入 → format createLink） */
     var showLinkDialog by remember { mutableStateOf(false) }
     var linkDialogUrl by remember { mutableStateOf("https://") }
-    /** BlockNote 模式色板对话框（P1.5 浮层桥接：颜色按钮 → 文字/背景色网格） */
-    var showColorStyleDialog by remember { mutableStateOf(false) }
+    /**
+     * 颜色面板展开/收起状态（v2026-09-21 新增，取代原 `showColorStyleDialog`）
+     *
+     * 由工具栏「A」按钮与面板头「完成」切换；与字体面板（T）、字号颜色面板（Aa）
+     * **三者互斥占同一槽位**（展开前先关另两个，见 [onColorPanelClick] 接线）；
+     * 展开期间与另两个面板一样抑制键盘（见 [isFormatPanelOpen]）。
+     */
+    var isColorPanelExpanded by remember { mutableStateOf(false) }
 
     // 内容就绪（编辑模式 loadInspiration 完成 / 新建模式立即）→ 装载 WebView 编辑器（仅一次）
     androidx.compose.runtime.LaunchedEffect(contentLoaded) {
@@ -595,10 +599,11 @@ fun InspirationEditScreen(
     var isSizeColorPanelExpanded by remember { mutableStateOf(false) }
 
     /**
-     * 是否存在任一面板展开（v2026-09-21 新增）= 字体面板 ∨ 字号颜色面板。
+     * 是否存在任一面板展开（v2026-09-21 新增）
+     * = 字体面板（T）∨ 字号颜色面板（Aa）∨ 颜色面板（A）。
      *
-     * 这两个面板经由 `isFontPanelOpen` / `isSizeColorPanelOpen` 传给底部栏，二者
-     * **互斥占同一槽位**（同一槽位切换在同一帧完成，故本派生值不会闪出 false）。
+     * 三个面板经由 `isFontPanelOpen` / `isSizeColorPanelOpen` / `isColorPanelOpen`
+     * 传给底部栏，三者**互斥占同一槽位**（互斥切换在同一帧完成，故本派生值不会闪出 false）。
      * 本页面用它统一表达「键盘让位给面板」这一中间态：
      * - 正文 WebView → `suppressIme`，面板展开期间不响应 IME（否则键盘顶走面板、
      *   并把 WebView 视口压缩，见 [BlockNoteEditorWebView] 的 v1.11.9 记录）；
@@ -607,7 +612,8 @@ fun InspirationEditScreen(
      * 光标与选区能力**不受影响**：正文仍可点定位光标、长按选词、拖手柄多选，
      * 只是不再唤起软键盘（真机已验证）。
      */
-    val isFormatPanelOpen = isFontPanelExpanded || isSizeColorPanelExpanded
+    val isFormatPanelOpen =
+        isFontPanelExpanded || isSizeColorPanelExpanded || isColorPanelExpanded
 
     /** 软键盘控制器：展开字体面板前收起键盘（面板高度 = 键盘高度，二者不同屏共存） */
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -1467,11 +1473,52 @@ fun InspirationEditScreen(
                         "file" -> mediaFileLauncher.launch("*/*")
                     }
                 },
-                onOpenColorStyleDialog = {
-                    /** 颜色按钮 → 打开文字/背景色板对话框 */
-                    showColorStyleDialog = true
+                /**
+                 * 颜色按钮（A）→ 切换**内联颜色面板**（v2026-09-21：原为打开 AlertDialog 弹窗）
+                 *
+                 * 与 T / Aa 一致的三选一互斥：展开前先关另两个面板（同一帧完成，面板不闪），
+                 * 并收起软键盘——面板高度 = 键盘高度，二者不同屏共存；
+                 * 展开后由 [isFormatPanelOpen] 继续抑制键盘。
+                 */
+                onColorPanelClick = {
+                    if (isColorPanelExpanded) {
+                        isColorPanelExpanded = false
+                    } else {
+                        isFontPanelExpanded = false
+                        isSizeColorPanelExpanded = false
+                        keyboardController?.hide()
+                        isColorPanelExpanded = true
+                    }
                 },
-                showColorStyleDialog = showColorStyleDialog,
+                isColorPanelOpen = isColorPanelExpanded,
+                /** 颜色面板头「完成」：收起面板（颜色点选即时生效，无 pending 两段式） */
+                onColorPanelDismiss = {
+                    isColorPanelExpanded = false
+                },
+                /**
+                 * 四组颜色点选（v2026-09-21）
+                 *
+                 * ⚠️ 与弹窗时代的行为差异：点选后**不再关闭**面板——与 Aa 面板的
+                 * "点选即时生效、面板保持展开"一致，便于连续微调；收起由「完成」或
+                 * 再点一次 A 按钮触发。
+                 *
+                 * 通道差异（易错点）：行内两组走 `format(...)`（hex 自由值，作用于选区文字），
+                 * 块级两组走 `setBlockColor(...)`（BlockNote 色名，作用于整段）。
+                 */
+                onInlineTextColorSelect = { hex ->
+                    blockNoteController.format("textColor", hex ?: "default")
+                },
+                onInlineBackgroundColorSelect = { hex ->
+                    blockNoteController.format("backgroundColor", hex ?: "default")
+                },
+                /** 段落文字色：只传 textColor 维度（backgroundColor 传 null = 不改动该维度） */
+                onBlockTextColorSelect = { name ->
+                    blockNoteController.setBlockColor(textColor = name ?: "default")
+                },
+                /** 段落背景色：只传 backgroundColor 维度（textColor 传 null = 不改动该维度） */
+                onBlockBackgroundColorSelect = { name ->
+                    blockNoteController.setBlockColor(backgroundColor = name ?: "default")
+                },
                 onOpenEmojiPicker = {
                     if (!isLocked) blockNoteController.openEmojiPicker()
                 },
@@ -1499,8 +1546,9 @@ fun InspirationEditScreen(
                  * 手柄本身只保留拖拽重排（原生手势，无法按钮化）。
                  *
                  * ⚠️ v2026-09-21：原「块颜色」项（onSetBlockColor）已从该菜单移出，
-                 * 改为底部工具栏「A」按钮颜色对话框里的「段落文字色 / 段落背景色」
-                 * ——见下方 [ColorStyleDialog] 的接线，故此处不再传 onSetBlockColor。
+                 * 改为底部工具栏「A」按钮的**颜色面板**里的「段落文字色 / 段落背景色」
+                 * （见 [com.corgimemo.app.ui.screens.inspiration.components.ColorStylePanel]），
+                 * 故此处不再传 onSetBlockColor。
                  *
                  * 可用态与回显（是否表头）由 JS 侧判定后经 `blockState` 上行，
                  * 见 [com.corgimemo.app.ui.screens.probe.BlockState]。
@@ -2124,47 +2172,17 @@ fun InspirationEditScreen(
             }
 
             /**
-             * 颜色对话框（底部工具栏「A」按钮）——v2026-09-21 重构为独立组件
+             * ⚠️ v2026-09-21：此处原有的「颜色」AlertDialog 弹窗接线已删除。
              *
-             * 四组色板（实现与说明见 [ColorStyleDialog]）：
-             * - **选中文字色 / 选中背景色**：行内 span 样式，只作用于**当前选区**内的文字，
-             *   下发 `format("textColor"/"backgroundColor", hex | "default")`；
-             *   即本次改名前的「文字颜色 / 背景颜色」，为避免与段落维度混淆而更名。
-             * - **段落文字色 / 段落背景色**：块级 props，作用于**光标所在整段**，
-             *   下发 `setBlockColor(…)`（色名）；这两项原先在 ⋮ 菜单的「背景色 / 文字色」，
-             *   本次整体移入本对话框，菜单侧对应入口已删除。
+             * 按需求，「A」按钮的展示形态改为与 T / Aa 一致的**内联面板**
+             * （[com.corgimemo.app.ui.screens.inspiration.components.ColorStylePanel]），
+             * 由 [InspirationEditBottomBar] 在"上行二c"槽位承载，无需在页面里再声明弹窗。
              *
-             * 四组色板视觉完全一致（默认斜杠点 + 9 个 BlockNote 官方预设色 + 暖橙选中描边），
-             * 点选即生效并关闭弹窗。
+             * 四组色板的回调与回显一并前移到上面 BottomBar 的调用参数里
+             * （onInlineTextColorSelect / onInlineBackgroundColorSelect /
+             *  onBlockTextColorSelect / onBlockBackgroundColorSelect，回显取 blockState），
+             * 故此处只留本说明不再有 UI。
              */
-            if (showColorStyleDialog) {
-                ColorStyleDialog(
-                    /* 段落色选中态回显：取自 JS 上行的当前光标块状态（行内色无状态上行，不回显） */
-                    currentBlockTextColor = blockNoteController.blockState.blockTextColor,
-                    currentBlockBackgroundColor = blockNoteController.blockState.blockBackgroundColor,
-                    /** 选中文字色：hex 自由值下发；null = 恢复默认（回落到主题文字色） */
-                    onPickInlineTextColor = { hex ->
-                        blockNoteController.format("textColor", hex ?: "default")
-                        showColorStyleDialog = false
-                    },
-                    /** 选中背景色：同上，作用维度为行内背景 */
-                    onPickInlineBackgroundColor = { hex ->
-                        blockNoteController.format("backgroundColor", hex ?: "default")
-                        showColorStyleDialog = false
-                    },
-                    /** 段落文字色：块级 props，仅传 textColor 维度（backgroundColor 传 null = 不改动） */
-                    onPickBlockTextColor = { name ->
-                        blockNoteController.setBlockColor(textColor = name ?: "default")
-                        showColorStyleDialog = false
-                    },
-                    /** 段落背景色：块级 props，仅传 backgroundColor 维度 */
-                    onPickBlockBackgroundColor = { name ->
-                        blockNoteController.setBlockColor(backgroundColor = name ?: "default")
-                        showColorStyleDialog = false
-                    },
-                    onDismiss = { showColorStyleDialog = false }
-                )
-            }
 
             /** 添加子任务弹窗 */
             if (showAddSubtaskDialog) {

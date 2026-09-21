@@ -159,10 +159,16 @@ fun RichTextFormatToolbar(
     onTransform: (String) -> Unit = {},
     /** 普通段落转换（+ 菜单 Paragraph；BlockNote 模式专用） */
     onTransformParagraph: () -> Unit = {},
-    /** 颜色按钮打开色板对话框（浮层 ColorStyleButton 桥接） */
-    onOpenColorStyleDialog: () -> Unit = {},
-    /** 显示色板对话框（受控态，由宿主持有） */
-    showColorStyleDialog: Boolean = false,
+    /**
+     * 颜色按钮（A）回调（v2026-09-21 改名，原 onOpenColorStyleDialog）：
+     * 切换**底部内联「颜色」面板**（[ColorStylePanel]）展开/收起。
+     *
+     * ⚠️ 语义变化：原名与弹窗模式绑定（打开 AlertDialog），现改为与 T / Aa 一致的面板切换；
+     * 调用方需同时收起另两个面板并收起软键盘（三者互斥占同一槽位）。
+     */
+    onColorPanelClick: () -> Unit = {},
+    /** 颜色面板是否展开（受控态，由宿主持有；用于 A 按钮激活态高亮，v2026-09-21 改名） */
+    isColorPanelOpen: Boolean = false,
     /** 块类型按钮可用性（BlockNote 模式 true；Compose 模式 false 置灰） */
     onTransformEnabled: Boolean = false,
     /** BlockNote 迁移（P1.5）：媒体插入请求（"image"/"video"/"audio"/"file" → 宿主选择器） */
@@ -180,7 +186,7 @@ fun RichTextFormatToolbar(
     /**
      * ⚠️ v2026-09-21 已删除 `onSetBlockColor` 参数：
      * 「背景色 / 文字色」两行**块级**色板由 ⋮ 菜单整体移入底部工具栏「A」按钮的
-     * 颜色对话框（更名为「段落背景色 / 段落文字色」，见 [ColorStyleDialog]），
+     * 颜色面板（更名为「段落背景色 / 段落文字色」，见 [ColorStylePanel]），
      * 本菜单不再保留块级颜色入口，故该回调一并移除。
      */
     /**
@@ -283,10 +289,14 @@ fun RichTextFormatToolbar(
         /**
          * ====== 第一分类区：WebView「浮动格式工具栏」11 键全量重桥（v2026-09-17） ======
          * 按用户要求：先彻底删除旧 11 键，再严格按浮层顺序与图标重建：
-         * T(字体面板) → Aa(字号颜色面板) → B(RiBold) → I(RiItalic) → U(RiUnderline) → S(RiStrikethrough)
-         * → 对齐×3(RiAlignLeft/Center/Right) → Color(A) → Nest(RiIndentIncrease) → UnNest(RiIndentDecrease) → Link(RiLink)。
+         * T(字体面板) → Aa(字号颜色面板) → A(颜色面板，v2026-09-21 移入) →
+         * B(RiBold) → I(RiItalic) → U(RiUnderline) → S(RiStrikethrough)
+         * → 对齐×3(RiAlignLeft/Center/Right) → Nest(RiIndentIncrease) → UnNest(RiIndentDecrease) → Link(RiLink)。
          * 图标取自 [com.corgimemo.app.ui.screens.probe.BlockNotePlusMenuIcons]（react-icons/ri 5.6.0，
          * 与浮层渲染逐字节同款）；区内不设分割线，竖线只出现在分类区之间；T / Aa 暂沿用原按钮不动。
+         *
+         * v2026-09-21 调整：原位于"对齐×3 之后"的 Color(A) 移到 Aa 正右侧，
+         * 使 T / Aa / A 三个"展开内联面板"的按钮相邻成组（浮层原始顺序则不再严格保持）。
          */
         FormatButtonGroup {
             /** T（字体面板，暂不动） */
@@ -302,6 +312,19 @@ fun RichTextFormatToolbar(
                 isActive = isSizeColorPanelOpen,
                 onClick = onSizeColorPanelClick,
                 contentDescription = "字号与颜色"
+            )
+            /**
+             * A（颜色面板，v2026-09-21 由"对齐×3 之后"移到 Aa 正右侧）
+             *
+             * 与 T / Aa 一样是"展开底部内联面板"的同类按钮，三者相邻便于识别；
+             * 面板形态也统一为内联面板（原为 AlertDialog 弹窗，已删除）。
+             * 图标沿用浮层 ColorStyleButton 的「A」字母样式（[FormatTextButton]）。
+             */
+            FormatTextButton(
+                label = "A",
+                isActive = isColorPanelOpen,
+                onClick = onColorPanelClick,
+                contentDescription = "颜色"
             )
             /** B（浮层 BasicTextStyleButton 同款 RiBold）：BlockNote 单档模式直接 toggle 加粗；
              *  Compose 模式保留 B1/B2/B3 字重菜单展开逻辑 */
@@ -364,13 +387,13 @@ fun RichTextFormatToolbar(
             RiFormatButton("RiAlignLeft", onClick = onAlignLeft, contentDescription = "左对齐")
             RiFormatButton("RiAlignCenter", onClick = onAlignCenter, contentDescription = "居中对齐")
             RiFormatButton("RiAlignRight", onClick = onAlignRight, contentDescription = "右对齐")
-            /** Color（浮层 ColorStyleButton 即「A」字母样式，文字按钮保持一致）：打开文字/背景色板对话框 */
-            FormatTextButton(
-                label = "A",
-                isActive = showColorStyleDialog,
-                onClick = onOpenColorStyleDialog,
-                contentDescription = "颜色"
-            )
+            /**
+             * ⚠️ v2026-09-21：原「A」颜色按钮（浮层 ColorStyleButton 同款「A」字母样式）
+             * 已从本分类区移出，改到 Aa 右侧（见第一分类区的 T → Aa → A 三连）——
+             * 三者同为"展开内联面板"的同类按钮，相邻放置更易识别；
+             * 且其展示形态已由 AlertDialog 弹窗改为与 T / Aa 一致的内联面板。
+             * 原位置不再保留副本（颜色入口保持唯一）。
+             */
             /**
              * Nest / UnNest（浮层 NestBlockButton / UnNestBlockButton 同款图标）
              *
@@ -510,7 +533,7 @@ fun RichTextFormatToolbar(
          * 故这些项在此提供唯一入口。
          *
          * ⚠️ v2026-09-21：「块颜色」已移出本菜单——块级颜色入口整体迁入底部工具栏
-         * 「A」按钮的颜色对话框（见 [ColorStyleDialog] 的「段落文字色 / 段落背景色」），
+         * 「A」按钮的颜色面板（见 [ColorStylePanel] 的「段落文字色 / 段落背景色」），
          * 因为颜色类操作集中在一处更符合直觉，也避免"两个地方都能改颜色"的困惑。
          *
          * 之所以合成**一个入口按钮 + 下拉菜单**而非多个独立按钮：表头需要两个开关、
@@ -832,7 +855,7 @@ private fun FormatWeightTierButton(
  * "块的位置"相关，且它们是**原手柄拖拽重排的替代品**。
  *
  * v2026-09-21：**块颜色两项已移出**——块级颜色入口整体迁入底部工具栏「A」按钮的
- * 颜色对话框（[ColorStyleDialog] 的「段落文字色 / 段落背景色」），故本菜单不再接收
+ * 颜色面板（[ColorStylePanel] 的「段落文字色 / 段落背景色」），故本菜单不再接收
  * `onSetBlockColor`，也不再自行判定明暗主题取色板色值。
  *
  * 可用态与回显全部取自 [blockState]（JS 侧判定后经 `blockState` 上行）：
@@ -913,8 +936,8 @@ private fun BlockOpsMenuButton(
 
             /**
              * ⚠️ v2026-09-21：原本此处有 HorizontalDivider + 「背景色 / 文字色」两行
-             * **块级**色板，现已整体移出本菜单，迁入底部工具栏「A」按钮的颜色对话框
-             * （更名为「段落背景色 / 段落文字色」，见 [ColorStyleDialog]）。
+             * **块级**色板，现已整体移出本菜单，迁入底部工具栏「A」按钮的颜色面板
+             * （更名为「段落背景色 / 段落文字色」，见 [ColorStylePanel]）。
              * 菜单里不再保留块级颜色入口，故此处的分隔线与两行色板一并删除。
              */
 

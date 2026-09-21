@@ -32,9 +32,11 @@
 - 约定：抑制期间**保留光标与选区**；解除只恢复"可唤起"能力，**不主动弹回**键盘。
 
 ## 颜色入口与色板组件（2026-09-21）
-- 入口唯一化：颜色全部集中在底部工具栏「A」按钮 → `ColorStyleDialog` 四组——**选中文字色 / 选中背景色**（行内，`format("textColor"/"backgroundColor", hex|"default")`）+ **段落文字色 / 段落背景色**（块级，`setBlockColor(textColor=/backgroundColor= 色名|"default")`）。⚠️ 两种维度不同、互不覆盖，别混。
+- 入口唯一化：颜色全部集中在底部工具栏「A」按钮（位于 **Aa 正右侧**，T → Aa → A → B 三连）→ 展开**内联面板 `ColorStylePanel`**（与 T/Aa **三面板互斥、同槽位、同高度=键盘高度**），四组色板——**选中文字色 / 选中背景色**（行内，`format("textColor"/"backgroundColor", hex|"default")`）+ **段落文字色 / 段落背景色**（块级，`setBlockColor(textColor=/backgroundColor= 色名|"default")`）。⚠️ 两种维度不同、互不覆盖，别混。
+- ⚠️ 「A」曾是 **AlertDialog 弹窗**（`ColorStyleDialog`，已删），v2026-09-21 按需求改为与 T/Aa 一致的内联面板；参数 `onOpenColorStyleDialog/showColorStyleDialog` 已改名 `onColorPanelClick/isColorPanelOpen`。面板内点选**不收起**（与 Aa 一致），靠「完成」或再点 A 收起。
+- 三面板互斥由宿主保证：`isFormatPanelOpen = isFontPanelExpanded || isSizeColorPanelExpanded || isColorPanelExpanded` → 同时驱动 WebView `suppressIme` 与标题消费指针（键盘让位，见「软键盘（IME）与面板让位」节）。
 - ⋮ 菜单（`BlockOpsMenuButton`）**已无颜色项**，只剩删除块 / 上移 / 下移 / 表头行·列；`onSetBlockColor` 参数链（Toolbar→BottomBar→Screen）已全部删除。
-- 共用色板 `components/BlockColorPicker.kt`：`internal BlockColorPalette`（BlockNote 官方明暗各 9 色 + `names`）/ `BlockColorRow`（标签 + 默认斜杠点 + 9 色点，色点行用 **FlowRow** 以适配 AlertDialog 窄宽度）/ `blockColorHexOf(name,isDark,background)`（色名→"#RRGGBB"，供行内色下行）/ private `BlockColorDot`。
+- 共用色板 `components/BlockColorPicker.kt`：`internal BlockColorPalette`（BlockNote 官方明暗各 9 色 + `names`）/ `BlockColorRow`（标签 + 默认斜杠点 + 9 色点，色点行用 **FlowRow** 以便在窄容器折行）/ `blockColorHexOf(name,isDark,background)`（色名→"#RRGGBB"，供行内色下行）/ private `BlockColorDot`。
 - 行内色**无状态上行**（桥未上行行内样式）→ 传 `showSelection=false`，否则「默认」恒高亮误导；块级色靠 `blockState.blockTextColor/blockBackgroundColor` 回显。
 
 ## 块级拖拽（自维护 fork BlocksReorderableList.kt）
