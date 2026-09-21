@@ -110,6 +110,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.corgimemo.app.ui.components.AppSnackbarHost
 import com.corgimemo.app.ui.screens.inspiration.components.DEFAULT_BODY_SP
+/** 底部内联面板标识（v2026-09-21）：T / Aa / A 三面板互斥所用的单一状态类型 */
+import com.corgimemo.app.ui.screens.inspiration.components.EditBottomPanel
 import com.corgimemo.app.ui.screens.inspiration.components.TEXT_COLORS
 /**
  * v2026-08-01 Phase 3：以下 import 已移除（关联改为 @ Trigger 内联插入）
@@ -197,13 +199,17 @@ fun InspirationEditScreen(
     var showLinkDialog by remember { mutableStateOf(false) }
     var linkDialogUrl by remember { mutableStateOf("https://") }
     /**
-     * 颜色面板展开/收起状态（v2026-09-21 新增，取代原 `showColorStyleDialog`）
+     * 当前展开的底部内联面板（v2026-09-21 收敛为单一状态，取代原先三个 boolean）
      *
-     * 由工具栏「A」按钮与面板头「完成」切换；与字体面板（T）、字号颜色面板（Aa）
-     * **三者互斥占同一槽位**（展开前先关另两个，见 [onColorPanelClick] 接线）；
-     * 展开期间与另两个面板一样抑制键盘（见 [isFormatPanelOpen]）。
+     * T / Aa / A 三个按钮各自展开一个面板（[EditBottomPanel]），三者**互斥且共用同一槽位**。
+     * 原先用 `isFontPanelExpanded` / `isSizeColorPanelExpanded` / `isColorPanelExpanded`
+     * 三个 boolean 表达，互斥只能靠"记得把另两个一并置 false"维持——真漏过一次
+     * （从 A 切到 T / Aa 时两个面板同时可见、把按钮行顶下去）。
+     *
+     * 收敛为可空枚举后，**互斥由状态本身保证**：任何时刻只可能有一个值，
+     * `openPanel != null` 即"有面板展开"（见 [isFormatPanelOpen]，驱动键盘抑制）。
      */
-    var isColorPanelExpanded by remember { mutableStateOf(false) }
+    var openPanel by remember { mutableStateOf<EditBottomPanel?>(null) }
 
     // 内容就绪（编辑模式 loadInspiration 完成 / 新建模式立即）→ 装载 WebView 编辑器（仅一次）
     androidx.compose.runtime.LaunchedEffect(contentLoaded) {
@@ -582,28 +588,12 @@ fun InspirationEditScreen(
     var isFormatExpanded by remember { mutableStateOf(false) }
 
     /**
-     * 字体选择面板展开/收起状态（v2026-09-03 新增）。
-     * 由工具栏「字体选择按钮」（B 左侧）与面板头「完成」按钮切换；
-     * 展开时同时收起软键盘（键盘与面板不同屏共存，面板占键盘位）；
-     * 展开期间由 [isFormatPanelOpen] 一并抑制正文与标题**重新唤起**键盘（v2026-09-21）。
-     */
-    var isFontPanelExpanded by remember { mutableStateOf(false) }
-
-    /**
-     * 字号与颜色面板展开/收起状态（v2026-09-04 新增）。
-     * 与字体面板**互斥占同一槽位**（展开前先关字体面板，由 [onSizeColorPanelClick] 保证）；
-     * 由工具栏「字号与颜色按钮」（字体按钮与 B 之间）与面板头「完成」切换；
-     * 展开时同时收起软键盘（键盘与面板不同屏共存，面板占键盘位）；
-     * 展开期间由 [isFormatPanelOpen] 一并抑制正文与标题**重新唤起**键盘（v2026-09-21）。
-     */
-    var isSizeColorPanelExpanded by remember { mutableStateOf(false) }
-
-    /**
-     * 是否存在任一面板展开（v2026-09-21 新增）
-     * = 字体面板（T）∨ 字号颜色面板（Aa）∨ 颜色面板（A）。
+     * 是否存在任一面板展开（v2026-09-21 新增；同日收敛为单一状态派生）
      *
-     * 三个面板经由 `isFontPanelOpen` / `isSizeColorPanelOpen` / `isColorPanelOpen`
-     * 传给底部栏，三者**互斥占同一槽位**（互斥切换在同一帧完成，故本派生值不会闪出 false）。
+     * 三个面板（T 字体 / Aa 字号颜色 / A 颜色）共用底部栏同一槽位，由**唯一**的
+     * [openPanel] 状态表达，故此处只需判空——不再存在"两个 boolean 同时为 true
+     * 导致面板叠加"的可能（旧写法正是三处互斥漏关一处而出的 bug）。
+     *
      * 本页面用它统一表达「键盘让位给面板」这一中间态：
      * - 正文 WebView → `suppressIme`，面板展开期间不响应 IME（否则键盘顶走面板、
      *   并把 WebView 视口压缩，见 [BlockNoteEditorWebView] 的 v1.11.9 记录）；
@@ -612,8 +602,7 @@ fun InspirationEditScreen(
      * 光标与选区能力**不受影响**：正文仍可点定位光标、长按选词、拖手柄多选，
      * 只是不再唤起软键盘（真机已验证）。
      */
-    val isFormatPanelOpen =
-        isFontPanelExpanded || isSizeColorPanelExpanded || isColorPanelExpanded
+    val isFormatPanelOpen = openPanel != null
 
     /** 软键盘控制器：展开字体面板前收起键盘（面板高度 = 键盘高度，二者不同屏共存） */
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -1258,8 +1247,8 @@ fun InspirationEditScreen(
             /** 灵感编辑页底部导航栏（6 按钮 + 可折叠格式工具栏） */
             InspirationEditBottomBar(
                 isFormatExpanded = isFormatExpanded,
-                isFontPanelOpen = isFontPanelExpanded,
-                isSizeColorPanelOpen = isSizeColorPanelExpanded,
+                /** 单一状态直传：三个面板的展开/互斥与按钮激活态都由它派生（v2026-09-21 收敛） */
+                openPanel = openPanel,
                 currentCjkId = pendingCjkFontId,
                 currentLatinId = pendingLatinFontId,
                 hasPendingChange = hasPendingFontChange,
@@ -1307,24 +1296,25 @@ fun InspirationEditScreen(
                     isFormatExpanded = !isFormatExpanded
                 },
                 /**
-                 * 字体选择按钮（工具栏 B 左侧，v2026-09-03 新增）：
+                 * 字体选择按钮（工具栏 T，v2026-09-03 新增）：
                  * 切换字体面板展开/收起；展开时先收起软键盘——键盘与面板不同屏共存，
                  * 面板高度 = 键盘高度（BottomBar 内 WindowInsets.ime 记录），展开即占据原键盘位。
                  *
                  * 展开后由 [isFormatPanelOpen] → `suppressIme` 继续压住键盘（v2026-09-21）：
                  * 用户此时在正文聚焦光标 / 多选也不会把键盘唤回来。
+                 *
+                 * 三面板互斥：写入 [openPanel] 即**天然替换**掉另两个面板——收敛前需手动把
+                 * 另两个 boolean 置 false，正是"从 A 切到 T / Aa 时面板叠加"的成因。
                  */
                 onFontPickerClick = {
-                    if (isFontPanelExpanded) {
-                        isFontPanelExpanded = false
+                    if (openPanel == EditBottomPanel.FONT) {
+                        openPanel = null
                     } else {
                         // 展开前把 pending 重置为当前内容字体（面板高亮与正文实际字体一致）
                         pendingCjkFontId = contentFontEntry.id
                         pendingLatinFontId = contentLatinFontId
-                        /** 与字号颜色面板互斥（二者占同一槽位，见 InspirationEditBottomBar） */
-                        isSizeColorPanelExpanded = false
                         keyboardController?.hide()
-                        isFontPanelExpanded = true
+                        openPanel = EditBottomPanel.FONT
                     }
                 },
                 /**
@@ -1344,27 +1334,26 @@ fun InspirationEditScreen(
                     if (cjkChanged || latinChanged) {
                         blockNoteController.setFontFamily(pendingCjkFontId)
                     }
-                    isFontPanelExpanded = false
+                    openPanel = null
                 },
                 /**
-                 * 字号与颜色按钮（v2026-09-04 新增，字体按钮与 B 之间）：
-                 * 切换字号颜色面板展开/收起；与字体面板**互斥**（展开前先关字体面板，
-                 * 二者占同一槽位）；展开时收起软键盘（面板高度 = 键盘高度，不同屏共存）。
+                 * 字号与颜色按钮（工具栏 Aa，位于 T 与 A 之间）：
+                 * 切换字号颜色面板展开/收起；与 T、A 两个面板**互斥**（由 [openPanel] 单一状态保证）；
+                 * 展开时收起软键盘（面板高度 = 键盘高度，不同屏共存）。
                  * 展开后同样由 [isFormatPanelOpen] 抑制键盘（v2026-09-21）。
                  */
                 onSizeColorPanelClick = {
-                    if (isSizeColorPanelExpanded) {
-                        isSizeColorPanelExpanded = false
+                    if (openPanel == EditBottomPanel.SIZE_COLOR) {
+                        openPanel = null
                     } else {
-                        isFontPanelExpanded = false
                         keyboardController?.hide()
-                        isSizeColorPanelExpanded = true
+                        openPanel = EditBottomPanel.SIZE_COLOR
                     }
                 },
                 /** 字号颜色面板头「完成」：收起面板（字号/颜色已即时生效，无 pending 两段式）；
                  *  收起即解除键盘抑制（v2026-09-21），但不主动弹回键盘 */
                 onSizeColorPanelDismiss = {
-                    isSizeColorPanelExpanded = false
+                    openPanel = null
                 },
                 /**
                  * 字号点选（即时生效，与加粗字重写入同构）：
@@ -1476,24 +1465,21 @@ fun InspirationEditScreen(
                 /**
                  * 颜色按钮（A）→ 切换**内联颜色面板**（v2026-09-21：原为打开 AlertDialog 弹窗）
                  *
-                 * 与 T / Aa 一致的三选一互斥：展开前先关另两个面板（同一帧完成，面板不闪），
-                 * 并收起软键盘——面板高度 = 键盘高度，二者不同屏共存；
+                 * 与 T / Aa 的互斥由 [openPanel] 单一状态保证（无需手动关另两个面板）；
+                 * 展开时收起软键盘——面板高度 = 键盘高度，二者不同屏共存；
                  * 展开后由 [isFormatPanelOpen] 继续抑制键盘。
                  */
                 onColorPanelClick = {
-                    if (isColorPanelExpanded) {
-                        isColorPanelExpanded = false
+                    if (openPanel == EditBottomPanel.COLOR) {
+                        openPanel = null
                     } else {
-                        isFontPanelExpanded = false
-                        isSizeColorPanelExpanded = false
                         keyboardController?.hide()
-                        isColorPanelExpanded = true
+                        openPanel = EditBottomPanel.COLOR
                     }
                 },
-                isColorPanelOpen = isColorPanelExpanded,
                 /** 颜色面板头「完成」：收起面板（颜色点选即时生效，无 pending 两段式） */
                 onColorPanelDismiss = {
-                    isColorPanelExpanded = false
+                    openPanel = null
                 },
                 /**
                  * 四组颜色点选（v2026-09-21）

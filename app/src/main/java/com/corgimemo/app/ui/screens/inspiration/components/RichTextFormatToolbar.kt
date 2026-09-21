@@ -96,9 +96,9 @@ import compose.icons.lucideicons.Type
  *
  * @param state 库的 RichTextState 实例
  * @param modifier Modifier
- * @param isFontPanelOpen 字体选择面板是否展开（字体按钮激活态高亮用）
+ * @param openPanel 当前展开的内联面板（null = 全部收起）；T / Aa / A 三个按钮的激活态
+ *   直接由它派生，互斥由状态本身保证（v2026-09-21 由三个 boolean 收敛而来，见 [EditBottomPanel]）
  * @param onFontPickerClick 字体选择按钮回调（展开/收起字体面板；同时由调用方收起软键盘）
- * @param isSizeColorPanelOpen 字号与颜色面板是否展开（字号颜色按钮激活态高亮用；与字体面板互斥）
  * @param onSizeColorPanelClick 字号与颜色按钮回调（展开/收起字号与颜色面板；同时由调用方收起软键盘）
  * @param onSetFontWeight 设置字重档位回调（参数为当前字体 [com.corgimemo.app.ui.theme.FontEntry.boldTiers] 候选档位；
  *      其中经像素探测无独立字形的档位在工具栏中置灰禁用，不会回调）
@@ -117,9 +117,15 @@ import compose.icons.lucideicons.Type
 fun RichTextFormatToolbar(
     state: RichTextState,
     modifier: Modifier = Modifier,
-    isFontPanelOpen: Boolean = false,
+    /**
+     * 当前展开的内联面板（null = 全部收起）
+     *
+     * v2026-09-21 由 `isFontPanelOpen` / `isSizeColorPanelOpen` / `isColorPanelOpen`
+     * 三个 boolean **收敛为单一状态**：T / Aa / A 三个按钮的激活态直接由它派生，
+     * 互斥由状态本身保证（见 [EditBottomPanel]）。
+     */
+    openPanel: EditBottomPanel? = null,
     onFontPickerClick: () -> Unit = {},
-    isSizeColorPanelOpen: Boolean = false,
     onSizeColorPanelClick: () -> Unit = {},
     onSetFontWeight: (Int) -> Unit,
     onToggleItalic: () -> Unit,
@@ -164,11 +170,9 @@ fun RichTextFormatToolbar(
      * 切换**底部内联「颜色」面板**（[ColorStylePanel]）展开/收起。
      *
      * ⚠️ 语义变化：原名与弹窗模式绑定（打开 AlertDialog），现改为与 T / Aa 一致的面板切换；
-     * 调用方需同时收起另两个面板并收起软键盘（三者互斥占同一槽位）。
+     * 三面板互斥已由上层收敛的单一 [openPanel] 状态保证，本回调无需关心另两个面板。
      */
     onColorPanelClick: () -> Unit = {},
-    /** 颜色面板是否展开（受控态，由宿主持有；用于 A 按钮激活态高亮，v2026-09-21 改名） */
-    isColorPanelOpen: Boolean = false,
     /** 块类型按钮可用性（BlockNote 模式 true；Compose 模式 false 置灰） */
     onTransformEnabled: Boolean = false,
     /** BlockNote 迁移（P1.5）：媒体插入请求（"image"/"video"/"audio"/"file" → 宿主选择器） */
@@ -302,14 +306,14 @@ fun RichTextFormatToolbar(
             /** T（字体面板，暂不动） */
             FormatIconButton(
                 imageVector = LucideIcons.Type,
-                isActive = isFontPanelOpen,
+                isActive = openPanel == EditBottomPanel.FONT,
                 onClick = onFontPickerClick,
                 contentDescription = "字体"
             )
             /** Aa（字号与颜色面板，暂不动） */
             FormatIconButton(
                 imageVector = LucideIcons.CaseSensitive,
-                isActive = isSizeColorPanelOpen,
+                isActive = openPanel == EditBottomPanel.SIZE_COLOR,
                 onClick = onSizeColorPanelClick,
                 contentDescription = "字号与颜色"
             )
@@ -322,7 +326,7 @@ fun RichTextFormatToolbar(
              */
             FormatTextButton(
                 label = "A",
-                isActive = isColorPanelOpen,
+                isActive = openPanel == EditBottomPanel.COLOR,
                 onClick = onColorPanelClick,
                 contentDescription = "颜色"
             )

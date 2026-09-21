@@ -39,17 +39,34 @@ import com.corgimemo.app.ui.screens.probe.BlockState
 import com.mohamedrejeb.richeditor.model.RichTextState
 
 /**
+ * 底部栏内联面板标识（v2026-09-21 新增）
+ *
+ * 「T / Aa / A」三个按钮各自展开一个面板，三者**互斥且共用同一槽位**
+ * （见 [InspirationEditBottomBar] 的"上行二 / 二b / 二c"）。
+ *
+ * **为什么用单一枚举而不是三个 boolean**：三个 boolean 之间的互斥只能靠调用方
+ * "记得把另两个一并置 false"来维持——v2026-09-21 就漏过一次（从 A 切到 T / Aa 时
+ * 两个面板同时可见、把下方按钮行顶下去）。收敛为「当前展开的是哪一个（或 null）」
+ * 之后，**互斥由状态本身保证**：任何时刻只可能有一个值，无处可漏。
+ *
+ * @property FONT 字体选择面板（工具栏 T，[FontPickerPanel]）
+ * @property SIZE_COLOR 字号与颜色面板（工具栏 Aa，[FontSizeColorPanel]）
+ * @property COLOR 颜色面板（工具栏 A，[ColorStylePanel]）
+ */
+enum class EditBottomPanel { FONT, SIZE_COLOR, COLOR }
+
+/**
  * 灵感编辑页底部导航栏
  *
  * 布局结构：
  * - 上行一（可折叠）：RichTextFormatToolbar（仅当 isFormatExpanded=true 时显示）
- * - 上行二（可折叠）：FontPickerPanel 字体选择面板（仅当 isFontPanelOpen=true 时显示，
+ * - 上行二（可折叠）：FontPickerPanel 字体选择面板（仅当 openPanel == FONT 时显示，
  *   高度 = 软键盘高度；展开时相机行被向下推开，见原型「工具栏/灵感编辑页字体选择面板.html」）
  * - 上行二b（可折叠）：FontSizeColorPanel 字号与颜色面板（v2026-09-04 新增，
- *   仅当 isSizeColorPanelOpen=true 时显示；与字体面板**互斥、占同一槽位、同高度**；
+ *   仅当 openPanel == SIZE_COLOR 时显示；与前后面板**互斥、占同一槽位、同高度**；
  *   字号/颜色点选即时生效，面板头只保留「完成」收起）
  * - 上行二c（可折叠）：ColorStylePanel 颜色面板（v2026-09-21 新增，
- *   仅当 isColorPanelOpen=true 时显示；与前两个面板**互斥、占同一槽位、同高度**；
+ *   仅当 openPanel == COLOR 时显示；与另两个面板**互斥、占同一槽位、同高度**；
  *   四组色板＝选中文字色/选中背景色（行内）+ 段落文字色/段落背景色（块级），
  *   点选即时生效且不收起面板，面板头只保留「完成」收起。
  *   由原「A」按钮的 AlertDialog 弹窗改造而来，展示形态与 T / Aa 统一）
@@ -73,8 +90,8 @@ import com.mohamedrejeb.richeditor.model.RichTextState
  * - 默认折叠（isFormatExpanded=false）
  *
  * @param isFormatExpanded 格式工具栏是否展开
- * @param isFontPanelOpen 字体选择面板是否展开
- * @param isSizeColorPanelOpen 字号与颜色面板是否展开（与字体面板互斥，由调用方保证）
+ * @param openPanel 当前展开的内联面板（null = 全部收起）；T / Aa / A 三者互斥占同一槽位，
+ *   由单一可空枚举表达，见 [EditBottomPanel]
  * @param currentCjkId 当前灵感的中文字体 id（面板回显选中态；空 = 系统默认字体）
  * @param currentLatinId 当前灵感的英文/数字字体 id（空 = 跟随中文，无选中高亮）
  * @param hasPendingChange 字体面板是否存在「已点选未应用」的改动
@@ -120,10 +137,15 @@ import com.mohamedrejeb.richeditor.model.RichTextState
 @Composable
 fun InspirationEditBottomBar(
     isFormatExpanded: Boolean,
-    isFontPanelOpen: Boolean,
-    isSizeColorPanelOpen: Boolean,
-    /** 颜色面板是否展开（v2026-09-21 新增；三面板互斥占同一槽位，由调用方保证） */
-    isColorPanelOpen: Boolean,
+    /**
+     * 当前展开的内联面板（null = 全部收起）
+     *
+     * v2026-09-21 由原先的 `isFontPanelOpen` / `isSizeColorPanelOpen` / `isColorPanelOpen`
+     * 三个 boolean **收敛为单一状态**：三个面板互斥占同一槽位（"上行二 / 二b / 二c"），
+     * 用可空枚举表达后互斥由状态本身保证，调用方无需再逐个置 false
+     * ——见 [EditBottomPanel] 的说明。
+     */
+    openPanel: EditBottomPanel?,
     currentCjkId: String,
     currentLatinId: String,
     hasPendingChange: Boolean,
@@ -267,9 +289,9 @@ fun InspirationEditBottomBar(
             ) {
                 RichTextFormatToolbar(
                     state = richTextState,
-                    isFontPanelOpen = isFontPanelOpen,
+                    /** 单一状态直接透传：三个面板按钮的激活态由 openPanel 派生（v2026-09-21） */
+                    openPanel = openPanel,
                     onFontPickerClick = onFontPickerClick,
-                    isSizeColorPanelOpen = isSizeColorPanelOpen,
                     onSizeColorPanelClick = onSizeColorPanelClick,
                     onSetFontWeight = onSetFontWeight,
                     onToggleItalic = onToggleItalic,
@@ -287,7 +309,6 @@ fun InspirationEditBottomBar(
                     onInsertMedia = onInsertMedia,
                     onOpenEmojiPicker = onOpenEmojiPicker,
                     onColorPanelClick = onColorPanelClick,
-                    isColorPanelOpen = isColorPanelOpen,
                     boldSingleTier = boldSingleTier,
                     canIncreaseIndent = canIncreaseIndent,
                     canDecreaseIndent = canDecreaseIndent,
@@ -314,7 +335,7 @@ fun InspirationEditBottomBar(
              * 下移到屏幕底部（位移 = 键盘高度），与原型交互一致。
              */
             AnimatedVisibility(
-                visible = isFontPanelOpen,
+                visible = openPanel == EditBottomPanel.FONT,
                 enter = expandVertically(),
                 exit = shrinkVertically()
             ) {
@@ -336,7 +357,7 @@ fun InspirationEditBottomBar(
              * 字号/颜色点选即时生效（SpanStyle 由调用方写入），面板头只保留「完成」收起。
              */
             AnimatedVisibility(
-                visible = isSizeColorPanelOpen,
+                visible = openPanel == EditBottomPanel.SIZE_COLOR,
                 enter = expandVertically(),
                 exit = shrinkVertically()
             ) {
@@ -365,7 +386,7 @@ fun InspirationEditBottomBar(
              * 收起由面板头「完成」或再点一次 A 按钮触发。
              */
             AnimatedVisibility(
-                visible = isColorPanelOpen,
+                visible = openPanel == EditBottomPanel.COLOR,
                 enter = expandVertically(),
                 exit = shrinkVertically()
             ) {
