@@ -41,8 +41,21 @@ private val HeadingCellGap = 8.dp
 /** 标题格子高度：44dp 保证触摸目标够大（Material 建议 ≥48dp，此处按面板空间折中） */
 private val HeadingCellHeight = 44.dp
 
-/** 面板内容左右内边距：与面板头标题左边缘对齐 */
+/** 面板内容左右内边距：与面板头标题左边缘对齐（亦与「A」面板的色板行同值 12dp） */
 private val HeadingPanelHorizontalPadding = 12.dp
+
+/**
+ * 分区标题的上下内边距（v2026-09-21 新增）
+ *
+ * 取 6dp，与「A」面板里 [BlockColorRow] 的 vertical padding **同值**——于是
+ * - 「分区标题 → 内容」= 6dp
+ * - 「相邻分区之间」= 上 6 + 下 6 = 12dp
+ * 与色板行的节奏逐项一致（用户要求"完全按 A 面板节奏"），故分区之间**不再需要额外 Spacer**。
+ */
+private val SectionTitleVerticalPadding = 6.dp
+
+/** 面板内容区上下留白（与「A」面板 [ColorStylePanel] 内容区一致，v2026-09-21） */
+private val HeadingPanelVerticalPadding = 4.dp
 
 /* ===== 正文字号档位（v2026-09-21 由 FontSizeColorPanel 迁入）===== */
 
@@ -101,28 +114,37 @@ private val CollapsibleHeadingItems = listOf(
 )
 
 /**
- * 编辑页「标题」面板（内联面板；v2026-09-21 新增）
+ * 编辑页「标题与字号」面板（内联面板；v2026-09-21 新增）
  *
  * 由 [InspirationEditBottomBar] 插入在「格式工具栏」与「相机行」之间，与
  * [FontPickerPanel]（T）、[ColorStylePanel]（A）
- * **四者互斥、占同一槽位、同高度**（面板高度 = 键盘高度，互斥切换不跳动）。
+ * **三者互斥、占同一槽位、同高度**（面板高度 = 键盘高度，互斥切换不跳动）。
  *
- * **来源**：原工具栏里的「组三 Headings（RiH1–RiH6）」与「组四 Subheadings（▸1–▸3）」
- * 九个按钮占用格式工具栏大量横向空间，按需求整体移入本面板并分两类呈现。
+ * **来源**：
+ * - 原工具栏「组三 Headings（RiH1–RiH6）」与「组四 Subheadings（▸1–▸3）」共 9 个按钮
+ *   占用格式工具栏大量横向空间，按需求整体移入本面板（分「普通标题 / 可折叠标题」两类）；
+ * - 原「Aa 字号与颜色」面板的**字号**部分迁入本面板，作为**正文字号**设置
+ *   （该面板 v2026-09-21 整体删除：字号迁此，颜色与「A」面板重叠）。
  *
  * **布局**：
- * - 面板头（40dp）：左「标题」标题 + 「点选即转换」提示，右「完成」文字按钮
+ * - 面板头（40dp）：左「标题与字号」标题 + 「点选即生效」提示，右「完成」文字按钮
  * - 分隔线（1dp，outlineVariant 50%）
- * - 内容区（`weight(1f)` + 纵向滚动）：
+ * - 内容区（`weight(1f)` + 纵向滚动），三个分区依次为：
+ *   - 「正文字号」：8 档一行 `SpaceBetween` 等分，每格 = [TextSizeIconName] 图标 + 档位数值
  *   - 「普通标题」：H1–H6 **6 格等分整行**
- *   - 「可折叠标题」：1 / 2 / 3，**格子宽度与上一行一致**（右侧用等权 Spacer 占位对齐网格）
+ *   - 「可折叠标题」：与上一行**同格宽**（右侧用等权 Spacer 占位对齐 6 列网格）
  *
- * **生效语义**（与 Aa / A 面板一致）：点选**即时生效且不收起面板**，收起由面板头
+ * **行距节奏**（v2026-09-21 用户要求"完全按「A」面板节奏"）：分区标题上下各
+ * [SectionTitleVerticalPadding]（6dp，与 [BlockColorRow] 的 vertical padding 同值）→
+ * 「标签 → 内容」6dp、「相邻分区之间」12dp；内容区上下留白 [HeadingPanelVerticalPadding]（4dp）；
+ * 因此**分区之间不放额外 Spacer**（放了就比 A 面板松）。
+ *
+ * **生效语义**（与 T / A 面板一致）：点选**即时生效且不收起面板**，收起由面板头
  * 「完成」或再点一次工具栏「H」按钮触发。转换结果为块级属性，重复点同一项即"再转换一次"。
  *
- * **不做激活态回显**：宿主从 `blockState` 只能拿到当前块类型（如 `heading`），
- * **拿不到标题级别**（桥未上行 level），无法判断"当前块是不是 H3"，故九个格子一律不高亮。
- * 若要回显，需要 JS 侧在 `blockState` 里补 heading level 字段（见方案建议）。
+ * **选中态回显**（v2026-09-21 已实现）：字号档位来自 `richTextState`（见 [currentFontSize]）；
+ * 标题格子来自 JS 上行的 `blockState.headingLevel` + `blockType`
+ * （⚠️ 两类标题必须靠 blockType 区分，级别数字 1/2/3 在两类里都有）。
  *
  * @param panelHeight 面板总高度（= 键盘高度；内容超出纵向滚动）
  * @param onTransform 块类型转换回调（参数为 action：heading1–6 / toggleHeading / toggleHeading2 / 3）
@@ -234,7 +256,11 @@ internal fun HeadingPanel(
                     .fillMaxWidth()
                     .weight(1f)
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = HeadingPanelHorizontalPadding)
+                    /** 左右 12dp 与「A」面板同值；上下 4dp 对齐其内容区留白（v2026-09-21） */
+                    .padding(
+                        horizontal = HeadingPanelHorizontalPadding,
+                        vertical = HeadingPanelVerticalPadding
+                    )
                     /** 锁定态视觉降级：与格式工具栏 disabled 态同款 38% 不透明度 */
                     .alpha(if (enabled) 1f else 0.38f)
                     .then(contentBlocker)
@@ -264,8 +290,6 @@ internal fun HeadingPanel(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-
                 /** ---- 第二类：普通标题（H1–H6，6 格等分整行） ---- */
                 HeadingSectionTitle(text = "普通标题")
                 Row(
@@ -282,8 +306,6 @@ internal fun HeadingPanel(
                         )
                     }
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
 
                 /**
                  * ---- 第三类：可折叠标题（图标沿用 RiH1–RiH3） ----
@@ -311,15 +333,19 @@ internal fun HeadingPanel(
                         Spacer(modifier = Modifier.weight(1f))
                     }
                 }
-
-                Spacer(modifier = Modifier.height(12.dp))
             }
         }
     }
 }
 
 /**
- * 分区标题（如「普通标题」/「可折叠标题」）
+ * 分区标题（如「正文字号」/「普通标题」/「可折叠标题」）
+ *
+ * 间距节奏对齐「A」面板（v2026-09-21 用户要求，参照 [ColorStylePanel] 里 [BlockColorRow] 的行结构）：
+ * - 标签字号同为 11sp、标签色同为 onSurfaceVariant；
+ * - 上下各 [SectionTitleVerticalPadding]（6dp，与色板行的 vertical padding 同值）→
+ *   「标签 → 内容」6dp、「相邻分区之间」12dp，逐项一致；
+ * - 因此分区之间**不放额外 Spacer**（放了就比 A 面板松）。
  *
  * @param text 分区名称
  */
@@ -329,7 +355,11 @@ private fun HeadingSectionTitle(text: String) {
         text = text,
         fontSize = 11.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(top = 8.dp, bottom = 8.dp, start = 2.dp)
+        modifier = Modifier.padding(
+            top = SectionTitleVerticalPadding,
+            bottom = SectionTitleVerticalPadding,
+            start = 2.dp
+        )
     )
 }
 
