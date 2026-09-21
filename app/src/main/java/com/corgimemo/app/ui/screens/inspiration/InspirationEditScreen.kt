@@ -95,6 +95,8 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+/** 面板展开期间消费标题点击所需（v2026-09-21）：指定 Initial 阶段 */
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -577,7 +579,8 @@ fun InspirationEditScreen(
     /**
      * 字体选择面板展开/收起状态（v2026-09-03 新增）。
      * 由工具栏「字体选择按钮」（B 左侧）与面板头「完成」按钮切换；
-     * 展开时同时收起软键盘（键盘与面板不同屏共存，面板占键盘位）。
+     * 展开时同时收起软键盘（键盘与面板不同屏共存，面板占键盘位）；
+     * 展开期间由 [isFormatPanelOpen] 一并抑制正文与标题**重新唤起**键盘（v2026-09-21）。
      */
     var isFontPanelExpanded by remember { mutableStateOf(false) }
 
@@ -585,9 +588,25 @@ fun InspirationEditScreen(
      * 字号与颜色面板展开/收起状态（v2026-09-04 新增）。
      * 与字体面板**互斥占同一槽位**（展开前先关字体面板，由 [onSizeColorPanelClick] 保证）；
      * 由工具栏「字号与颜色按钮」（字体按钮与 B 之间）与面板头「完成」切换；
-     * 展开时同时收起软键盘（键盘与面板不同屏共存，面板占键盘位）。
+     * 展开时同时收起软键盘（键盘与面板不同屏共存，面板占键盘位）；
+     * 展开期间由 [isFormatPanelOpen] 一并抑制正文与标题**重新唤起**键盘（v2026-09-21）。
      */
     var isSizeColorPanelExpanded by remember { mutableStateOf(false) }
+
+    /**
+     * 是否存在任一面板展开（v2026-09-21 新增）= 字体面板 ∨ 字号颜色面板。
+     *
+     * 这两个面板经由 `isFontPanelOpen` / `isSizeColorPanelOpen` 传给底部栏，二者
+     * **互斥占同一槽位**（同一槽位切换在同一帧完成，故本派生值不会闪出 false）。
+     * 本页面用它统一表达「键盘让位给面板」这一中间态：
+     * - 正文 WebView → `suppressIme`，面板展开期间不响应 IME（否则键盘顶走面板、
+     *   并把 WebView 视口压缩，见 [BlockNoteEditorWebView] 的 v1.11.9 记录）；
+     * - 顶部标题输入框 → 面板展开期间消费指针事件，点击不聚焦、自然不弹键盘。
+     *
+     * 光标与选区能力**不受影响**：正文仍可点定位光标、长按选词、拖手柄多选，
+     * 只是不再唤起软键盘（真机已验证）。
+     */
+    val isFormatPanelOpen = isFontPanelExpanded || isSizeColorPanelExpanded
 
     /** 软键盘控制器：展开字体面板前收起键盘（面板高度 = 键盘高度，二者不同屏共存） */
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -1284,6 +1303,9 @@ fun InspirationEditScreen(
                  * 字体选择按钮（工具栏 B 左侧，v2026-09-03 新增）：
                  * 切换字体面板展开/收起；展开时先收起软键盘——键盘与面板不同屏共存，
                  * 面板高度 = 键盘高度（BottomBar 内 WindowInsets.ime 记录），展开即占据原键盘位。
+                 *
+                 * 展开后由 [isFormatPanelOpen] → `suppressIme` 继续压住键盘（v2026-09-21）：
+                 * 用户此时在正文聚焦光标 / 多选也不会把键盘唤回来。
                  */
                 onFontPickerClick = {
                     if (isFontPanelExpanded) {
@@ -1304,6 +1326,9 @@ fun InspirationEditScreen(
                  * 格式工具栏字重按钮（B1/B2/B3 档位 + 像素探测可用态）随 [ContentFontManager]
                  * 同步，面板保持展开以便连续点选多款字体对比；**无改动 = 收起面板**
                  * （键盘不自动弹回，由输入框焦点决定）。
+                 *
+                 * 面板收起即解除键盘抑制（[isFormatPanelOpen] → false，v2026-09-21）：
+                 * 仅恢复"可唤起"能力，不主动弹回键盘——用户再点一次正文/标题即恢复输入。
                  */
                 onFontPanelDismiss = {
                     val cjkChanged = pendingCjkFontId != contentFontEntry.id
@@ -1318,6 +1343,7 @@ fun InspirationEditScreen(
                  * 字号与颜色按钮（v2026-09-04 新增，字体按钮与 B 之间）：
                  * 切换字号颜色面板展开/收起；与字体面板**互斥**（展开前先关字体面板，
                  * 二者占同一槽位）；展开时收起软键盘（面板高度 = 键盘高度，不同屏共存）。
+                 * 展开后同样由 [isFormatPanelOpen] 抑制键盘（v2026-09-21）。
                  */
                 onSizeColorPanelClick = {
                     if (isSizeColorPanelExpanded) {
@@ -1328,7 +1354,8 @@ fun InspirationEditScreen(
                         isSizeColorPanelExpanded = true
                     }
                 },
-                /** 字号颜色面板头「完成」：收起面板（字号/颜色已即时生效，无 pending 两段式） */
+                /** 字号颜色面板头「完成」：收起面板（字号/颜色已即时生效，无 pending 两段式）；
+                 *  收起即解除键盘抑制（v2026-09-21），但不主动弹回键盘 */
                 onSizeColorPanelDismiss = {
                     isSizeColorPanelExpanded = false
                 },
@@ -1741,7 +1768,31 @@ fun InspirationEditScreen(
                                 textToolbar.hide()
                             }
                         }
-                    },
+                    }
+                    /**
+                     * 面板展开期间禁用标题点击（v2026-09-21）：
+                     * 「T / Aa」面板以键盘高度占据键盘位，此时若点标题重新聚焦，
+                     * 软键盘会把面板顶走（与正文 [suppressIme] 同一诉求）。
+                     *
+                     * 在 `PointerEventPass.Initial` 阶段（父→子）消费指针事件即可，
+                     * BasicTextField 的点击定位手势走 Main 阶段，拿不到事件自然不聚焦。
+                     * **不采用 `enabled = false`**：那会连带把文字/占位符切成禁用色、
+                     * 并强行清掉已有焦点；本写法视觉零变化，展开/收起各一个状态切换。
+                     */
+                    .then(
+                        if (isFormatPanelOpen) {
+                            Modifier.pointerInput(Unit) {
+                                awaitPointerEventScope {
+                                    while (true) {
+                                        awaitPointerEvent(PointerEventPass.Initial)
+                                            .changes.forEach { it.consume() }
+                                    }
+                                }
+                            }
+                        } else {
+                            Modifier
+                        }
+                    ),
                 placeholder = {
                     Text(
                         "标题",
@@ -1961,7 +2012,14 @@ fun InspirationEditScreen(
                         }
                     },
                 /** 唯一真值：内容区实际生效背景色（Transparent 已在源头回落为主题 background） */
-                backgroundColor = contentBackgroundColor
+                backgroundColor = contentBackgroundColor,
+                /**
+                 * 面板展开期间抑制软键盘（v2026-09-21）：
+                 * 用户在正文中聚焦光标 / 多选时不再唤起 IME，键盘不会把「T / Aa」面板
+                 * 顶走、也不会压缩 WebView 视口；**光标与选区能力完全保留**。
+                 * 收起面板后本参数回 false，键盘不主动弹回（用户再点正文即恢复）。
+                 */
+                suppressIme = isFormatPanelOpen
             )
 
             /**

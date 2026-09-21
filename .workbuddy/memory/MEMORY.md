@@ -25,6 +25,12 @@
 - 分割线五按钮工具条 256dp；DividerStyle↔markdown "---"/"--- dashed"/"--- wavy"。
 - TaskList 行级（v2026-09-16 定稿）：单段落+段内 \n；checked=行0，checkedLines=行≥1；命中=行首；withCheckedLines 换新实例（deepCopy 带行级状态）；reconcileCheckedLines 行数变清 checkedLines（行0保留）后必恢复 textRange；parser 编码逐行前缀、连续同层级并段续行。
 
+## 软键盘（IME）与面板让位（2026-09-21）
+- 灵感编辑页「T 字体面板 / Aa 字号颜色面板」展开 = 键盘让位：派生值 `isFormatPanelOpen = isFontPanelExpanded || isSizeColorPanelExpanded`（二者互斥占同一槽位，同一帧切换故不会闪 false）→ 正文 WebView 传 `suppressIme`；标题 RichTextEditor 用 `PointerEventPass.Initial` 消费指针（点击不聚焦⇒不弹键盘，**勿用 enabled=false**：会切禁用色并清焦点）。
+- 抑制软键盘四层（缺一不可，互兜）：① setter 变化即 hideSoftInputFromWindow（windowToken 需空值守卫）；② onCreateInputConnection→null；③ onCheckIsTextEditor→false；④ 页面注入 `inputmode="none"`（Chromium 官方抑制语义）+ MutationObserver 持续补标、按 data-ime-prev 精确还原。
+- 实现类 `private ImeSuppressibleWebView`（BlockNoteEditorWebView.kt），JS 注入必须覆盖三时机：状态变化 / onPageFinished / 桥 ready（此时编辑器 DOM 才挂载）。
+- 约定：抑制期间**保留光标与选区**；解除只恢复"可唤起"能力，**不主动弹回**键盘。
+
 ## 块级拖拽（自维护 fork BlocksReorderableList.kt）
 - settle() 改「抓快照→立即 onSettle→滑行交 BlocksGlideController」；拖拽期间绝不能改列表（库 intervals 定长）；itemKey 身兼身份锚定+滑行归属+zIndex。
 

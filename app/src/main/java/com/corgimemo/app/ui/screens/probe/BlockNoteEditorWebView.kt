@@ -6,6 +6,10 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.ViewGroup
+/** 软键盘抑制（v2026-09-21）：WebView 子类拦截输入连接所需 */
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
+import android.view.inputmethod.InputMethodManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -325,6 +329,14 @@ class BlockNoteBridgeController {
                     val build = msg.optString("build", "unknown")
                     Log.d(TAG, "ready received | build=$build")
                     ready = true
+                    /**
+                     * v2026-09-21：编辑器挂载完成后补一次「软键盘抑制」注入。
+                     *
+                     * 抑制可能在编辑器 DOM 就绪**之前**就已开启（宿主进页即展开面板），
+                     * 那时注入的脚本查不到 `.bn-editor`；此处 ready 保证 DOM 已存在，
+                     * 是补打标记最可靠的时机（另有 onPageFinished 与状态变化两个时机）。
+                     */
+                    (webView as? ImeSuppressibleWebView)?.applyImeSuppression()
                     mainHandler.post { flushIfReady() }
                 }
                 "changed" -> {
@@ -386,6 +398,12 @@ class BlockNoteBridgeController {
  * @param backgroundColor 宿主编辑区实际背景色（v1.9）：由宿主下行到 JS，
  *   让 WebView 内部 `.bn-editor` 与 body 与宿主主题背景一致，消除"画中画"白底框；
  *   同时作为 WebView 自身底色兜底，避免首帧未绘制时透出色差。
+ * @param suppressIme 是否抑制软键盘（v2026-09-21 新增）。
+ *   宿主底部工具栏的「T 字体面板」「Aa 字号颜色面板」展开期间传 true——
+ *   两个面板高度 = 键盘高度、占据键盘位，若用户在正文里聚焦光标 / 多选时
+ *   键盘再弹出来，会把面板顶走并让 WebView 视口被压缩（v1.11.9 曾因此触发
+ *   失控循环）。抑制期间**焦点与选区功能完全保留**，只是不唤起 IME；
+ *   传回 false 时解除抑制，但**不主动弹回键盘**（由用户下次点正文触发）。
  */
 @Composable
 fun BlockNoteEditorWebView(
@@ -393,6 +411,7 @@ fun BlockNoteEditorWebView(
     onMarkdownChanged: (String) -> Unit,
     modifier: Modifier = Modifier,
     backgroundColor: Color = Color.Unspecified,
+    suppressIme: Boolean = false,
 ) {
     val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
 
@@ -443,7 +462,15 @@ fun BlockNoteEditorWebView(
             },
             onRelease = { controller.webView = null },
             /** 主题背景变化时同步刷新 WebView 底色（v1.9） */
-            update = { wv -> wv.setBackgroundColor(effectiveBackground.toArgb()) },
+            update = { wv ->
+                wv.setBackgroundColor(effectiveBackground.toArgb())
+                /**
+                 * 软键盘抑制态同步（v2026-09-21）：`update` 每次重组都会调用，
+                 * 而 [ImeSuppressibleWebView.isImeSuppressed] 的 setter 自带
+                 * 「值未变则直接返回」守卫，因此不会产生重复的 JS 注入与 IME 隐藏。
+                 */
+                (wv as? ImeSuppressibleWebView)?.isImeSuppressed = suppressIme
+            },
             /**
              * ⚠️ 必须是 `fillMaxWidth()` 而非 `fillMaxSize()`（v1.9.1 修复）：
              * 外层 Box 已改为「不 fill、让宿主高度约束生效」，但如果内层 AndroidView 仍
@@ -499,7 +526,7 @@ private fun createEditorWebView(
 ): WebView {
     val appContext = context.applicationContext
 
-    val webView = WebView(context).apply {
+    val webView = ImeSuppressibleWebView(context).apply {
         layoutParams = ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
@@ -534,6 +561,11 @@ private fun createEditorWebView(
         webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 Log.d(TAG, "page finished: $url")
+                /**
+                 * v2026-09-21：页面加载完成后补一次「软键盘抑制」注入。
+                 * 页面重载（或首帧早于抑制开启）会丢掉此前的标记，此处兜住。
+                 */
+                (view as? ImeSuppressibleWebView)?.applyImeSuppression()
             }
 
             /** S5：字体流拦截——res/font 字体以流回给 WebView（字体单份存储，零体积增量） */
@@ -573,4 +605,168 @@ private fun createEditorWebView(
     }
     controller.webView = webView
     return webView
+}
+
+/**
+ * 注入脚本中「抑制开关」的占位符：执行前由 [ImeSuppressibleWebView.applyImeSuppression]
+ * 替换为 true / false。用占位符而非字符串拼接，是为了让整段脚本保持可读的 raw string。
+ */
+private const val IME_SUPPRESS_FLAG = "__CORGI_IME_SUPPRESS_FLAG__"
+
+/**
+ * 软键盘抑制脚本（v2026-09-21）
+ *
+ * **为什么除了原生拦截还要在页面里打标记**：
+ * Android WebView 的软键盘由 Chromium（AwContents）**主动**请求，Kotlin 侧的
+ * `onCreateInputConnection` 拦截只能让输入法拿不到输入连接，个别 ROM / 输入法
+ * 仍会把键盘面板拉起来。`inputmode="none"` 则是 Chromium 官方支持的键盘抑制语义
+ * （Web 侧"自绘键盘"应用的标准做法）：在**聚焦之前**给可编辑元素打上该属性，
+ * 浏览器自己就不会请求软键盘——两道保险互兜。
+ *
+ * **为什么用 MutationObserver 而不是一次性打标**：
+ * BlockNote 的编辑器 DOM 由 JS 动态挂载，切换块类型时局部节点还会重建，
+ * 一次性打标会被"新节点"绕过。抑制期间挂 observer，任何新出现的可编辑节点、
+ * 以及 `contenteditable` 属性被改写的节点，都会立刻补上 `inputmode="none"`；
+ * 解除抑制时断开 observer，并把 `inputmode` 还原为打标前的原值。
+ *
+ * **幂等性**：脚本自带 `window.__corgiImeSuppress` 状态位，重复注入只更新开关、
+ * 不叠加 observer；`data-ime-prev` 记录原始属性值，故还原是精确的。
+ */
+private const val IME_SUPPRESS_SCRIPT = """
+(function () {
+  var S = window.__corgiImeSuppress || (window.__corgiImeSuppress = { on: false, obs: null });
+  var ON = __CORGI_IME_SUPPRESS_FLAG__;
+  S.on = ON;
+
+  function mark(root) {
+    if (!root || root.nodeType !== 1) return;
+    var list = [];
+    if (root.matches && root.matches('[contenteditable="true"], .bn-editor')) list.push(root);
+    if (root.querySelectorAll) {
+      list = list.concat(Array.prototype.slice.call(
+        root.querySelectorAll('[contenteditable="true"], .bn-editor')));
+    }
+    list.forEach(function (el) {
+      if (el.getAttribute('inputmode') === 'none') return;
+      if (el.getAttribute('data-ime-prev') === null) {
+        el.setAttribute('data-ime-prev', el.getAttribute('inputmode') || '');
+      }
+      el.setAttribute('inputmode', 'none');
+    });
+  }
+
+  function unmark() {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-ime-prev]'), function (el) {
+      var prev = el.getAttribute('data-ime-prev');
+      if (prev) el.setAttribute('inputmode', prev); else el.removeAttribute('inputmode');
+      el.removeAttribute('data-ime-prev');
+    });
+  }
+
+  if (ON) {
+    mark(document.body);
+    if (!S.obs && window.MutationObserver && document.documentElement) {
+      S.obs = new MutationObserver(function (records) {
+        if (!S.on) return;
+        records.forEach(function (r) {
+          if (r.type === 'attributes') mark(r.target);
+          Array.prototype.forEach.call(r.addedNodes, function (n) { mark(n); });
+        });
+      });
+      S.obs.observe(document.documentElement, {
+        childList: true, subtree: true, attributes: true, attributeFilter: ['contenteditable']
+      });
+    }
+  } else {
+    if (S.obs) { S.obs.disconnect(); S.obs = null; }
+    unmark();
+  }
+})();
+"""
+
+/**
+ * 可抑制软键盘的编辑器 WebView（v2026-09-21 新增）
+ *
+ * 背景：灵感编辑页底部工具栏的「T 字体面板 / Aa 字号颜色面板」展开时，面板以
+ * 「键盘高度」占据键盘位（见 InspirationEditBottomBar 的 keyboardHeight 记录逻辑）。
+ * 此时用户在正文里聚焦光标 / 多选，Chromium 会请求软键盘 → 键盘把面板顶走，
+ * 并压缩 WebView 视口（v1.11.9 的"视口坍缩到一行高"正由该正反馈引发）。
+ *
+ * 因此这里提供「保留编辑能力、屏蔽 IME」的状态，[isImeSuppressed] = true 时：
+ * 1. 立刻隐藏当前键盘；
+ * 2. [onCreateInputConnection] 返回 null（输入法拿不到输入连接，不建立编辑会话）；
+ * 3. [onCheckIsTextEditor] 返回 false（系统输入法框架不再视其为可输入控件，
+ *    连"尝试显示键盘"都不会做）；
+ * 4. 向页面注入 `inputmode="none"`（Chromium 侧就不再请求键盘）。
+ *
+ * 传回 false 时全部解除，且**不主动弹回键盘**——沿用宿主既定约定：面板收起后
+ * 键盘由输入框焦点决定，用户再点一次正文即恢复。
+ *
+ * ⚠️ 本状态**不影响光标与选区**：WebView 的点击定位光标、长按选词、拖动选择手柄
+ * 都由其自身的触摸手势与渲染层承担，与 IME 无关；`onCheckIsTextEditor` 只被
+ * 系统输入法框架用于判断"要不要弹键盘"。
+ *
+ * 回退点（若个别 ROM 上出现"选择手柄 / 浮动工具条异常"）：把
+ * [onCreateInputConnection] 与 [onCheckIsTextEditor] 两个 override 注释掉即可退到
+ * 「JS `inputmode` + 主动隐藏键盘」两道，焦点与选区完全走原生默认路径。
+ */
+private class ImeSuppressibleWebView(context: Context) : WebView(context) {
+
+    /** 是否抑制软键盘（宿主面板展开期间为 true） */
+    var isImeSuppressed: Boolean = false
+        set(value) {
+            /** 值未变直接返回：`AndroidView.update` 每次重组都会赋值，此处必须幂等 */
+            if (field == value) return
+            field = value
+            /** 打开抑制时先收掉"可能已经弹出来"的键盘，再做后面两道拦截 */
+            if (value) hideImeNow()
+            applyImeSuppression()
+            Log.d(TAG, "ime suppress = " + value)
+        }
+
+    /**
+     * 抑制期间不返回输入连接：输入法拿不到 InputConnection 便不会建立编辑会话，
+     * 因而不会弹出键盘面板。
+     */
+    override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
+        if (isImeSuppressed) {
+            Log.d(TAG, "onCreateInputConnection: suppressed")
+            return null
+        }
+        return super.onCreateInputConnection(outAttrs)
+    }
+
+    /** 抑制期间对外声明"不是文本编辑器"，避免系统输入法框架主动尝试拉起键盘 */
+    override fun onCheckIsTextEditor(): Boolean {
+        if (isImeSuppressed) return false
+        return super.onCheckIsTextEditor()
+    }
+
+    /**
+     * 立即隐藏软键盘（幂等：键盘未显示时为空操作）。
+     *
+     * ⚠️ `windowToken` 为空表示视图尚未 attach 到窗口，此时把 null 传给
+     * `hideSoftInputFromWindow` 会抛 IllegalArgumentException，故先做空值守卫。
+     */
+    fun hideImeNow() {
+        val token = windowToken ?: return
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            ?: return
+        imm.hideSoftInputFromWindow(token, 0)
+    }
+
+    /**
+     * 把当前抑制状态注入页面（脚本见 [IME_SUPPRESS_SCRIPT]）。
+     *
+     * 调用时机有三个，缺一不可：
+     * 1. [isImeSuppressed] 变化时——即时生效；
+     * 2. `onPageFinished`——页面重载后标记会丢失；
+     * 3. 桥 `ready` 上行后——编辑器 DOM 此时才真正挂载（进页即展开面板的场景）。
+     *
+     * ⚠️ 必须在主线程调用（`evaluateJavascript` 的要求）；上述三个时机都在主线程。
+     */
+    fun applyImeSuppression() {
+        val flag = if (isImeSuppressed) "true" else "false"
+        evaluateJavascript(IME_SUPPRESS_SCRIPT.replace(IME_SUPPRESS_FLAG, flag), null)
+    }
 }
