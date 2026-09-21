@@ -20,6 +20,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -63,6 +66,9 @@ import com.corgimemo.app.ui.theme.ThemeManager
  * @param onPickBlockTextColor 段落文字色点选回调；参数为 BlockNote 色名，null = 清除
  * @param onPickBlockBackgroundColor 段落背景色点选回调；参数为 BlockNote 色名，null = 清除
  * @param onDone 点击面板头「完成」（收起面板）
+ * @param enabled 面板**内容区**是否可用（v2026-09-21 新增）：宿主锁定态传 false——
+ *   四组色板整片降到 38% 不透明度，并在 `PointerEventPass.Initial` 阶段拦截点击
+ *   （与格式工具栏的 `toolbarEnabled` 口径一致）。⚠️ 面板头「完成」不受影响。
  * @param modifier Modifier
  */
 @Composable
@@ -75,8 +81,28 @@ internal fun ColorStylePanel(
     onPickBlockTextColor: (String?) -> Unit,
     onPickBlockBackgroundColor: (String?) -> Unit,
     onDone: () -> Unit,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    /**
+     * 禁用态拦截（仅内容区）：锁定态下四组色板不接受点击。
+     *
+     * ⚠️ 必须用 `PointerEventPass.Initial`（父→子阶段）——色点的 `clickable` 在
+     * `Main` 阶段（子→父）响应，在 `Main` 阶段拦不住子级，
+     * 与 [RichTextFormatToolbar] 的 `disabledBlocker` 同一范式。
+     */
+    val contentBlocker = if (enabled) {
+        Modifier
+    } else {
+        Modifier.pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                }
+            }
+        }
+    }
+
     /**
      * 明暗判定口径与 [com.corgimemo.app.ui.screens.probe.BlockNoteEditorWebView] 及
      * 原 ⋮ 菜单色板保持一致：`"dark" / "light"` 是显式指定，其余（如 system）跟随系统。
@@ -149,6 +175,9 @@ internal fun ColorStylePanel(
                     .weight(1f)
                     .verticalScroll(rememberScrollState())
                     .padding(vertical = 4.dp)
+                    /** 锁定态视觉降级：与格式工具栏 disabled 态同款 38% 不透明度 */
+                    .alpha(if (enabled) 1f else 0.38f)
+                    .then(contentBlocker)
             ) {
                 /** 第一组：选中文字色（行内）——无状态上行，关闭选中回显 */
                 BlockColorRow(

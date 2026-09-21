@@ -1377,6 +1377,20 @@ fun InspirationEditScreen(
                     openPanel = null
                 },
                 /**
+                 * 标题按钮（H，v2026-09-21 新增）→ 切换**内联标题面板**
+                 *
+                 * 面板内的 9 个标题键（普通标题 H1–H6 / 可折叠标题 1–3）复用既有的
+                 * 块类型转换回调 [onTransform] 下发 `heading1`–`heading6` / `toggleHeading` 系列，
+                 * 因此这里只负责开关面板，无新增下行通道。
+                 */
+                onHeadingPanelClick = {
+                    togglePanel(EditBottomPanel.HEADING)
+                },
+                /** 标题面板头「完成」：收起面板（标题点选即转换块类型，无 pending 两段式） */
+                onHeadingPanelDismiss = {
+                    openPanel = null
+                },
+                /**
                  * 字号点选（即时生效，与加粗字重写入同构）：
                  * 先枚举清除全部档位字号（removeSpanStyle 仅在值匹配时生效，防叠加残留），
                  * 再写目标档；点默认档（[DEFAULT_BODY_SP] = 16sp）只清除不写入（回落正文默认）。

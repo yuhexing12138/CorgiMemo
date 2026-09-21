@@ -76,14 +76,16 @@ import compose.icons.lucideicons.Type
  * 提供完整的文本格式化操作，与库的 RichTextState 配合使用（BlockNote 模式经回调桥接 WebView）。
  * 分类区之间以竖线分隔，分类区内部不设分割线：
  *
- * **功能分组**（v2026-09-17 按浮层格式工具栏重桥）:
+ * **功能分组**（v2026-09-17 按浮层格式工具栏重桥；分组内容 v2026-09-21 有调整）:
  * 1. **第一分类区（浮动格式工具栏 11 键全量桥接，图标与顺序严格一致）**:
  *    T(字体面板)、Aa(字号颜色面板)、B(RiBold)、I(RiItalic)、U(RiUnderline)、S(RiStrikethrough)、
  *    对齐×3(RiAlignLeft/Center/Right)、Color(A)、Nest(RiIndentIncrease)、UnNest(RiIndentDecrease)、Link(RiLink)
- * 2. **Headings**: H1–H6（+ 菜单同款 Ri 图标）
- * 3. **Subheadings**: 可折叠标题 ▸1–3
- * 4. **Basic blocks**: 有序/无序/任务列表、段落、代码块、分割线、引用、折叠列表、分页
- * 5. **Advanced / Media / Others**: 表格；图片/视频/音频/文件；表情
+ *    ＋ v2026-09-21 增补 H(标题面板)，插在 Aa 与 A 之间
+ * 2. **Basic blocks**: 有序/无序/任务列表、段落、代码块、分割线、引用、折叠列表、分页
+ * 3. **Advanced / Media / Others**: 表格；图片/视频/音频/文件；表情
+ *
+ * ⚠️ v2026-09-21 移除「Headings（RiH1–RiH6）」与「Subheadings（可折叠标题 ▸1–▸3）」两组：
+ * 这 9 个按键整体移入 H 按钮展开的 [HeadingPanel]（分「普通标题 / 可折叠标题」两类）。
  *
  * 加粗按钮交互：点击 B 展开同行 B1/B2/B3 子按钮（候选档位由当前字体 [com.corgimemo.app.ui.theme.FontEntry.boldTiers] 给出），其余按钮被推开；
  * 档位是否真正可用由 [FontWeightProbe] 运行时像素探测决定，探测不到独立字形的档位按钮置灰禁用；
@@ -96,10 +98,11 @@ import compose.icons.lucideicons.Type
  *
  * @param state 库的 RichTextState 实例
  * @param modifier Modifier
- * @param openPanel 当前展开的内联面板（null = 全部收起）；T / Aa / A 三个按钮的激活态
+ * @param openPanel 当前展开的内联面板（null = 全部收起）；T / Aa / H / A 四个按钮的激活态
  *   直接由它派生，互斥由状态本身保证（v2026-09-21 由三个 boolean 收敛而来，见 [EditBottomPanel]）
  * @param onFontPickerClick 字体选择按钮回调（展开/收起字体面板；同时由调用方收起软键盘）
  * @param onSizeColorPanelClick 字号与颜色按钮回调（展开/收起字号与颜色面板；同时由调用方收起软键盘）
+ * @param onHeadingPanelClick 标题按钮回调（展开/收起标题面板；同时由调用方收起软键盘）
  * @param onSetFontWeight 设置字重档位回调（参数为当前字体 [com.corgimemo.app.ui.theme.FontEntry.boldTiers] 候选档位；
  *      其中经像素探测无独立字形的档位在工具栏中置灰禁用，不会回调）
  * @param onToggleItalic 斜体回调
@@ -127,6 +130,14 @@ fun RichTextFormatToolbar(
     openPanel: EditBottomPanel? = null,
     onFontPickerClick: () -> Unit = {},
     onSizeColorPanelClick: () -> Unit = {},
+    /**
+     * 标题按钮（H）回调（v2026-09-21 新增）：切换**底部内联「标题」面板**
+     * （[HeadingPanel]）展开/收起。
+     *
+     * 面板内的 9 个标题键（普通标题 H1–H6 / 可折叠标题 1–3）经既有的
+     * [onTransform] 下发 action，故本回调只负责开关面板。
+     */
+    onHeadingPanelClick: () -> Unit = {},
     onSetFontWeight: (Int) -> Unit,
     onToggleItalic: () -> Unit,
     onToggleUnderline: () -> Unit,
@@ -159,7 +170,9 @@ fun RichTextFormatToolbar(
     onToggleCodeSpan: () -> Unit = {},
     /**
      * 块类型转换/插入（BlockNote 迁移 P1-S10 补充）：
-     * action = heading1/heading2/heading3/quote/codeBlock/table/pageBreak/paragraph。
+     * action = heading1–heading6 / toggleHeading / toggleHeading2 / toggleHeading3
+     * （这三组标题 action 现由「标题面板」[HeadingPanel] 调用，共用本通道）
+     * / quote / codeBlock / table / pageBreak / paragraph / toggleList。
      * Compose 模式（useBlockNote=false）传空实现即可——按钮由调用方置灰。
      */
     onTransform: (String) -> Unit = {},
@@ -318,10 +331,23 @@ fun RichTextFormatToolbar(
                 contentDescription = "字号与颜色"
             )
             /**
-             * A（颜色面板，v2026-09-21 由"对齐×3 之后"移到 Aa 正右侧）
+             * H（标题面板，v2026-09-21 新增）
              *
-             * 与 T / Aa 一样是"展开底部内联面板"的同类按钮，三者相邻便于识别；
-             * 面板形态也统一为内联面板（原为 AlertDialog 弹窗，已删除）。
+             * 原工具栏「组三 Headings（RiH1–RiH6）」与「组四 Subheadings（▸1–▸3）」
+             * 共 9 个按钮整体移入本按钮展开的 [HeadingPanel]（分「普通标题 / 可折叠标题」两类）；
+             * 图标沿用浮层的「H」字母样式（[FormatTextButton]）。
+             */
+            FormatTextButton(
+                label = "H",
+                isActive = openPanel == EditBottomPanel.HEADING,
+                onClick = onHeadingPanelClick,
+                contentDescription = "标题"
+            )
+            /**
+             * A（颜色面板，v2026-09-21 由"对齐×3 之后"移到 Aa 右侧——现位于 H 的右侧）
+             *
+             * 与 T / Aa / H 一样是"展开底部内联面板"的同类按钮，四个相邻便于识别
+             * （顺序 T → Aa → H → A）；面板形态也统一为内联面板（原为 AlertDialog 弹窗，已删除）。
              * 图标沿用浮层 ColorStyleButton 的「A」字母样式（[FormatTextButton]）。
              */
             FormatTextButton(
@@ -431,26 +457,14 @@ fun RichTextFormatToolbar(
 
         ToolbarDivider()
 
-        /** ====== 组三：Headings（+ 菜单 Headings 分类，Ri 同款图标） ====== */
-        FormatButtonGroup {
-            RiFormatButton("RiH1", onClick = { onTransform("heading1") }, contentDescription = "标题 1", enabled = onTransformEnabled)
-            RiFormatButton("RiH2", onClick = { onTransform("heading2") }, contentDescription = "标题 2", enabled = onTransformEnabled)
-            RiFormatButton("RiH3", onClick = { onTransform("heading3") }, contentDescription = "标题 3", enabled = onTransformEnabled)
-            RiFormatButton("RiH4", onClick = { onTransform("heading4") }, contentDescription = "标题 4", enabled = onTransformEnabled)
-            RiFormatButton("RiH5", onClick = { onTransform("heading5") }, contentDescription = "标题 5", enabled = onTransformEnabled)
-            RiFormatButton("RiH6", onClick = { onTransform("heading6") }, contentDescription = "标题 6", enabled = onTransformEnabled)
-        }
-
-        ToolbarDivider()
-
-        /** ====== 组四：Subheadings（可折叠标题，+ 菜单 Subheadings 分类） ====== */
-        FormatButtonGroup {
-            FormatTextButton("▸1", isActive = false, onClick = { onTransform("toggleHeading") }, contentDescription = "可折叠标题 1", enabled = onTransformEnabled)
-            FormatTextButton("▸2", isActive = false, onClick = { onTransform("toggleHeading2") }, contentDescription = "可折叠标题 2", enabled = onTransformEnabled)
-            FormatTextButton("▸3", isActive = false, onClick = { onTransform("toggleHeading3") }, contentDescription = "可折叠标题 3", enabled = onTransformEnabled)
-        }
-
-        ToolbarDivider()
+        /**
+         * ⚠️ v2026-09-21：原本此处是「组三 Headings（RiH1–RiH6）」与
+         * 「组四 Subheadings（▸1–▸3）」两组共 9 个按钮，已**整体移入工具栏「H」按钮
+         * 展开的标题面板**（[HeadingPanel]，分「普通标题 / 可折叠标题」两类呈现）。
+         * 原因：这 9 键占用本行大量横向空间，而块类型转换属低频操作，
+         * 收进面板后格式工具栏明显变短、常用格式键更易触达。
+         * 原来的两组分隔线随之一并删除，此处只保留组二 ↔ 组五之间的一道。
+         */
 
         /** ====== 组五：Basic blocks（+ 菜单 Basic blocks 分类；图标与 + 菜单同款并按其顺序排列） ====== */
         FormatButtonGroup {

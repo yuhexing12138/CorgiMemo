@@ -41,19 +41,21 @@ import com.mohamedrejeb.richeditor.model.RichTextState
 /**
  * 底部栏内联面板标识（v2026-09-21 新增）
  *
- * 「T / Aa / A」三个按钮各自展开一个面板，三者**互斥且共用同一槽位**
- * （见 [InspirationEditBottomBar] 的"上行二 / 二b / 二c"）。
+ * 「T / Aa / H / A」四个按钮各自展开一个面板，四者**互斥且共用同一槽位**
+ * （见 [InspirationEditBottomBar] 的"上行二 / 二b / 二c / 二d"）。
  *
- * **为什么用单一枚举而不是三个 boolean**：三个 boolean 之间的互斥只能靠调用方
- * "记得把另两个一并置 false"来维持——v2026-09-21 就漏过一次（从 A 切到 T / Aa 时
+ * **为什么用单一枚举而不是多个 boolean**：多个 boolean 之间的互斥只能靠调用方
+ * "记得把其余一并置 false"来维持——v2026-09-21 就漏过一次（从 A 切到 T / Aa 时
  * 两个面板同时可见、把下方按钮行顶下去）。收敛为「当前展开的是哪一个（或 null）」
  * 之后，**互斥由状态本身保证**：任何时刻只可能有一个值，无处可漏。
  *
  * @property FONT 字体选择面板（工具栏 T，[FontPickerPanel]）
  * @property SIZE_COLOR 字号与颜色面板（工具栏 Aa，[FontSizeColorPanel]）
  * @property COLOR 颜色面板（工具栏 A，[ColorStylePanel]）
+ * @property HEADING 标题面板（工具栏 H，[HeadingPanel]；v2026-09-21 新增，
+ *   收纳原工具栏「Headings H1–H6」与「Subheadings 可折叠标题 1–3」共 9 键）
  */
-enum class EditBottomPanel { FONT, SIZE_COLOR, COLOR }
+enum class EditBottomPanel { FONT, SIZE_COLOR, COLOR, HEADING }
 
 /**
  * 灵感编辑页底部导航栏
@@ -70,6 +72,10 @@ enum class EditBottomPanel { FONT, SIZE_COLOR, COLOR }
  *   四组色板＝选中文字色/选中背景色（行内）+ 段落文字色/段落背景色（块级），
  *   点选即时生效且不收起面板，面板头只保留「完成」收起。
  *   由原「A」按钮的 AlertDialog 弹窗改造而来，展示形态与 T / Aa 统一）
+ * - 上行二d（可折叠）：HeadingPanel 标题面板（v2026-09-21 新增，
+ *   仅当 openPanel == HEADING 时显示；与另三个面板**互斥、占同一槽位、同高度**；
+ *   分「普通标题 H1–H6」「可折叠标题 1–3」两类，点选即转换为对应块类型且不收起面板。
+ *   收纳原格式工具栏里的 9 个标题键，使工具栏变短）
  * - 下行（始终显示）：6 个核心按钮
  *   - 📷 相机（onPhotoClick）
  *   - 🎤 麦克风（onVoiceClick）
@@ -81,9 +87,11 @@ enum class EditBottomPanel { FONT, SIZE_COLOR, COLOR }
  * **交互规则**：
  * - 只有 ⋮ 按钮切换工具栏展开/折叠
  * - 字体选择按钮（工具栏 T）切换字体面板展开/收起，同时由调用方收起软键盘
- * - 字号与颜色按钮（工具栏 Aa，位于 T 与 A 之间）切换字号颜色面板展开/收起，与另两面板互斥，同时由调用方收起软键盘
- * - 颜色按钮（工具栏 A，位于 Aa 与 B 之间，v2026-09-21 由"对齐×3 之后"移入）切换颜色面板展开/收起，同样互斥
- * - 三个面板展开期间**键盘让位**（v2026-09-21）：调用方据此抑制正文 WebView 与顶部标题
+ * - 字号与颜色按钮（工具栏 Aa，位于 T 与 H 之间）切换字号颜色面板展开/收起，与其余面板互斥，同时由调用方收起软键盘
+ * - 标题按钮（工具栏 H，位于 Aa 与 A 之间，v2026-09-21 新增）切换标题面板展开/收起，同样互斥
+ * - 颜色按钮（工具栏 A，位于 H 与 B 之间）切换颜色面板展开/收起，同样互斥；
+ *   四个按钮连排（T → Aa → H → A），都是"展开底部内联面板"的同类入口
+ * - 四个面板展开期间**键盘让位**（v2026-09-21）：调用方据此抑制正文 WebView 与顶部标题
  *   重新唤起软键盘，避免键盘把面板顶走、并压缩 WebView 视口；面板收起后仅恢复
  *   "可唤起"能力，不主动弹回键盘
  * - 其他按钮的操作不影响工具栏状态
@@ -110,6 +118,8 @@ enum class EditBottomPanel { FONT, SIZE_COLOR, COLOR }
  * @param onFontPanelDismiss 字体面板头按钮回调（「应用」= 应用字体不收起；「完成」= 收起面板）
  * @param onSizeColorPanelClick 字号与颜色按钮回调（切换面板展开/收起；调用方同时收起软键盘、关字体面板）
  * @param onSizeColorPanelDismiss 字号颜色面板头「完成」回调（收起面板）
+ * @param onHeadingPanelClick 标题按钮回调（v2026-09-21 新增：切换标题面板展开/收起；调用方同时收起软键盘）
+ * @param onHeadingPanelDismiss 标题面板头「完成」回调（收起面板）
  * @param onFontSizeSelect 字号点选回调（参数为档位 sp；调用方写 fontSize SpanStyle，点选即时生效）
  * @param onPresetColorSelect 预设色点选回调（参数为 TEXT_COLORS 下标；调用方写 color SpanStyle）
  * @param onCustomColorSelect 自定义取色回调（拖动每帧回调，参数 "#RRGGBB"）
@@ -167,6 +177,10 @@ fun InspirationEditBottomBar(
     onFontPanelDismiss: () -> Unit,
     onSizeColorPanelClick: () -> Unit,
     onSizeColorPanelDismiss: () -> Unit,
+    /** 标题按钮（H）回调（v2026-09-21 新增）：切换**底部内联标题面板**（[HeadingPanel]）展开/收起 */
+    onHeadingPanelClick: () -> Unit = {},
+    /** 标题面板头「完成」回调（收起面板；标题点选即转换块类型，无 pending 两段式） */
+    onHeadingPanelDismiss: () -> Unit = {},
     onFontSizeSelect: (Int) -> Unit,
     onPresetColorSelect: (Int) -> Unit,
     onCustomColorSelect: (String) -> Unit,
@@ -289,10 +303,11 @@ fun InspirationEditBottomBar(
             ) {
                 RichTextFormatToolbar(
                     state = richTextState,
-                    /** 单一状态直接透传：三个面板按钮的激活态由 openPanel 派生（v2026-09-21） */
+                    /** 单一状态直接透传：四个面板按钮的激活态由 openPanel 派生（v2026-09-21） */
                     openPanel = openPanel,
                     onFontPickerClick = onFontPickerClick,
                     onSizeColorPanelClick = onSizeColorPanelClick,
+                    onHeadingPanelClick = onHeadingPanelClick,
                     onSetFontWeight = onSetFontWeight,
                     onToggleItalic = onToggleItalic,
                     onToggleUnderline = onToggleUnderline,
@@ -399,7 +414,36 @@ fun InspirationEditBottomBar(
                     onPickInlineBackgroundColor = onInlineBackgroundColorSelect,
                     onPickBlockTextColor = onBlockTextColorSelect,
                     onPickBlockBackgroundColor = onBlockBackgroundColorSelect,
-                    onDone = onColorPanelDismiss
+                    onDone = onColorPanelDismiss,
+                    /** 锁定态内容区置灰并拦点击（v2026-09-21）：与格式工具栏同一口径 */
+                    enabled = toolbarEnabled
+                )
+            }
+
+            /**
+             * 上行二d：标题面板（v2026-09-21 新增）
+             *
+             * 与 T / Aa / A 三个面板**四者互斥、占同一槽位、同高度**（同用 keyboardHeight）。
+             *
+             * 来源：原格式工具栏的「组三 Headings（RiH1–RiH6）」与「组四 Subheadings
+             * （▸1–▸3）」共 9 个按键——它们占满工具栏一行、挤走常用格式键，按需求整体移入本面板，
+             * 并按「普通标题 / 可折叠标题」两类呈现。
+             *
+             * 点选即转换块类型（走既有的 [onTransform]，无需新增下行通道）且**不收起面板**，
+             * 与 Aa / A 的交互一致；收起由面板头「完成」或再点一次 H 按钮触发。
+             */
+            AnimatedVisibility(
+                visible = openPanel == EditBottomPanel.HEADING,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                HeadingPanel(
+                    panelHeight = keyboardHeight,
+                    /** 9 个标题键复用既有的块类型转换通道（action = heading1–6 / toggleHeading 系列） */
+                    onTransform = onTransform,
+                    onDone = onHeadingPanelDismiss,
+                    /** 锁定态内容区置灰并拦点击（v2026-09-21）：与格式工具栏同一口径 */
+                    enabled = toolbarEnabled
                 )
             }
 
