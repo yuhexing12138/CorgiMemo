@@ -317,8 +317,34 @@ class BlockNoteBridgeController {
         return arr
     }
 
+    /**
+     * 上行消息入口（JS → Kotlin），消息格式见 docs/bridge-protocol.md
+     *
+     * ⚠️ **线程模型（v2026-09-21 起统一）**：本方法由 `@JavascriptInterface` 调用，
+     * 运行在 WebView 的 **Java 桥线程**；而 WebView 的任何方法
+     * （`evaluateJavascript` / `loadUrl` / `setBackgroundColor` …）都只能在 **UI 线程**调用，
+     * 否则抛 IllegalStateException。若该异常发生在某个分支内，会被下方的 `catch`
+     * 静默吞掉，**连带该分支后续语句也不再执行**。真案例：`ready` 分支里同步调用
+     * `evaluateJavascript` → `flushIfReady()` 不再执行 → `init` 永不下发 →
+     * JS 侧 `booted` 恒为 false → 正文区一直停在「正在装载…」。
+     *
+     * 因此这里把**整条消息一次性 post 到主线程再解析**，将「线程正确性」收敛为入口处
+     * 唯一一处约定：以后往 [handleUpMessageOnMainThread] 里加逻辑（尤其是调用 WebView
+     * 方法）都不必再逐个分支 post，也不会踩同一个坑。
+     */
     internal fun handleUpMessage(json: String) {
+        /** 日志留在桥线程打：时间戳更贴近 JS 真实上行时刻，便于与前端 console 对齐 */
         Log.d(TAG, "up(${json.take(120)})")
+        mainHandler.post { handleUpMessageOnMainThread(json) }
+    }
+
+    /**
+     * 上行消息的实际处理（**保证运行在 UI 线程**，由 [handleUpMessage] post 进入）。
+     *
+     * 拆成独立方法而非直接写在 lambda 里：既让上面那条线程约定显式可见，
+     * 也让异常栈能直接指出是"上行消息处理"出错。
+     */
+    private fun handleUpMessageOnMainThread(json: String) {
         try {
             val msg = JSONObject(json)
             when (msg.optString("type")) {
@@ -337,28 +363,24 @@ class BlockNoteBridgeController {
                      * 是补打标记最可靠的时机（另有 onPageFinished 与状态变化两个时机）。
                      */
                     (webView as? ImeSuppressibleWebView)?.applyImeSuppression()
-                    mainHandler.post { flushIfReady() }
+                    flushIfReady()
                 }
                 "changed" -> {
                     val md = msg.optString("markdown")
                     latestMarkdown = md
-                    mainHandler.post { onMarkdownChanged?.invoke(md) }
+                    onMarkdownChanged?.invoke(md)
                 }
                 "undoState" -> {
                     // v1.7：撤销/重做可用态上行 → 驱动宿主按钮 enabled（Compose 快照态，主线程安全）
-                    val u = msg.optBoolean("canUndo", false)
-                    val r = msg.optBoolean("canRedo", false)
-                    mainHandler.post {
-                        canUndo = u
-                        canRedo = r
-                    }
+                    canUndo = msg.optBoolean("canUndo", false)
+                    canRedo = msg.optBoolean("canRedo", false)
                 }
                 "blockState" -> {
                     // v1.11：当前光标块状态上行 → 驱动宿主工具栏的
                     // 删除块 / 块颜色 / 表头行 / 表头列 四个入口的可用态与回显。
-                    // 一次性构造后整体赋值，避免多次 post 造成中间态（如颜色已改而可用态未改）。
+                    // 一次性构造后整体赋值，避免多次赋值造成中间态（如颜色已改而可用态未改）。
                     // 注意 optString 对缺失字段返回 ""，正好与 BlockState 的默认值语义一致。
-                    val st = BlockState(
+                    blockState = BlockState(
                         blockType = msg.optString("blockType"),
                         canSetBlockColor = msg.optBoolean("canSetBlockColor", false),
                         blockTextColor = msg.optString("blockTextColor"),
@@ -367,7 +389,6 @@ class BlockNoteBridgeController {
                         isHeaderRow = msg.optBoolean("isHeaderRow", false),
                         isHeaderCol = msg.optBoolean("isHeaderCol", false),
                     )
-                    mainHandler.post { blockState = st }
                 }
                 "diagnostic" ->
                     /**
@@ -759,11 +780,15 @@ private class ImeSuppressibleWebView(context: Context) : WebView(context) {
      * 把当前抑制状态注入页面（脚本见 [IME_SUPPRESS_SCRIPT]）。
      *
      * 调用时机有三个，缺一不可：
-     * 1. [isImeSuppressed] 变化时——即时生效；
-     * 2. `onPageFinished`——页面重载后标记会丢失；
+     * 1. [isImeSuppressed] 变化时（来自 `AndroidView.update`，UI 线程）——即时生效；
+     * 2. `onPageFinished`（UI 线程）——页面重载后标记会丢失；
      * 3. 桥 `ready` 上行后——编辑器 DOM 此时才真正挂载（进页即展开面板的场景）。
      *
-     * ⚠️ 必须在主线程调用（`evaluateJavascript` 的要求）；上述三个时机都在主线程。
+     * ⚠️ 必须在 **UI 线程**调用：`evaluateJavascript` 等 WebView 方法对线程有硬性要求，
+     * 在别的线程调用会抛 IllegalStateException（若发生在桥回调里，会被 `handleUpMessage`
+     * 的 catch 静默吞掉，连带后续语句也不执行——正是「正文卡在正在装载…」的成因）。
+     * 三个时机都在 UI 线程：前两个本身就在（`AndroidView.update` / `onPageFinished`），
+     * 第三个由 [handleUpMessage] 在入口处统一 post 到主线程（见其线程模型说明）。
      */
     fun applyImeSuppression() {
         val flag = if (isImeSuppressed) "true" else "false"

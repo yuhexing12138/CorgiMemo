@@ -54,6 +54,8 @@
 - ⚠️ 「JS 改了真机没生效」第一反应=产物没重建。判据：git log -1 比对源码 vs 产物；产物 diff「N增N删」是假象（vite 重排短变量名），绝不用 diff 行数判断，用关键字计数；仍不生效再排 WebView 缓存（卸载重装/清数据）。
 - 构建指纹 __BUILD_FINGERPRINT__ 随 ready 上行，logcat `ready received | build=...` 查新鲜度。
 - Bridge：下行 evaluateJavascript("window.BlockNoteEditorHost.onMessage(<json>)");上行 AndroidBridge.postMessage(json)；协议 docs/bridge-protocol.md（ready/changed/error/undoState）。
+- ⚠️ **桥回调在 Java 桥线程**（2026-09-21 实测踩坑，已结构性加固）：`@JavascriptInterface` 的 `AndroidBridge.postMessage` → `handleUpMessage` 运行在 WebView 的 Java 桥线程，其中**任何 WebView 方法（evaluateJavascript / loadUrl / setBackgroundColor）都只能在 UI 线程调用**。现已在入口统一 `mainHandler.post` 再解析（`handleUpMessage` 切线程 → `handleUpMessageOnMainThread` 处理），新增分支不必再单独 post，**别拆散这层包装**。踩坑实例：在 `ready` 分支同步调 evaluateJavascript → IllegalStateException 被 catch 吞掉 → `flushIfReady()` 不执行 → `init` 永不下发 → JS `booted` 恒 false → 正文一直「正在装载…」。
+- ⚠️ JS 侧 `booted` 只在收到 `init` 下行时置真（EditorApp.tsx `case "init"`）；装载文案在 JS、开关在 Kotlin——排查 WebView 问题先分清两端状态。
 - ⚠️ 撤销/重做可用态只能用 editor.canExec(command)——editor.can 不存在（v1.7→v1.10 按钮恒灰真根因）。命令必须从扩展取（getExtension("yUndo")??getExtension("history") 的 undoCommand/redoCommand），不能传 editor.undo（丢 this）也不能传 @tiptap/pm/history 裸 undo；别读 _tiptapEditor；canExec 在 editor.transact() 内会抛。
 - 样式约束（最终态，改前必看）：
   - padding-inline 用 var(--bn-editor-gutter,20px)!important（左右同值；20px 是嵌套列表竖线 left:-20px 下限）；右侧 54px 官方手柄位在手机全宽浪费，sideMenu={false} 整体删除（BlockNote 块拖拽纯 HTML5 DnD，Android WebView 触摸不触发→手机拖不动，改工具栏上移/下移）。
