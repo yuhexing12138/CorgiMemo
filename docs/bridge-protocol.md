@@ -35,7 +35,7 @@
 | `ready` | `{}` | 编辑器脚本就绪并已绑定下行宿主（Kotlin 侧解除 loading、随后发 `init`） |
 | `changed` | `{ markdown }` | 内容变更快照；**JS 侧防抖 800ms**；由 `blocksToMd` 生成（含分割线样式编码） |
 | `undoState` | `{ canUndo, canRedo }` | 撤销/重做可用态（v1.7）；历史栈变化后上报，宿主左上角按钮据此置灰 |
-| `blockState` | `{ blockType, headingLevel?, canSetBlockColor, blockTextColor?, blockBackgroundColor?, canToggleHeader, isHeaderRow, isHeaderCol }` | 当前光标块状态（v1.11；`headingLevel` 为 v2026-09-21 新增）。驱动宿主工具栏「块操作」菜单的可用态与回显、以及「标题面板」的选中态。`headingLevel`：`blockType === "heading"` → 1–6；`blockType` 以 `toggleHeading` 开头 → 1–3（1 级兜底 1）；非标题块 → 0。**仅在状态变化时上报**（JS 侧按 JSON 串去重） |
+| `blockState` | `{ blockType, headingLevel?, fontSizePx?, canSetBlockColor, blockTextColor?, blockBackgroundColor?, canToggleHeader, isHeaderRow, isHeaderCol }` | 当前光标块状态（v1.11；`headingLevel`/`fontSizePx` 为 v2026-09-21 新增）。驱动宿主工具栏「块操作」菜单的可用态与回显、以及「标题面板」的选中态。`headingLevel`：`blockType === "heading"` → 1–6；`blockType` 以 `toggleHeading` 开头 → 1–3（1 级兜底 1）；非标题块 → 0。`fontSizePx`：当前选区字号（`getActiveStyles().fontSize` 的 `"18px"` 解析为整数；WebView 内 1px=1dp，数值与宿主 sp 档位对应）；0 = 无字号样式（宿主回落默认档 16）。**仅在状态变化时上报**（JS 侧按 JSON 串去重） |
 | `error` | `{ message }` | JS 异常上报（Kotlin 侧打 logcat / 展示错误态） |
 
 > `ready` 载荷自 v1.8 起带可选 `build` 字段（构建指纹，见下），故其类型为 `{ build?: string }`。
@@ -210,4 +210,17 @@ adb logcat -s BlockNoteEditor:V | grep "ready received"
   Kotlin 侧 `BlockState` 增加 `headingLevel: Int = 0`（缺省 0 = 不高亮），
   `HeadingPanel` 用 `blockType` 分流 + `headingLevel` 定位格子。字段**可选**：
   旧 JS 产物（未带上行）时 `optInt(…, 0)` 兜底为 0，宿主行为退化为"无回显"，不会异常。
+
+- v2026-09-21（同日续）：**`blockState` 新增可选字段 `fontSizePx`**（供 H 面板「正文字号」档位回显）。
+
+  **动机**：字号档位回显原先从 `richTextState.currentSpanStyle` 派生——那是旧
+  Compose 编辑器的状态，正文迁 WebView 后恒 Unspecified，高亮永远停在默认档 16
+  （用户观察："点字号档连选中态高亮都没有"）。现由 JS 侧 `pushBlockState` 带上
+  `getActiveStyles().fontSize`（`"18px"` 形式）解析的整数，0 = 无样式；
+  Kotlin `BlockState.fontSizeSp` 接收（`optInt(…, 0)` 兜底，旧产物兼容），
+  Screen 的 `currentFontSizeSp` 改从 blockState 派生（0 → 回落默认档 16）。
+
+  ⚠️ 行内样式的**选区语义**：光标无选区时 `addStyles({fontSize})` 只设置
+  "输入中样式"（影响后续输入的文字），**已显示的正文不变**——与加粗/斜体等
+  行内格式一致；要改已有文字的字号需先选中文字。
 

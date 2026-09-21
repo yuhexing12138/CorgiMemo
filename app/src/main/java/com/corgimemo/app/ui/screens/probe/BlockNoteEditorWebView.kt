@@ -84,6 +84,12 @@ data class BlockState(
     val blockType: String = "",
     /** 标题级别（v2026-09-21 新增）：heading → 1–6；toggleHeading* → 1–3；非标题块 → 0 */
     val headingLevel: Int = 0,
+    /**
+     * 当前选区字号档位（v2026-09-21 新增；H 面板「正文字号」高亮回显）：
+     * JS 侧 `getActiveStyles().fontSize`（"18px" 形式）解析的整数——
+     * WebView 内 1px=1dp，数值与宿主的 sp 档位直接对应；0 = 无字号样式（默认档 16）。
+     */
+    val fontSizeSp: Int = 0,
     val canSetBlockColor: Boolean = false,
     val blockTextColor: String = "",
     val blockBackgroundColor: String = "",
@@ -414,6 +420,8 @@ class BlockNoteBridgeController {
                         blockType = msg.optString("blockType"),
                         /** v2026-09-21：标题级别（缺失/非法时 0 → 面板不高亮任何格子） */
                         headingLevel = msg.optInt("headingLevel", 0),
+                        /** v2026-09-21：选区字号（0 = 无样式 → 宿主回落默认档） */
+                        fontSizeSp = msg.optInt("fontSizePx", 0),
                         canSetBlockColor = msg.optBoolean("canSetBlockColor", false),
                         blockTextColor = msg.optString("blockTextColor"),
                         blockBackgroundColor = msg.optString("blockBackgroundColor"),

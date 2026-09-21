@@ -286,6 +286,18 @@ export default function EditorApp() {
       const payload = {
         blockType: block.type as string,
         headingLevel,
+        /**
+         * 当前选区字号（v2026-09-21：H 面板「正文字号」档位回显）：
+         * `getActiveStyles().fontSize` 为 "18px" 形式字符串 → 解析为整数 px
+         * （WebView 内 1px=1dp，宿主档位为 sp 值，数值直接对应）；无样式 → 0
+         * （宿主回落默认档 16）。随 blockState 走同一去重与上行时机
+         * （选区变化 / 内容变化，含 addStyles 引起的 mark 变化）。
+         */
+        fontSizePx: (() => {
+          const fs = ed.getActiveStyles()?.fontSize as string | undefined;
+          const m = typeof fs === "string" ? /^(\d+(?:\.\d+)?)px$/.exec(fs) : null;
+          return m ? Math.round(parseFloat(m[1])) : 0;
+        })(),
         canSetBlockColor: supportsTextColor || supportsBgColor,
         blockTextColor: supportsTextColor
           ? (props.textColor as string | undefined)

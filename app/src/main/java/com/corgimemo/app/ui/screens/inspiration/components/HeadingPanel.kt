@@ -142,7 +142,9 @@ private val CollapsibleHeadingItems = listOf(
  * **生效语义**（与 T / A 面板一致）：点选**即时生效且不收起面板**，收起由面板头
  * 「完成」或再点一次工具栏「H」按钮触发。转换结果为块级属性，重复点同一项即"再转换一次"。
  *
- * **选中态回显**（v2026-09-21 已实现）：字号档位来自 `richTextState`（见 [currentFontSize]）；
+ * **选中态回显**（v2026-09-21 已实现）：字号档位来自 JS 上行的 `blockState.fontSizePx`
+ * （宿主派生 [currentFontSize]，v2026-09-21 修复：原 richTextState 是旧 Compose
+ * 编辑器死数据、高亮永远停在默认档）；
  * 标题格子来自 JS 上行的 `blockState.headingLevel` + `blockType`
  * （⚠️ 两类标题必须靠 blockType 区分，级别数字 1/2/3 在两类里都有）。
  *

@@ -155,7 +155,6 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.math.roundToInt
 
 /** 内容块定义已提取至 com.corgimemo.app.ui.model.ContentBlock（公共模块），通过 import 复用 */
 
@@ -696,14 +695,19 @@ fun InspirationEditScreen(
 
     /**
      * 「H」面板里「正文字号」档位的回显（v2026-09-04 引入，v2026-09-21 随字号迁入 H 面板）：
-     * 直接从 [richTextState.currentSpanStyle] 派生（真实来源 = 光标/选区的 SpanStyle），
-     * **不另持双份状态**，档位高亮天然跟随正文；未指定时回落 [DEFAULT_BODY_SP]（正文默认 16sp）。
+     *
+     * v2026-09-21 **回显源切换**：原从 [richTextState.currentSpanStyle] 派生——那是
+     * 旧 Compose 编辑器的状态，正文迁 BlockNote WebView 后**恒为 Unspecified**，
+     * 高亮永远停在默认档（用户观察到的"点字号档连选中态高亮都没有"即此）。
+     * 现改为 JS 上行的 [BlockNoteBridgeController.blockState].fontSizePx
+     * （`getActiveStyles().fontSize` 解析；选区变化 / 内容变化时上行），0 = 无样式
+     * → 回落 [DEFAULT_BODY_SP]（正文默认 16sp）。
      *
      * ⚠️ 原先同处派生的「颜色回显」（currentColorIdx / customColorHex）已随 Aa 面板删除：
      * 行内色入口统一收敛到「A」面板，其回显依赖 JS 上行、不使用 richTextState。
      */
-    val currentFontSizeSp = richTextState.currentSpanStyle.fontSize
-        .takeIf { it.isSpecified }?.value?.roundToInt() ?: DEFAULT_BODY_SP
+    val currentFontSizeSp = blockNoteController.blockState.fontSizeSp
+        .takeIf { it > 0 } ?: DEFAULT_BODY_SP
 
     /**
      * v2026-08-01 Phase 2：注册 # hashtag trigger + 编辑器内容初始化
