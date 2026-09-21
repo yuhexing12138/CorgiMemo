@@ -37,7 +37,8 @@
 - 三面板互斥：**单一状态 `openPanel: EditBottomPanel?`（FONT / SIZE_COLOR / COLOR，定义在 components/InspirationEditBottomBar.kt 的 public enum）**，`isFormatPanelOpen = openPanel != null` → 同时驱动 WebView `suppressIme` 与标题消费指针（键盘让位，见「软键盘（IME）与面板让位」节）。⚠️ 曾用三个 boolean（isFontPanelExpanded/isSizeColorPanelExpanded/isColorPanelExpanded）表达，靠"记得把另两个置 false"维持互斥，漏关一处即出「从 A 切到 T/Aa 面板叠加」；收敛后互斥由状态本身保证，**别退回多 boolean**。
 - 三面板切换统一走 Screen 内**局部函数 `togglePanel(panel)`**（同值→置 null 收起；否则替换并 `keyboardController?.hide()`；收起不弹回键盘）；面板专属副作用（字体面板展开前重置 pending）在调用**之前**执行。⚠️ 局部函数**必须先声明后引用**（Kotlin 局部函数声明顺序即可见性），故它定义在 keyboardController 之后、三个回调之前。
 - ⋮ 菜单（`BlockOpsMenuButton`）**已无颜色项**，只剩删除块 / 上移 / 下移 / 表头行·列；`onSetBlockColor` 参数链（Toolbar→BottomBar→Screen）已全部删除。
-- 共用色板 `components/BlockColorPicker.kt`：`internal BlockColorPalette`（BlockNote 官方明暗各 9 色 + `names`）/ `BlockColorRow`（标签 + 默认斜杠点 + 9 色点，色点行用 **FlowRow** 以便在窄容器折行）/ `blockColorHexOf(name,isDark,background)`（色名→"#RRGGBB"，供行内色下行）/ private `BlockColorDot`。
+- 共用色板 `components/BlockColorPicker.kt`：`internal BlockColorPalette`（BlockNote 官方明暗各 9 色 + `names`）/ `BlockColorRow`（标签 + 默认斜杠点 + 9 色点）/ `blockColorHexOf(name,isDark,background)`（色名→"#RRGGBB"，供行内色下行）/ private `BlockColorDot(size, …)`。
+- 色板排版（v2026-09-21，改前先读常量）：**色点边长按可用宽度自适应**——`BoxWithConstraints.maxWidth` → `(available − gap×(n−1)) / n` 并 clamp 到 `MinColorDotSize=24dp` / `MaxColorDotSize=36dp`；分布用 `Arrangement.SpaceBetween` 且**首尾留白固定 `ColorRowHorizontalPadding=12dp`**（与面板头标题对齐，用户要求保持），点间距 `ColorDotGap=8dp`。被 clamp 截断时剩余空间由 SpaceBetween 平均吸收，观感仍均匀。斜杠字号 = `size×0.5`（等比缩放）。
 - 行内色**无状态上行**（桥未上行行内样式）→ 传 `showSelection=false`，否则「默认」恒高亮误导；块级色靠 `blockState.blockTextColor/blockBackgroundColor` 回显。
 
 ## 块级拖拽（自维护 fork BlocksReorderableList.kt）

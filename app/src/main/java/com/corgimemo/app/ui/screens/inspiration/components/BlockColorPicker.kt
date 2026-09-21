@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -18,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -134,18 +136,39 @@ private fun composeColorToHex(c: Color): String = String.format(
     (c.blue * 255).toInt()
 )
 
+/* ===== 色板排版常量（v2026-09-21）===== */
+
 /**
- * 色板选择行（v1.11 引入，v2026-09-21 迁出并扩展）
+ * 色点行的左右边距
+ *
+ * 即**首尾色点距屏幕边缘的距离**：按用户要求保持现状值——自适应只作用于"点与点之间"，
+ * 首尾留白不变（同时也是与面板头标题左对齐的视觉基准）。
+ */
+private val ColorRowHorizontalPadding = 12.dp
+
+/** 色点自适应边长的下限：低于 24dp 触摸目标过小 */
+private val MinColorDotSize = 24.dp
+
+/** 色点自适应边长的上限：平板等宽屏下避免变成大色块 */
+private val MaxColorDotSize = 36.dp
+
+/** 色点之间的最小间距（折行时同时作为行间距） */
+private val ColorDotGap = 8.dp
+
+/**
+ * 色板选择行（v1.11 引入，v2026-09-21 迁出并两次调整）
  *
  * 一行色点：最左为「默认」（清除该维度颜色），其后是 9 个 BlockNote 预设色。
  * 当前生效色以暖橙粗描边标记，与工具栏其余按钮的激活态配色保持一致。
  *
- * v2026-09-21 两处调整（为了能同时服务于「A」按钮的颜色对话框）：
- * 1. 色点行由 `Row`（强制单行）改为 [FlowRow]（可换行）：对话框内容区宽度只有
- *    约 300dp，10 个 24dp 色点（含 6dp 间距）单行放不下会被裁掉最后一个；
- *    FlowRow 在窄容器里自动折行、在宽容器（原 ⋮ 菜单）里仍保持单行。
+ * v2026-09-21 调整：
+ * 1. 色点行由 `Row`（强制单行）改为 [FlowRow]（可换行）：原在 AlertDialog 内容区里
+ *    单行放不下会被裁掉最后一个；FlowRow 在窄容器里自动折行、在宽容器里保持单行。
  * 2. 新增 [showSelection]：行内色两组**没有**状态上行（宿主拿不到"光标处已有的
  *    行内颜色"），传 false 关闭选中回显，否则"默认"项会恒定高亮造成误导。
+ * 3. **占满横向空间并均匀分布**（用户要求）：色点边长按可用宽度自适应
+ *    （见 [MinColorDotSize] / [MaxColorDotSize]），分布改为 `SpaceBetween`——
+ *    首尾色点各距屏幕边缘 [ColorRowHorizontalPadding]（保持原值），中间的点等距铺满。
  *
  * @param label 行标题（如"段落背景色"）
  * @param current 当前生效色名（空串或 "default" 视为默认色）
@@ -169,39 +192,69 @@ internal fun BlockColorRow(
     /** 空串与 "default" 都表示"未设置该维度颜色"（前者来自未上报，后者是 BlockNote 的清除值） */
     val isDefault = current.isEmpty() || current == "default"
 
-    Column(modifier = modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+    /** 色点总数 = 「默认（清除）」1 个 + BlockNote 官方预设色 9 个 */
+    val dotCount = BlockColorPalette.names.size + 1
+
+    Column(
+        modifier = modifier.padding(horizontal = ColorRowHorizontalPadding, vertical = 6.dp)
+    ) {
         Text(
             text = label,
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        FlowRow(
-            modifier = Modifier.padding(top = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+        /**
+         * [BoxWithConstraints] 只为拿到本行的**实际可用宽度**（外层 padding 之后），
+         * 用屏宽常量硬算会在分屏 / 折叠屏 / 平板等场景下失真。
+         */
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp)
         ) {
-            BlockColorDot(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                selected = showSelection && isDefault,
-                onClick = { onPick("default") },
-                contentDescription = "$label 默认",
-                showSlash = true
-            )
-            BlockColorPalette.names.forEach { name ->
+            val available = maxWidth
+            /**
+             * 自适应色点边长：让 dotCount 个点 + (dotCount−1) 个间距**恰好铺满**可用宽度。
+             *
+             * clamp 到 [MinColorDotSize] / [MaxColorDotSize] 两端：
+             * 极窄屏不缩到难以点中，平板不撑成色块；被 clamp 截断时（点变小/变大后
+             * 与可用宽度不再相等）剩余空间交由 `SpaceBetween` 平均吸收，**观感仍均匀**。
+             */
+            val dotSize = ((available - ColorDotGap * (dotCount - 1)) / dotCount)
+                .coerceIn(MinColorDotSize, MaxColorDotSize)
+
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                /** 首尾贴容器两端（= 距屏幕边缘各 [ColorRowHorizontalPadding]），中间等距 */
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.spacedBy(ColorDotGap)
+            ) {
                 BlockColorDot(
-                    color = picker(name, isDark),
-                    selected = showSelection && !isDefault && current == name,
-                    onClick = { onPick(name) },
-                    contentDescription = "$label $name"
+                    size = dotSize,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    selected = showSelection && isDefault,
+                    onClick = { onPick("default") },
+                    contentDescription = "$label 默认",
+                    showSlash = true
                 )
+                BlockColorPalette.names.forEach { name ->
+                    BlockColorDot(
+                        size = dotSize,
+                        color = picker(name, isDark),
+                        selected = showSelection && !isDefault && current == name,
+                        onClick = { onPick(name) },
+                        contentDescription = "$label $name"
+                    )
+                }
             }
         }
     }
 }
 
 /**
- * 单个色点（v1.11）
+ * 单个色点（v1.11；v2026-09-21 起尺寸由调用方按可用宽度自适应传入）
  *
+ * @param size 色点边长（由 [BlockColorRow] 按屏宽/容器宽度动态计算）
  * @param color 填充色
  * @param selected 是否当前选中（暖橙 2dp 描边）
  * @param onClick 点击回调
@@ -210,6 +263,7 @@ internal fun BlockColorRow(
  */
 @Composable
 private fun BlockColorDot(
+    size: Dp,
     color: Color,
     selected: Boolean,
     onClick: () -> Unit,
@@ -218,7 +272,7 @@ private fun BlockColorDot(
 ) {
     Box(
         modifier = Modifier
-            .size(24.dp)
+            .size(size)
             .clip(CircleShape)
             .background(color)
             .border(
@@ -236,7 +290,11 @@ private fun BlockColorDot(
         if (showSlash) {
             Text(
                 text = "／",
-                fontSize = 12.sp,
+                /**
+                 * 斜杠随色点等比缩放（保持原 24dp : 12sp 的比例），
+                 * 否则点变大时斜杠会缩在圆心显得不协调。
+                 */
+                fontSize = (size.value * 0.5f).sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
