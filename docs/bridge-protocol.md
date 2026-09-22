@@ -29,6 +29,8 @@
 | `setEditorMinHeight` | `{ height }` | 设置编辑区最小高度（v1.11.6，单位 **dp**）。BlockNote 未给 `.bn-editor` 任何 `min-height`，高度完全由内容决定；宿主却给 WebView 设了 `heightIn(min = 屏高 × 62%)`。两者不一致会在 WebView 内留下一片**不属于 contenteditable 盒子**的"死区"（点击无法聚焦光标）。下发同一个高度值后 JS 写入 `--bn-editor-min-height`，由 `.bn-editor { min-height }` 消费，编辑区即铺满 WebView。**缺省 0 时与修复前一致**（向后兼容旧宿主）。⚠️ 不写 `62vh` 是因为本项目 WebView 高度会随内容增长、可能撑出屏幕（外层 Column 滚动），`vh` 语义不直观 |
 
 | `focusEditor` | `{}` | 让编辑器重新获得 DOM 焦点（v2026-09-22）。宿主收起「T / H / A」面板、要把键盘弹回来**之前**下发：Chromium 只在编辑元素持有焦点时才建立输入连接，宿主随后的 `InputMethodManager.showSoftInput` 才有效。JS 侧对 `.bn-editor` 调 `focus()`（已聚焦时为空操作，不打断现有选区），并回一条 `diagnostic` 说明是否命中节点。⚠️ 必须在 **IME 抑制解除之后**下发，否则页面还带着 `inputmode="none"`，聚焦后 Chromium 仍不会弹键盘 |
+| `format` | `{ action, value?, text? }` | 底部格式工具栏的统一格式通道。`action` 见下表；`value` 随 action 而定（`fontSize="18px"`、`textColor="#RRGGBB"`、`transform` 的块类型名等）。⚠️ v2026-09-22：`text` 目前**只有 `createLink` 用**（可选显示文字），其余 action 一律不带该字段 |
+| └ `format.action = createLink` | `{ action: "createLink", value: url, text? }` | 插入/写入链接（v2026-09-22）。**宿主不判断有没有选区**——选区真值只在 WebView 的 ProseMirror state 里，Kotlin 侧无从取得（`View.hasFocus()` 会失真），故把 URL 与可选显示文字如实下发，由 JS 分流：① 有选区 + 未填标题 → 给选中文字挂 link mark；② 有选区 + 填了标题 → 标题替换选中文字再挂链接；③ **无选区 → 以标题（留空则用 URL 原文）为文字插入一段带链接的新文本**。缺协议的 URL 由 JS 侧 `normalizeLinkUrl()` 自动补 `https://`（对齐官方 LinkToolbar 的 `validateUrl`）。⚠️ 历史坑：只发 `createLink(url)` 时，空选区下走的是 `tr.addMark(from, to)` 且 `from == to` → **零长度区间加 mark 是静默空操作**，表现为"填了 URL 点确定毫无反应" |
 
 ## 上行消息（JS → Kotlin）
 

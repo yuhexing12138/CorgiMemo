@@ -201,7 +201,7 @@ fun InspirationEditScreen(
     val contentLoaded by viewModel.contentLoaded.collectAsState()
     val blockNoteController = remember { BlockNoteBridgeController() }
     var blockNoteLoadStarted by remember { mutableStateOf(false) }
-    /** BlockNote 模式链接对话框（P1.5 浮层桥接：🔗 按钮 → URL 输入 → format createLink） */
+    /** BlockNote 模式链接对话框（P1.5 浮层桥接：🔗 按钮 → URL + 显示文字输入 → downlink createLink） */
     var showLinkDialog by remember { mutableStateOf(false) }
     var linkDialogUrl by remember { mutableStateOf("https://") }
     /**
@@ -1651,7 +1651,9 @@ fun InspirationEditScreen(
                     blockNoteController.format("alignRight")
                 },
                 onInsertLink = {
-                    /** 弹 URL 输入对话框 → format createLink 下发 */
+                    /** 弹 URL + 显示文字输入对话框 → downlink createLink 下发 */
+                    linkDialogUrl = "https://"
+                    linkDialogText = ""
                     showLinkDialog = true
                 },
                 onToggleCodeSpan = {
@@ -2263,30 +2265,60 @@ fun InspirationEditScreen(
 
             /**
              * BlockNote 模式（P1.5）：链接插入对话框——
-             * 底部工具栏 🔗 按钮触发，输入 URL 后经 format createLink 下发到 WebView 编辑器。
+             * 底部工具栏 🔗 按钮触发，输入 URL 后经 downlink `createLink` 下发到 WebView 编辑器。
+             *
+             * ⚠️ v2026-09-22 修复「未选中文字时点了链接不生效」：
+             * BlockNote 的 `createLink(url)` 在**空选区**（仅光标）下执行的是
+             * `tr.addMark(from, to)` 且 `from == to` —— 给空区间加 mark 是**空操作**，
+             * 于是无选区时点击完成毫无反应、也无任何报错。修复放在 JS 侧
+             * （见 EditorApp.tsx 的 `createLink` case）：无选区时以「用户输入的标题」
+             * 或「URL 原文」为显示文字**插入一段带链接的新文本**。
+             * 本对话框据此新增「显示文字（可留空）」输入框。
              */
             if (showLinkDialog) {
+                /** URL 合法性：非空且不只是刚预填的协议前缀（否则会插入一个空链接） */
+                val trimmedUrl = linkDialogUrl.trim()
+                val urlOk = trimmedUrl.isNotBlank() &&
+                    trimmedUrl != "https://" && trimmedUrl != "http://"
                 androidx.compose.material3.AlertDialog(
                     onDismissRequest = { showLinkDialog = false },
                     title = { Text("插入链接") },
                     text = {
-                        androidx.compose.material3.OutlinedTextField(
-                            value = linkDialogUrl,
-                            onValueChange = { linkDialogUrl = it },
-                            placeholder = { Text("https://example.com") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        Column {
+                            OutlinedTextField(
+                                value = linkDialogUrl,
+                                onValueChange = { linkDialogUrl = it },
+                                label = { Text("链接地址") },
+                                placeholder = { Text("https://example.com") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = linkDialogText,
+                                onValueChange = { linkDialogText = it },
+                                label = { Text("显示文字（可留空）") },
+                                placeholder = { Text("未选中文字且留空时，显示链接本身") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                     },
                     confirmButton = {
                         TextButton(
                             onClick = {
-                                if (linkDialogUrl.isNotBlank()) {
-                                    blockNoteController.format("createLink", linkDialogUrl.trim())
+                                if (urlOk) {
+                                    /**
+                                     * 标题留空时传 null：由 JS 侧按「有选区→给选中文字加链接；
+                                     * 无选区→用 URL 原文插入」自行分流（宿主不判断选区，
+                                     * 因为选区真值只在 WebView 里）。
+                                     */
+                                    val title = linkDialogText.trim().ifEmpty { null }
+                                    blockNoteController.createLink(trimmedUrl, title)
                                 }
                                 showLinkDialog = false
                             },
-                            enabled = linkDialogUrl.isNotBlank()
+                            enabled = urlOk
                         ) {
                             Text("确定")
                         }

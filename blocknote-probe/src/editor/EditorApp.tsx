@@ -30,6 +30,25 @@ function getMdLoader(): any {
   return mdLoaderEditor;
 }
 
+/**
+ * 链接地址归一化（v2026-09-22）：给缺少协议的输入自动补 `https://`。
+ *
+ * 背景：用户常直接输入 `example.com` / `www.a.cn`，若原样写进 href，
+ * ProseMirror 会把它当成**相对路径**渲染，点击后跳到编辑器所在目录下的路径
+ * （宿主 WebView 的 base URL），表现为"点了链接没反应或跳错"。
+ * BlockNote 官方的 LinkToolbar 也有同款处理（`validateUrl`），此处沿用其口径：
+ * 已带scheme（http/https/mailto/tel/file 等）或锚点/相对路径（`#`、`/`）时原样保留。
+ */
+const HAS_PROTOCOL_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
+function normalizeLinkUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed === "") return trimmed;
+  if (HAS_PROTOCOL_RE.test(trimmed)) return trimmed;
+  if (trimmed.startsWith("//")) return `https:${trimmed}`;
+  if (trimmed.startsWith("#") || trimmed.startsWith("/")) return trimmed;
+  return `https://${trimmed}`;
+}
+
 /** 光标块类型切换（已是目标类型则退回普通段落）——列表/任务按钮的 toggle 语义 */
 function toggleBlockType(ed: any, type: string): void {
   const { block } = ed.getTextCursorPosition();
@@ -264,6 +283,11 @@ export default function EditorApp() {
    * - 对齐 → v2026-09-22 新增 `textAlignment`：读块级 prop `props.textAlignment`
    *   （对齐是**块级**属性，不是行内样式），供三个对齐按钮的高亮回显；
    *
+   * ⚠️ **跨块多选**（v2026-09-22）：以上所有"当前块"口径一律取
+   * `getSelection().blocks[0]`（选区折叠时回退 `getTextCursorPosition().block`），
+   * 与官方一致——不能用 `getTextCursorPosition()`（它按 selection.**anchor**
+   * 取块，反向拖选时落在选区末端，与命令实际作用的块不一致）。详见函数内注释。
+   *
    * 用 JSON 串做去重键：只有选区跨块移动、或有色/表头状态真的变了才上行，
    * 同一块内移动光标不产生流量。
    *
@@ -273,7 +297,40 @@ export default function EditorApp() {
     const ed = editorRef.current;
     if (!ed) return;
     try {
-      const { block } = ed.getTextCursorPosition();
+      /**
+       * 当前「光标块」（v2026-09-22 修正为**跨块多选安全**）
+       *
+       * 口径照抄官方（@blocknote/react 的 `TextAlignButton` / `NestBlockButtons`
+       * / `ColorStyleButton` 等一律这么写）：
+       *   `editor.getSelection()?.blocks || [editor.getTextCursorPosition().block]`
+       * 再取 `selectedBlocks[0]`——工具栏命令（对齐 / 块色 / 缩进 / 删除…）作用的
+       * 是**整个选区**，回显也必须以**选区首块**为准，否则会出现
+       * "按钮显示的是 A 块的状态、一点下去却改了 A~C 三块"。
+       *
+       * ⚠️ 原先只调 `getTextCursorPosition()` 的问题（已核实源码，不是抛异常）：
+       * 它底层走 `getBlockInfoFromSelection` → `getBlockInfoAtNearest(selection.anchor)`，
+       * 取的是 **anchor 所在块**。跨块多选时 anchor 可能在**选区末端**
+       * （反向拖选 → anchor = 选区终点），于是回显块 ≠ 命令实际作用的首块。
+       *
+       * ⚠️ 为什么必须有 `|| [光标块]` 回退：`getSelection()` 在**选区折叠**（纯光标）
+       * 或 NodeSelection 时返回 `undefined`（见 core 的 `selections/selection.ts`），
+       * 那是绝大多数编辑时刻，少了回退就永远拿不到块。
+       *
+       * ⚠️ `getSelection()` 在极少数文档边界会抛「node not found at position」，
+       * 故单独包一层 try：失败时**回落光标块**而不是让整条 blockState 走 error
+       * 分支（那会让宿主工具栏停在旧状态 = 状态失真）。
+       */
+      const block = (() => {
+        try {
+          const selectionBlocks = ed.getSelection()?.blocks;
+          if (selectionBlocks && selectionBlocks.length > 0) {
+            return selectionBlocks[0];
+          }
+        } catch {
+          /* 选区解析失败 → 回落光标块（下方） */
+        }
+        return ed.getTextCursorPosition().block;
+      })();
       const supportsTextColor = blockHasType(block, ed, block.type, {
         textColor: "string",
       });
@@ -718,10 +775,51 @@ export default function EditorApp() {
             case "outdent":
               ed.unnestBlock();
               break;
-            case "createLink":
-              // v1.6：底部链接按钮 → 当前选区加链接（BlockNote 公开 API createLink）
-              if (value) ed.createLink(value);
+            case "createLink": {
+              /**
+               * 底部链接按钮 → 写链接（v2026-09-22 修复「未选中文字时点了没反应」）
+               *
+               * ⚠️ 原实现只有 `ed.createLink(value)`：BlockNote 的 `StyleManager.createLink`
+               * 在未传 text 时走 `tr.addMark(from, to)`（见 core/src/editor/managers/StyleManager.ts），
+               * 而**空选区下 from == to** —— 给零长度区间加 mark 是**静默空操作**，
+               * 既不报错也不产生任何文档变更，真机表现为"点了按钮、填了 URL、什么都没发生"。
+               *
+               * 现按「有无选区」分流（是否为空由 ProseMirror state 判定，宿主不参与）：
+               * - **有选区 + 未填标题** → 只给选中文字挂 link mark（选中文字即显示文字）；
+               * - **有选区 + 填了标题** → 用标题替换选中文字后再挂链接（createLink 自带语义）；
+               * - **无选区** → 以「标题 or URL 原文」为文字**插入**一段带链接的新文本
+               *   （这正是本次需求：未选择文字时直接把链接插进去）。
+               *
+               * 另：`value` 经 [normalizeLinkUrl] 补协议，避免 `example.com` 变成相对路径。
+               */
+              const linkText = (msg as any).text as string | undefined;
+              const pm = ed.prosemirrorView;
+              const hasSelection = pm ? !pm.state.selection.empty : true;
+              const url = normalizeLinkUrl(value || "");
+              if (!url) break;
+              try {
+                if (hasSelection) {
+                  if (linkText) ed.createLink(url, linkText);
+                  else ed.createLink(url);
+                } else {
+                  ed.createLink(url, linkText || url);
+                }
+                sendUp({
+                  type: "diagnostic",
+                  message: `createLink: ${hasSelection ? "mark-selection" : "insert-text"}`,
+                });
+              } catch (e) {
+                /**
+                 * 光标落在无内联内容的块（图片/分割线等）上时 insertText 会抛异常。
+                 * 静默吞掉会让问题再次变成"点了没反应"，故至少上行诊断。
+                 */
+                sendUp({
+                  type: "diagnostic",
+                  message: `createLink failed: ${String(e)}`,
+                });
+              }
               break;
+            }
             case "alignLeft":
             case "alignCenter":
             case "alignRight": {

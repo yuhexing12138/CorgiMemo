@@ -310,6 +310,31 @@ class BlockNoteBridgeController {
     }
 
     /**
+     * 插入链接（v2026-09-22）：底部工具栏 🔗 按钮的专用下行，取代原先的
+     * `format("createLink", url)`——因为需要额外携带「显示文字」这一维度。
+     *
+     * ⚠️ **宿主不判断是否有选区**：选区真值只在 WebView 的 ProseMirror state 里，
+     * Kotlin 侧无从取得（Android 的 `View.hasFocus()` 会失真，见既有结论）。
+     * 因此这里只把「URL + 可选的显示文字」如实下发，由 JS 侧按选区分流：
+     * - **有选区 + 未填标题** → 只给选中文字挂 link mark（选中文字即标题）；
+     * - **有选区 + 填了标题** → 用标题替换选中文字再挂链接；
+     * - **无选区** → 以标题（留空则用 URL 原文）为文字**插入**一段带链接的新文本。
+     *
+     * @param url 目标链接地址（非空；JS 侧会在缺协议时自动补 `https://`）
+     * @param text 显示文字，传 null / 空串表示未填写，交由 JS 侧回落为 URL 原文
+     */
+    fun createLink(url: String, text: String? = null) {
+        val msg = JSONObject()
+            .put("type", "format")
+            .put("action", "createLink")
+            .put("value", url)
+        val trimmed = text?.trim().orEmpty()
+        /** 空标题不下发 `text` 字段：JS 侧靠「字段缺失」而非「空串」判定未填写，避免后续再判空 */
+        if (trimmed.isNotEmpty()) msg.put("text", trimmed)
+        enqueueCommand(msg)
+    }
+
+    /**
      * 删除当前块（v1.11）：原 ⋮⋮ 手柄点击菜单的「删除」项，移入宿主工具栏。
      *
      * 命中口径由 JS 侧决定（与官方 RemoveBlockItem 一致）：当前选区若包含光标块，

@@ -526,7 +526,10 @@ fun RichTextFormatToolbar(
                 enabled = canDecreaseIndent,
                 canRepeat = canDecreaseIndent,
             )
-            /** Link（浮层 CreateLinkButton 同款 RiLink）：BlockNote 模式弹 URL 对话框 → format createLink */
+            /**
+             * Link（浮层 CreateLinkButton 同款 RiLink）：BlockNote 模式弹「URL + 显示文字」对话框
+             * → downlink createLink 下发（由 JS 侧按有无选区分流，见 EditorApp.tsx）。
+             */
             RiFormatButton(
                 "RiLink",
                 isActive = state.isLink,
