@@ -502,10 +502,10 @@ object MarkdownParser {
         text = text.replace(Regex("""(?m)^\s{0,3}#{1,6}\s+"""), "")
         // 6) 分割线 --- / *** / ___（stripMarkdown 不处理，单独去除）
         text = text.replace(Regex("""(?m)^\s*([-*_])(\s*\1){2,}\s*$"""), " ")
-        // 7) 可折叠标题的 HTML 编码标记行 + 项目内部占位 token（v2026-09-22 新增）
-        //    —— 两类"纯结构"标记的识别收敛在这里，供 Compose 侧其它消费方共用，避免口径漂移。
-        text = stripInternalTokens(text)
-        text = stripDetailsMarkers(text)
+        // 7) 可折叠标题的标记行 + 项目内部占位 token（v2026-09-22 新增）
+        //    —— 两类"纯结构"标记的识别收敛在 [stripStructuralMarkers]，供纯文本抽取与
+        //    Compose 侧只读渲染共用，避免口径漂移（真机两次泄漏都源于各写一份正则）。
+        text = stripStructuralMarkers(text)
         // 8) 行内色 span（v2026-09-22 新增）：标签本体移除、**文字保留**
         //    行内色以原生 HTML 持久化（`<span style="color:#FF9A5C">文字</span>`），
         //    标签不承载可见文字必须去掉，但**不能整行删**——文字就在标签之间。
@@ -538,40 +538,32 @@ object MarkdownParser {
         Regex("""(?m)^[ \t]*</?(?:details|summary)[^>\n]*>[ \t]*\r?$""")
 
     /**
-     * 剥离"项目内部占位 token"（**保留**一切渲染型 HTML 与结构标记）
+     * 剥离"项目结构标记"（`@@@CORGI_…@@@` 占位 token + 折叠标题的 `<details>` 标记行）
      *
-     * 与 [toPlainText] 的区别：本方法只清掉 `@@@CORGI_…@@@` 这类**纯文本**标记，
-     * 其余内容（颜色 / 字号 span、`<details>` 折叠标记、markdown 语法）**原样保留**。
+     * **保留**一切渲染型 HTML 与 markdown 语法（`<span style>` 承载字号/颜色、
+     * `**粗体**`、`### 标题`、`- [ ]` 待办等），只清掉**纯结构、无渲染语义**的两类：
+     * - `@@@CORGI_…@@@`（WebView 侧 converter.ts 自编码的块级色等占位 token）；
+     * - **独占一行**的 `<details>` / `<summary>` / 闭合标签（折叠标题的包裹标记）。
      *
-     * 适用场景：**Compose 侧只读渲染**（`InspirationViewCard`）——那里需要保留
-     * `<span style>`（库会读 style 还原排版）与 `<details>` 标记（由渲染层解析成
-     * 可折叠标题），但**不认识** `@@@CORGI_…@@@`，会原样当文字渲染出来
-     * （真机已复现：详情卡正文出现 `@@@CORGI_BC_TC_red@@@`）。
+     * **两个消费方共用本方法**（口径只此一份，真机两次泄漏都源于各写一份正则）：
+     * - `toPlainText`：再叠加"删 span 标签 / 去 markdown 语法"成为纯文本；
+     * - Compose 详情卡只读渲染（`InspirationViewCard`）：库的解析器不认识这两类标记，
+     *   会原样当文字渲染（真机现象：正文出现 `@@@CORGI_BC_TC_red@@@`）。
+     *   ⚠️ 折叠标题在详情页的口径是"**显示为普通标题即可**"（用户确认）——
+     *   标记行整行剥掉后，标题行照常按 `### 文本` 渲染，详情页不做折叠交互。
      *
      * @param markdown 正文 markdown（整篇或切分后的单段均可）
-     * @return 去掉内部占位 token 后的 markdown
+     * @return 去掉项目结构标记后的 markdown
      */
-    fun stripInternalTokens(markdown: String): String {
+    fun stripStructuralMarkers(markdown: String): String {
         if (markdown.isEmpty()) return markdown
-        return markdown.replace(INTERNAL_TOKEN_REGEX, "")
+        return markdown
+            .replace(INTERNAL_TOKEN_REGEX, "")
+            .replace(DETAILS_MARKER_LINE_REGEX, "")
     }
 
     /**
-     * 剥离**独占一行**的可折叠标题结构标记（`<details>` / `<summary>` / 闭合标签）
-     *
-     * 这类标记对"只取文字"或"按行摊平渲染"的场景没有意义，应整行删除；
-     * 而**支持折叠渲染**的场景（详情卡）应保留它们、另行做结构解析，不要调用本方法。
-     *
-     * @param markdown 正文 markdown
-     * @return 去掉折叠标记行后的 markdown
-     */
-    fun stripDetailsMarkers(markdown: String): String {
-        if (markdown.isEmpty()) return markdown
-        return markdown.replace(DETAILS_MARKER_LINE_REGEX, "")
-    }
-
-    /**
-     * 取文本**开头连续**的项目内部 token（[stripInternalTokens] 的逆操作，用于回写保色）
+     * 取文本**开头连续**的项目内部 token（[stripStructuralMarkers] 的逆操作，用于回写保色）
      *
      * **为什么需要**：详情卡的复选框勾选会把该段的 markdown 交给库重新编码后回写整篇
      * （`paragraphs[pIdx] = newPara` → join）。库重新编码出的段落**不含**我们插入的

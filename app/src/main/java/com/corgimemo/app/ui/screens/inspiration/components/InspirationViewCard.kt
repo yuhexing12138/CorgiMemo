@@ -2,7 +2,6 @@
 package com.corgimemo.app.ui.screens.inspiration.components
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.background
@@ -33,17 +32,12 @@ import com.mohamedrejeb.richeditor.model.rememberRichTextState
 import com.mohamedrejeb.richeditor.ui.material3.RichText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
@@ -377,136 +371,6 @@ fun InspirationViewCard(
         }
 }
 
-/* ===== 可折叠标题在详情页的结构解析（v2026-09-22 新增）===== */
-
-/**
- * 折叠段落标记的识别正则（整段仅由这些标签构成）
- *
- * WebView 侧 `converter.ts` 把可折叠标题编码成三段标记行：
- * `<details><summary>` → 标题段 → `</summary>` → 子块段 → `</details>`。
- * 详情页把它们解析回**折叠结构**（而不是当字面量渲染）。标签允许带属性、大小写不敏感。
- */
-private val DetailsOpenRegex = Regex("""^<details[^>]*>\s*(<summary[^>]*>)?$""", RegexOption.IGNORE_CASE)
-private val DetailsCloseRegex = Regex("""^</details[^>]*>$""", RegexOption.IGNORE_CASE)
-private val SummaryTagRegex = Regex("""^</?summary[^>]*>$""", RegexOption.IGNORE_CASE)
-
-/**
- * 折叠结构在**扁平段落序列**中的布局信息
- *
- * 详情页正文是按 `\n\n` 摊平的段落序列逐段渲染的（不重建块树），因此折叠关系以
- * **索引集合**表达，渲染循环据此「跳过标记段 / 特殊渲染标题段 / 按需隐藏正文段」。
- *
- * @param markerIndexes 结构标记段索引（`<details>` / `<summary>` / 闭合标签）——
- *   由折叠标题承载，自身不渲染，否则会以字面量出现在正文里
- * @param titleIndexes 折叠标题段索引（渲染为「箭头 + 标题」的可点行）
- * @param ownerByIndex 正文段索引 → 其所属折叠标题段索引
- *   （嵌套时归属**所有**外层标题，故外层折叠会一并隐藏内层内容）
- */
-private class BodyToggleLayout(
-    val markerIndexes: Set<Int>,
-    val titleIndexes: Set<Int>,
-    val ownerByIndex: Map<Int, Int>,
-)
-
-/**
- * 解析过程中的"尚未闭合的折叠分组"临时状态
- *
- * 刻意声明为**顶层私有类**（而非函数内局部类），与 [BodyToggleLayout] 相邻便于对照阅读。
- */
-private class ToggleFrame {
-    /** 分组内的折叠标题段索引（分组内第一个非标记段） */
-    var titleIndex: Int? = null
-    /** 是否已越过 `</summary>`（其后才是正文区） */
-    var collecting = false
-    /** 正文区段索引 */
-    val owned = mutableListOf<Int>()
-}
-
-/**
- * 从渲染用段落序列解析折叠结构（用栈支持嵌套）
- *
- * **容错策略**（宁可少折叠也不显示字面量）：
- * - 孤立的闭合标记（无对应开标记）→ 直接忽略；
- * - 文档结束时仍未闭合的分组 → 已收集正文照常归属（标题存在时仍认作折叠标题），
- *   绝不因结构不完整而丢内容；
- * - 分组内**第一个非标记段**即折叠标题（与编码顺序一致）。
- *
- * @param paras 已剥掉内部 token、但**保留** `<details>` 标记的段落序列
- */
-private fun buildBodyToggleLayout(paras: List<String>): BodyToggleLayout {
-    val markerIndexes = mutableSetOf<Int>()
-    val titleIndexes = mutableSetOf<Int>()
-    val ownerByIndex = mutableMapOf<Int, Int>()
-
-    val stack = ArrayDeque<ToggleFrame>()
-
-    /** 收尾一个分组：标题存在才认作折叠标题，并把其正文段登记归属 */
-    fun closeFrame(frame: ToggleFrame) {
-        val title = frame.titleIndex ?: return
-        titleIndexes += title
-        frame.owned.forEach { ownerByIndex[it] = title }
-    }
-
-    paras.forEachIndexed { index, raw ->
-        val text = raw.trim()
-        when {
-            DetailsOpenRegex.matches(text) -> {
-                markerIndexes += index
-                stack.addLast(ToggleFrame())
-            }
-            DetailsCloseRegex.matches(text) -> {
-                markerIndexes += index
-                stack.removeLastOrNull()?.let { closeFrame(it) }
-            }
-            SummaryTagRegex.matches(text) -> {
-                markerIndexes += index
-                /** 单独一行 `</summary>` → 之后的段进入正文区；单独一行 `<summary>` → 无需处理 */
-                if (text.startsWith("</")) stack.lastOrNull()?.collecting = true
-            }
-            else -> {
-                val top = stack.lastOrNull()
-                if (top != null && !top.collecting && top.titleIndex == null) {
-                    top.titleIndex = index
-                } else {
-                    stack.forEach { frame -> if (frame.collecting) frame.owned += index }
-                }
-            }
-        }
-    }
-    /** 文末未闭合：把已收集内容归位，避免丢内容 */
-    while (stack.isNotEmpty()) closeFrame(stack.removeLast())
-
-    return BodyToggleLayout(markerIndexes, titleIndexes, ownerByIndex)
-}
-
-/**
- * 折叠箭头（Canvas 自绘）
- *
- * **为什么不自绘字形**：`▸` / `▾` 一类字符在部分机型字体里缺字或渲染异常
- * （项目已有先例：工具栏早期的 `▸1` 真机显示成 `-1`）。两段短线组成的 chevron
- * 完全可控：展开朝下、折叠朝右。
- *
- * @param expanded 当前是否展开
- * @param color 线条颜色
- */
-@Composable
-private fun ToggleArrow(expanded: Boolean, color: Color, modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier.size(12.dp)) {
-        val w = size.width
-        val h = size.height
-        val stroke = 1.6.dp.toPx()
-        if (expanded) {
-            /** 朝下 chevron ∨ */
-            drawLine(color, Offset(w * 0.22f, h * 0.38f), Offset(w * 0.5f, h * 0.66f), stroke, StrokeCap.Round)
-            drawLine(color, Offset(w * 0.5f, h * 0.66f), Offset(w * 0.78f, h * 0.38f), stroke, StrokeCap.Round)
-        } else {
-            /** 朝右 chevron ＞ */
-            drawLine(color, Offset(w * 0.38f, h * 0.22f), Offset(w * 0.66f, h * 0.5f), stroke, StrokeCap.Round)
-            drawLine(color, Offset(w * 0.66f, h * 0.5f), Offset(w * 0.38f, h * 0.78f), stroke, StrokeCap.Round)
-        }
-    }
-}
-
 /**
  * 灵感详情页正文渲染：用只读 [RichText] 展示富文本 [contentFormat]（含逐字字号 / 字体颜色
  * 内联 span），使编辑页设置的排版在详情页同样持久生效。
@@ -524,16 +388,14 @@ private fun ToggleArrow(expanded: Boolean, color: Color, modifier: Modifier = Mo
  * 统一渲染，避免 markdown 内联图片与图片堆叠重复显示）。
  *
  * **v2026-09-22 修复「正文出现 `@@@CORGI_…@@@` 字面量」**：本组件直接解析**原始**
- * `contentFormat`，而其中含项目自编码的占位 token（块级色标记）——库的解析器只认内联
- * HTML 的 `style`，不认识这些 token，于是原样渲染成文字。现渲染前逐段走
- * [MarkdownParser.stripInternalTokens] 剥离，而**勾选回写仍以原始段落为锚**
- * （并把段首 token 补回），保证只影响显示、不动数据。
+ * `contentFormat`，而其中含项目自编码的标记（块级色 token、折叠标题的 `<details>` 结构行）
+ * ——库的解析器只认内联 HTML 的 `style`，不认识它们，于是原样渲染成文字。
+ * 现渲染前逐段走 [MarkdownParser.stripStructuralMarkers] 剥离，而**勾选回写仍以原始段落
+ * 为锚**（并把段首 token 补回），保证只影响显示、不动数据。
  *
- * **v2026-09-22 追加：详情页支持可折叠标题**。折叠标题在 markdown 里以
- * `<details><summary>` 三段标记包裹（见 converter.ts），原先被当作纯结构行剥掉、
- * 标题降级为普通标题；现改为**解析成折叠结构**（[buildBodyToggleLayout]）：
- * 标记段不渲染、标题段渲染为「箭头 + 标题」可点行、正文段按折叠态显示/隐藏。
- * 默认全部展开（折叠态本就不落 markdown）。
+ * **折叠标题在详情页的口径（v2026-09-22 用户确认）**：**显示为普通标题即可**——
+ * `<details>` / `<summary>` 标记行整行剥掉，标题行照常按 `### 文本` 渲染（库支持 ATX 标题），
+ * 详情页**不做**折叠交互。
  *
  * @param contentFormat 富文本 Markdown（由编辑页 `RichTextState.toMarkdown()` 导出）。
  * @param fallbackContent 旧记录 `contentFormat` 为空时的纯文本回退（按改造前的纯 Text
@@ -580,34 +442,24 @@ private fun InspirationBodyRichText(
     val paragraphs = remember(contentFormat) { contentFormat.split("\n\n") }
 
     /**
-     * **渲染用**段落序列（v2026-09-22 新增）：逐段剥掉项目内部占位 token（`@@@CORGI_…@@@`）。
+     * **渲染用**段落序列（v2026-09-22 新增）：逐段剥掉"项目结构性标记"——
+     * `@@@CORGI_…@@@` 占位 token 与折叠标题的 `<details>` / `<summary>` 整行标记。
      *
      * **为什么必须剥**：详情卡正文由 Compose 侧只读 [RichText] 直接解析 markdown，
      * 而库的解析器只认内联 HTML 的 `style`（font-size / color / background-color 等），
-     * **不认识**我们自编码的占位 token —— 会原样当文字渲染出来
+     * **不认识**我们自编码的这两类标记 —— 会原样当文字渲染出来
      * （真机现象：详情卡正文出现 `@@@CORGI_BC_TC_red@@@`）。
      *
-     * ⚠️ **保留** `<details>` 折叠标记：它们交给 [buildBodyToggleLayout] 解析成可折叠结构
-     * （v2026-09-22 用户要求详情卡也支持折叠），不在这里删除。
+     * ⚠️ 折叠标题的处理口径（v2026-09-22 用户确认）：**详情页显示为普通标题即可**，
+     * 故这里把 `<details>` / `<summary>` 标记整行剥掉，剩下的标题行照常按 `### 文本`
+     * 渲染（库支持 ATX 标题 → HeadingStyle）；详情页不提供折叠交互。
      * ⚠️ 只用于渲染：勾选回写仍以原始 [paragraphs] 为锚，并把段首 token 补回
      * （见 [MarkdownParser.leadingInternalTokens]），否则一次勾选就会抹掉该段的块级色。
-     * ⚠️ 剥 token 不会改变 `\n\n` 段落边界，故本序列与 [paragraphs] **索引一一对应**。
+     * ⚠️ 剥标记不会改变 `\n\n` 段落边界，故本序列与 [paragraphs] **索引一一对应**。
      */
     val renderParagraphs = remember(paragraphs) {
-        paragraphs.map { MarkdownParser.stripInternalTokens(it) }
+        paragraphs.map { MarkdownParser.stripStructuralMarkers(it) }
     }
-
-    /** 折叠结构布局（v2026-09-22）：标记段 / 折叠标题段 / 正文段归属 */
-    val toggleLayout = remember(renderParagraphs) { buildBodyToggleLayout(renderParagraphs) }
-
-    /**
-     * 已折叠的折叠标题（存其段索引；v2026-09-22）
-     *
-     * 默认**全部展开**——与编码来源一致（WebView 侧导出时按 `<details>` 原文处理，
-     * 折叠态本身不落 markdown）。以 [contentFormat] 为 key：内容变了就重置折叠态，
-     * 避免残留到新内容的同索引段上。
-     */
-    var collapsedToggles by remember(contentFormat) { mutableStateOf(emptySet<Int>()) }
 
     /**
      * 应跳过渲染的"图片间空白段"索引集合（v2026-09-09）：
@@ -654,42 +506,7 @@ private fun InspirationBodyRichText(
         renderParagraphs.forEachIndexed { pIdx, rawPara ->
             /** 图片间载体空行：阅读态不渲染（v2026-09-09，集合计算见 skipRenderIndexes） */
             if (pIdx in skipRenderIndexes) return@forEachIndexed
-            /** `<details>` / `<summary>` 结构标记段：由折叠标题承载，不单独渲染（v2026-09-22） */
-            if (pIdx in toggleLayout.markerIndexes) return@forEachIndexed
-            /** 所属折叠标题处于折叠态 → 本段隐藏（v2026-09-22） */
-            val ownerTitleIndex = toggleLayout.ownerByIndex[pIdx]
-            if (ownerTitleIndex != null && ownerTitleIndex in collapsedToggles) return@forEachIndexed
-
             val para = rawPara.trim('\n')
-
-            /**
-             * 折叠标题段（v2026-09-22）：渲染为「箭头 + 标题」的可点行，整行点击切换。
-             *
-             * 标题本身仍交给库渲染（`### 文本` → HeadingStyle），故视觉与普通标题一致，
-             * 只多一个箭头；折叠态仅存在于本次阅读组合内（不回写数据——折叠状态本来
-             * 也不在 markdown 里，与编辑页"默认展开"一致）。
-             */
-            if (pIdx in toggleLayout.titleIndexes) {
-                val expanded = pIdx !in collapsedToggles
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            collapsedToggles =
-                                if (expanded) collapsedToggles + pIdx else collapsedToggles - pIdx
-                        },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    ToggleArrow(expanded = expanded, color = Color(0xFF666666))
-                    InspirationBodyParagraph(
-                        markdown = para,
-                        fontFamily = fontFamily,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                return@forEachIndexed
-            }
-
             when {
                 /** 空段（含图片边界空段）：不渲染（与原过滤管线一致） */
                 para.isEmpty() -> Unit

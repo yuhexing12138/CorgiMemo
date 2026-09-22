@@ -254,11 +254,11 @@ adb logcat -s BlockNoteEditor:V | grep "ready received"
   （如 Kotlin 侧 `InspirationTextUtils.markdownToPlainText`，供列表摘要 / 字数 / 搜索）
   都必须剥离 `details` / `summary` 标记行，否则会污染摘要与字数。
 
-  **详情卡的折叠渲染**（v2026-09-22）：Compose 详情卡正文**不剥**这组标记，
-  而是把它们解析成可折叠结构（`InspirationViewCard` 的 `buildBodyToggleLayout`）：
-  标记段不渲染、标题段渲染为「箭头 + 标题」可点行（Canvas 自绘 chevron，避免 `▸`/`▾`
-  在部分机型缺字——项目已有 `▸1` 显示成 `-1` 的先例）、正文段按折叠态显示/隐藏，
-  默认全部展开（折叠态本就不落 markdown）。嵌套用栈支持，容错上宁可少折叠也不显示字面量。
+  **详情卡的口径**（v2026-09-22 用户确认）：Compose 详情卡**也剥**这组标记（调
+  `MarkdownParser.stripStructuralMarkers`），折叠标题在详情页**显示为普通标题即可**——
+  标记行整行剥掉后，标题行照常按 `### 文本` 渲染（库支持 ATX 标题 → HeadingStyle），
+  详情页**不做**折叠交互。曾经实现过"详情卡可折叠"（`buildBodyToggleLayout` + Canvas 自绘箭头），
+  按用户决定已回退，勿再引入。
 
 - v2026-09-22（同上）：**行内文字色 / 背景色的渲染修复与 markdown 往返编码**。
 
@@ -329,13 +329,13 @@ adb logcat -s BlockNoteEditor:V | grep "ready received"
   | # | 消费方 | 处理方式 |
   |---|---|---|
   | 1 | **WebView 编辑器**（`assets/blocknote-web/editor`） | `converter.ts` 负责编码与**解码**：`@@@CORGI_…@@@` 在载入时被消费（块级色写回 props、折叠标题还原为块），token 不进文档 |
-  | 2 | **Compose 详情卡正文**（`InspirationViewCard` → 只读 `RichText`） | 逐段 `MarkdownParser.stripInternalTokens()`（**只剥 token，保留 `style` span 与 `<details>` 标记**——span 是排版来源，`<details>` 由 `buildBodyToggleLayout` 解析成**可折叠标题**）；勾选回写时用 `leadingInternalTokens()` 把段首 token 补回，避免动数据 |
-  | 3 | **纯文本抽取**（列表摘要 / 字数 / 搜索 / 分享） | `MarkdownParser.toPlainText()`（剥 markdown 语法 + HTML 标签 + 内部 token + 折叠标记行） |
+  | 2 | **Compose 详情卡正文**（`InspirationViewCard` → 只读 `RichText`） | 逐段 `MarkdownParser.stripStructuralMarkers()`（剥 token 与 `<details>` 标记行，**保留 `style` span**——span 是排版来源；折叠标题在详情页显示为普通标题）；勾选回写时用 `leadingInternalTokens()` 把段首 token 补回，避免动数据 |
+  | 3 | **纯文本抽取**（列表摘要 / 字数 / 搜索 / 分享） | `MarkdownParser.toPlainText()`（在结构标记之上再剥 HTML 标签与 markdown 语法） |
 
-  ⚠️ 第 2 与第 3 的差别是**是否保留渲染型/结构型标记**：详情卡要留 `<span style>`（排版来源）
-  与 `<details>`（折叠结构），纯文本则连标签一起清（但行内色 span 只清标签、保留其间文字）。
-  **内部 token 的剥离必须同源**（现共用 `MarkdownParser.stripInternalTokens`），
-  否则新增一种 token 时又会漏一处。
+  ⚠️ 第 2 与第 3 的差别是**是否保留渲染型 HTML**：详情卡要留 `<span style>`（排版来源），
+  纯文本则连标签一起清（但行内色 span 只清标签、保留其间文字）。
+  **结构标记的剥离必须同源**（两处都走 `MarkdownParser.stripStructuralMarkers`），
+  否则新增一种标记时又会漏一处。
 
 - v2026-09-22（同上）：**`blockState` 新增可选字段 `inlineTextColor` / `inlineBackgroundColor`**
   （A 面板两个「选中色」行的选中回显）。
