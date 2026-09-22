@@ -71,6 +71,18 @@
 
 **统计**：23 项 = ✅ 桥接 **14** 项 ＋ ⛔ 未桥接 **9** 项（H4–6 三项与 ToggleH2/3 两项为低频档位；Video/Audio/File/Emoji 四项为 P2 媒体与选择器链路）。
 
+> **勘误（v2026-09-22）**
+>
+> 1. **上表的"未桥接"已过时**：H4–H6 与 Toggle Heading 2/3 现已全部进「标题与字号」面板（H 按钮），
+>    编号 4–6、8–9 应视为已桥接；上表首列序号仍沿用当时的 + 菜单顺序，未重排。
+> 2. **`transform` 的值是动作名，不等于块类型名**——dispatch 时必须翻译：
+>    - `toggleHeading` / `toggleHeading2` / `toggleHeading3` → `type: "heading"` + `props: { level, isToggleable: true }`
+>      （BlockNote **没有** `toggleHeading*` 块类型；照抄当 type 传 `updateBlock` 会抛 TypeError）
+>    - `toggleList` → `type: "toggleListItem"`
+>    - 另注意 1 级折叠标题的动作名**无尾数字**，不能对尾字符取 `Number`（会得到 NaN）
+> 3. 折叠标题的持久化：markdown 原生无该语法，已由 `converter.ts` 用
+>    `<details><summary>…</summary></details>` 标记包裹往返（详见 `bridge-protocol.md`）。
+
 ### 工具栏特有（+ 菜单没有的）
 
 | 工具栏功能 | 下发命令 | 说明 |

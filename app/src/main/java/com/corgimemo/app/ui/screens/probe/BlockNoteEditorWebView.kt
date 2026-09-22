@@ -71,8 +71,14 @@ private const val EDITOR_URL = "file:///android_asset/blocknote-web/editor/edito
  *
  * @param blockType 光标块类型（BlockNote 的 block.type，如 paragraph / heading / table / image）
  * @param headingLevel 光标块的标题级别（v2026-09-21 新增；供「标题面板」回显选中态）：
- *   `blockType == "heading"` 时为 1–6（普通标题）；`blockType` 以 `toggleHeading` 开头时为 1–3
- *   （可折叠标题，JS 侧对未显式写 level 的 1 级兜底为 1）；非标题块为 0（不高亮任何格子）
+ *   `blockType == "heading"` 时为 1–6（普通标题**与**可折叠标题同为 heading 块），
+ *   非标题块为 0（不高亮任何格子）。
+ *   ⚠️ v2026-09-22 修正：原注释称"可折叠标题是独立块类型 toggleHeading*"，与 BlockNote
+ *   真实模型不符——折叠态是 `props.isToggleable`，不是块类型，故级别一律取自 props.level。
+ * @param headingToggleable 是否为「可折叠标题」（v2026-09-22 新增）：BlockNote 里折叠标题
+ *   = `heading` 块 + `props.isToggleable = true`，级别仍看 [headingLevel]。标题面板据此在
+ *   「普通标题 / 可折叠标题」两个分区之间分流——两类都有 1/2/3 级，只靠级别无法区分。
+ *   普通标题与非标题块恒为 false。
  * @param canSetBlockColor 是否支持块级颜色（决定「块颜色」入口是否可点）
  * @param blockTextColor 当前块文本色（预设色名；空串 = 默认色，用于色板回显）
  * @param blockBackgroundColor 当前块背景色（预设色名；空串 = 无背景色）
@@ -82,8 +88,13 @@ private const val EDITOR_URL = "file:///android_asset/blocknote-web/editor/edito
  */
 data class BlockState(
     val blockType: String = "",
-    /** 标题级别（v2026-09-21 新增）：heading → 1–6；toggleHeading* → 1–3；非标题块 → 0 */
+    /** 标题级别（v2026-09-21 新增）：heading → 1–6（两类标题同块类型）；非标题块 → 0 */
     val headingLevel: Int = 0,
+    /**
+     * 是否可折叠标题（v2026-09-22 新增）：true = 折叠标题（heading + isToggleable），
+     * false = 普通标题 / 非标题块。标题面板据此在「普通 / 可折叠」两个分区之间分流。
+     */
+    val headingToggleable: Boolean = false,
     /**
      * 当前选区字号档位（v2026-09-21 新增；H 面板「正文字号」高亮回显）：
      * JS 侧 `getActiveStyles().fontSize`（"18px" 形式）解析的整数——
@@ -436,6 +447,11 @@ class BlockNoteBridgeController {
                         blockType = msg.optString("blockType"),
                         /** v2026-09-21：标题级别（缺失/非法时 0 → 面板不高亮任何格子） */
                         headingLevel = msg.optInt("headingLevel", 0),
+                        /**
+                         * v2026-09-22：是否可折叠标题（缺失时 false → 按普通标题处理，
+                         * 与"老产物不下发该字段"的情况向后兼容）
+                         */
+                        headingToggleable = msg.optBoolean("headingToggleable", false),
                         /** v2026-09-21：选区字号（0 = 无样式 → 宿主回落默认档） */
                         fontSizeSp = msg.optInt("fontSizePx", 0),
                         canSetBlockColor = msg.optBoolean("canSetBlockColor", false),

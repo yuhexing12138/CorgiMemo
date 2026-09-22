@@ -252,9 +252,9 @@ export default function EditorApp() {
    *   （官方 `BlockColorsItem` 的写法）
    * - 表头   → `block.type === "table" && editor.settings.tables.headers`
    *   （官方 `TableHeadersItem` 的写法；官方目前只支持 1 行 / 1 列，故用布尔）
-   * - 标题级别 → v2026-09-21 新增 `headingLevel`：普通标题取 `props.level`（1–6），
-   *   可折叠标题（独立块类型 `toggleHeading*`）取 `props.level` 并兜底 1，非标题块为 0；
-   *   宿主「标题面板」据此高亮当前块对应的标题格子
+   * - 标题级别 → v2026-09-21 新增 `headingLevel`：普通/可折叠标题**同为 `heading` 块**，
+   *   级别都取 `props.level`（1–6），非标题块为 0；另附 `headingToggleable`（v2026-09-22）
+   *   区分"是否折叠"，宿主「标题面板」据此高亮对应格子；
    *
    * 用 JSON 串做去重键：只有选区跨块移动、或有色/表头状态真的变了才上行，
    * 同一块内移动光标不产生流量。
@@ -278,25 +278,29 @@ export default function EditorApp() {
       /**
        * 标题级别（v2026-09-21 新增）：供宿主「标题面板」回显"当前块是不是 Hx"。
        *
-       * ⚠️ 两类标题在 BlockNote 里的表示方式**不同**（见下方 transform 分支）：
-       * - 普通标题：`type === "heading"`，级别在 `props.level`（1–6）；
-       * - 可折叠标题：`type` 是**独立块类型** `toggleHeading` / `toggleHeading2` /
-       *   `toggleHeading3`，其中 1 级在写入时**没有**带 `props.level`，故兜底为 1。
+       * ⚠️ v2026-09-22 修正：两类标题在 BlockNote 里是**同一个块类型** `heading`，
+       * 靠 `props.isToggleable` 区分（折叠标题**不是**独立块类型，详见下方 transform
+       * 分支的说明）。原实现按 `block.type.startsWith("toggleHeading")` 判定可折叠，
+       * 而真实 blockType 永远是 `heading` → 该分支**永不成立**，于是：
+       * - 面板永远点亮不了「可折叠标题」那一排；
+       * - 反而命中 `heading` 分支，把可折叠标题误判成普通标题去点亮。
+       *
+       * 现改为：`headingLevel` = `heading` 块的 `props.level`（1–6，非标题块为 0）；
+       * 另上行 `headingToggleable` 布尔字段，宿主据此在两类分区之间分流。
        *
        * 非标题块一律上行 0（宿主据此不高亮任何格子）。
        * `props.level` 容错：非有限数或 ≤0 时按 0 处理，避免 NaN 上行污染去重键。
        */
       const rawLevel = Number(props.level);
       const safeLevel = Number.isFinite(rawLevel) && rawLevel > 0 ? rawLevel : 0;
-      const headingLevel =
-        block.type === "heading"
-          ? safeLevel
-          : block.type.startsWith("toggleHeading")
-            ? safeLevel || 1
-            : 0;
+      const isHeading = block.type === "heading";
+      /** 是否为「可折叠标题」（v2026-09-22 新增；普通标题恒为 false） */
+      const headingToggleable = isHeading && props.isToggleable === true;
+      const headingLevel = isHeading ? safeLevel : 0;
       const payload = {
         blockType: block.type as string,
         headingLevel,
+        headingToggleable,
         /**
          * 当前选区字号（v2026-09-21：H 面板「正文字号」档位回显）：
          * `getActiveStyles().fontSize` 为 "18px" 形式字符串 → 解析为整数 px
@@ -608,22 +612,57 @@ export default function EditorApp() {
                   } as any);
                   break;
                 }
+                /**
+                 * 可折叠标题 H1–H3
+                 *
+                 * ⚠️ v2026-09-22 修复：原实现把 `toggleHeading` / `toggleHeading2` /
+                 * `toggleHeading3` 当成**独立块类型**传给 `updateBlock`，但 BlockNote
+                 * **没有这些类型** —— 折叠标题的真实模型是 `heading` 块 + `props.isToggleable`，
+                 * 见官方斜杠菜单 `getDefaultSlashMenuItems.ts`：
+                 *   `insertOrUpdateBlockForSlashMenu(editor, { type: "heading",
+                 *      props: { level, isToggleable: true } })`
+                 * 也见 heading block spec（`allowToggleHeadings` 开启时 propSchema 才含
+                 * `isToggleable`）。而本项目 schema 的合法块类型里根本查不到
+                 * `toggleHeading*`（见 defaultBlocks.ts 的 defaultBlockSpecs），于是
+                 * `blockToNode` 执行 `schema.nodes["toggleHeading2"].isInGroup(...)` 时
+                 * 因 `undefined` 抛 TypeError → 操作完全没发生（"点了没反应"）。
+                 *
+                 * 级别解析：1 级写成 `toggleHeading`（**没有**尾数字，不能对尾字符取 Number，
+                 * 否则得到 NaN），2/3 级才是 `toggleHeading2/3`。
+                 *
+                 * toggle 语义与「普通标题」保持一致：当前块已是**同级别的可折叠标题**时
+                 * 再点一次 → 退回普通段落；否则（含"当前是普通标题"）→ 转为可折叠标题。
+                 */
                 case "toggleHeading":
                 case "toggleHeading2":
-                case "toggleHeading3":
-                case "toggleList": {
-                  // 可折叠标题/可折叠列表（独立块类型，toggle 语义；带档位的解析尾数）
+                case "toggleHeading3": {
+                  const level =
+                    value === "toggleHeading" ? 1 : Number(value.slice(-1));
                   const { block } = ed.getTextCursorPosition();
-                  const targetType = block.type === value ? "paragraph" : value;
-                  if (value === "toggleHeading2" || value === "toggleHeading3") {
-                    const level = Number(value.slice(-1));
-                    ed.updateBlock(block, {
-                      type: targetType,
-                      props: { level },
-                    } as any);
-                  } else {
-                    ed.updateBlock(block, { type: targetType } as any);
-                  }
+                  const curProps = (block.props ?? {}) as Record<string, unknown>;
+                  const already =
+                    block.type === "heading" &&
+                    curProps.level === level &&
+                    curProps.isToggleable === true;
+                  ed.updateBlock(block, {
+                    type: already ? "paragraph" : "heading",
+                    props: { level, isToggleable: !already },
+                  } as any);
+                  break;
+                }
+                /**
+                 * 可折叠列表（v2026-09-22 修复）
+                 *
+                 * 原实现用的 `toggleList` **同样不是合法块类型**：BlockNote 的折叠列表
+                 * 类型名是 `toggleListItem`（见 defaultBlocks.ts 的 defaultBlockSpecs），
+                 * 于是「折叠列表」按钮与可折叠标题一样是死的。列表项的折叠态由
+                 * `props.isCollapsed` 承担，不在 type 上。
+                 */
+                case "toggleList": {
+                  const { block } = ed.getTextCursorPosition();
+                  const targetType =
+                    block.type === "toggleListItem" ? "paragraph" : "toggleListItem";
+                  ed.updateBlock(block, { type: targetType } as any);
                   break;
                 }
                 case "quote": {

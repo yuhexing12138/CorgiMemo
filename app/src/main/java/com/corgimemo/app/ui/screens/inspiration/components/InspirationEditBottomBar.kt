@@ -423,10 +423,13 @@ fun InspirationEditBottomBar(
                     onDone = onHeadingPanelDismiss,
                     /**
                      * 选中态回显（v2026-09-21）：来自 JS 上行的当前光标块——
-                     * blockType 区分「普通标题 / 可折叠标题」两类，headingLevel 定位到具体格子。
+                     * headingLevel 定位到具体格子，headingToggleable 决定落在
+                     * 「普通标题」还是「可折叠标题」分区（两类标题同属 heading 块，
+                     * 级别数字重叠，**必须**靠该布尔字段分流，见 v2026-09-22 修正）。
                      */
                     currentBlockType = blockState.blockType,
                     currentHeadingLevel = blockState.headingLevel,
+                    currentHeadingToggleable = blockState.headingToggleable,
                     /** 字号档位高亮：当前生效字号（未指定时 = DEFAULT_BODY_SP） */
                     currentFontSize = currentFontSize,
                     /** 锁定态内容区置灰并拦点击（v2026-09-21）：与格式工具栏同一口径 */

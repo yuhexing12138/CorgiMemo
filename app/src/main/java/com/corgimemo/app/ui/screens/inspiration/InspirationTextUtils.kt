@@ -90,6 +90,8 @@ object InspirationTextUtils {
      *   （正文计数不含标签 / 提及，与 [countInspirationContentChars] 口径一致）
      * - 普通链接 `[文字](url)` → 保留「文字」
      * - 引用符 `>` → 移除
+     * - 可折叠标题的结构标记行 `<details>` / `<summary>` / `</summary>` / `</details>`
+     *   → 整行移除（v2026-09-22；纯结构、无可见文字）
      * - 其余行内 / 块级标记（粗体 `**`、斜体 `*`、删除线 `~~`、标题 `#`、列表 / 待办符号）
      *   交给 [MarkdownParser.stripMarkdown] 去除
      *
@@ -117,7 +119,14 @@ object InspirationTextUtils {
         text = text.replace(Regex("""(?m)^\s{0,3}#{1,6}\s+"""), "")
         // 6) 分割线 --- / *** / ___（stripMarkdown 不处理，单独去除）
         text = text.replace(Regex("""(?m)^\s*([-*_])(\s*\1){2,}\s*$"""), " ")
-        // 7) 其余 Markdown 标记（粗斜体 / 删除线 / 列表 / 待办）
+        // 7) 可折叠标题的 HTML 编码标记行（v2026-09-22 新增）：整行移除
+        //    背景：BlockNote 的折叠标题（heading + isToggleable）在 markdown 里没有原生语法，
+        //    正文以 `<details><summary>…</summary></details>` 三段标记包裹持久化（见 WebView 侧
+        //    converter.ts）。这三行是纯结构、不承载任何可见文字，若不剥离会污染列表摘要、
+        //    字数统计与搜索关键词。
+        //    ⚠️ 只删**独占一行的标记**（`[^>\n]*` 限定不跨行匹配），标题文本与其子块行必须保留。
+        text = text.replace(Regex("""(?m)^[ \t]*</?(?:details|summary)[^>\n]*>[ \t]*\r?$"""), " ")
+        // 8) 其余 Markdown 标记（粗斜体 / 删除线 / 列表 / 待办）
         text = MarkdownParser.stripMarkdown(text)
         return text
     }

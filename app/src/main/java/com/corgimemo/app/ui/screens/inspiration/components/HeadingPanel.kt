@@ -106,6 +106,10 @@ private val NormalHeadingItems = listOf(
  *
  * action 取值沿用原实现：`toggleHeading` / `toggleHeading2` / `toggleHeading3`
  * （注意 1 级没有后缀数字，是 BlockNote 侧的既有约定，别"顺手改整齐"）。
+ *
+ * ⚠️ v2026-09-22：这三个是**动作名**，不是块类型名。BlockNote 里并不存在
+ * `toggleHeading*` 块类型——折叠标题实为 `heading` 块 + `props.isToggleable = true`，
+ * 由 JS 侧的 `transform` 分支负责翻译。宿主只管照发动作名，别把它们直接当 type 用。
  */
 private val CollapsibleHeadingItems = listOf(
     "RiH1" to "toggleHeading",
@@ -145,18 +149,22 @@ private val CollapsibleHeadingItems = listOf(
  * **选中态回显**（v2026-09-21 已实现）：字号档位来自 JS 上行的 `blockState.fontSizePx`
  * （宿主派生 [currentFontSize]，v2026-09-21 修复：原 richTextState 是旧 Compose
  * 编辑器死数据、高亮永远停在默认档）；
- * 标题格子来自 JS 上行的 `blockState.headingLevel` + `blockType`
- * （⚠️ 两类标题必须靠 blockType 区分，级别数字 1/2/3 在两类里都有）。
+ * 标题格子来自 JS 上行的 `blockState.headingLevel` + `headingToggleable`
+ * （v2026-09-22 修正：两类标题同属 `heading` 块，**靠 `headingToggleable` 布尔分流**，
+ * 不能靠块类型名——详见 [currentHeadingToggleable]）。
  *
  * @param panelHeight 面板总高度（= 键盘高度；内容超出纵向滚动）
  * @param onTransform 块类型转换回调（参数为 action：heading1–6 / toggleHeading / toggleHeading2 / 3）
  * @param onFontSizeSelect **正文字号**档位点选回调（参数为档位 sp 值，v2026-09-21 由 Aa 面板迁入）
  * @param onDone 点击面板头「完成」（收起面板）
  * @param currentBlockType 当前光标块类型（JS 侧 `blockState` 上行，v2026-09-21 起用于回显）：
- *   与 [currentHeadingLevel] 配合区分两类标题——`heading` = 普通标题、`toggleHeading*` = 可折叠标题。
- *   **同一级别数字在两类里含义不同，必须靠 blockType 区分，不能只看 level**
- * @param currentHeadingLevel 当前光标块的标题级别（普通标题 1–6 / 可折叠标题 1–3；
+ *   只需判断"是否 `heading` 块"——两类标题都落在 `heading` 上，具体归属由
+ *   [currentHeadingToggleable] 决定
+ * @param currentHeadingLevel 当前光标块的标题级别（普通/可折叠标题共用 1–6；
  *   0 = 非标题块 → 不高亮任何格子）
+ * @param currentHeadingToggleable 当前块是否为**可折叠**标题（v2026-09-22 新增）：
+ *   true → 高亮「可折叠标题」分区，false → 高亮「普通标题」分区。
+ *   ⚠️ 两类标题的级别数字（1/2/3）重叠，**只靠 level 无法区分，必须配合本字段**
  * @param currentFontSize 当前生效字号（sp；未指定时回落 [DEFAULT_BODY_SP]，用于字号档位高亮）
  * @param enabled 面板**内容区**是否可用（v2026-09-21 新增）：宿主锁定态传 false——
  *   所有格子整片降到 38% 不透明度，并在 `PointerEventPass.Initial` 阶段拦截点击
@@ -172,6 +180,7 @@ internal fun HeadingPanel(
     onDone: () -> Unit,
     currentBlockType: String = "",
     currentHeadingLevel: Int = 0,
+    currentHeadingToggleable: Boolean = false,
     currentFontSize: Int = DEFAULT_BODY_SP,
     enabled: Boolean = true,
     modifier: Modifier = Modifier
@@ -179,14 +188,17 @@ internal fun HeadingPanel(
     /**
      * 当前块对应的标题级别（0 = 两类都不高亮）
      *
-     * 两类标题在 JS 侧是**不同块类型**（`heading` vs `toggleHeading*`），
-     * 而级别数字（1/2/3）在两类里都出现，故必须用 blockType 分流，
-     * 否则"当前是 H2"会让两类的 H2 格子同时亮起。
+     * ⚠️ v2026-09-22 修正：BlockNote 里**普通标题与可折叠标题是同一个块类型** `heading`，
+     * 折叠态由 `props.isToggleable` 承载（不是 `toggleHeading*` 这类独立块类型——原实现
+     * 按 `startsWith("toggleHeading")` 判定，因真实 blockType 恒为 `heading` 而**永不成立**，
+     * 结果是可折叠分区永远点不亮、还会误点亮普通分区的同号格子）。
+     * 现改为：先确认是 `heading` 块，再由 [currentHeadingToggleable] 在两个分区之间分流。
      */
+    val isHeading = currentBlockType == "heading"
     val currentNormalLevel =
-        if (currentBlockType == "heading") currentHeadingLevel else 0
+        if (isHeading && !currentHeadingToggleable) currentHeadingLevel else 0
     val currentCollapsibleLevel =
-        if (currentBlockType.startsWith("toggleHeading")) currentHeadingLevel else 0
+        if (isHeading && currentHeadingToggleable) currentHeadingLevel else 0
 
     /**
      * 禁用态拦截（仅内容区）：锁定态下九个标题格子不接受点击。

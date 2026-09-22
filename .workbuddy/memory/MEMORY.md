@@ -28,7 +28,7 @@
 - 图标 BlockNotePlusMenuIcons：属性+defs map 两处都加，path 取 react-icons/ri；必须同步 blocknote-probe/tools/extract-ri-icons.cjs 的 WANT 清单。
 - 面板行距节奏（H 对齐 A）：每行/分区上下 6dp（BlockColorRow vertical padding，横向 12dp）；H 分区间不放额外 Spacer。
 - 锁定态：HeadingPanel/ColorStylePanel 有 enabled 参数——禁用仅内容区 alpha(0.38)+Initial 消费，面板头「完成」保持可点；T 面板尚无 enabled（未统一）。
-- 行内色无状态上行→showSelection=false；块级色靠 blockState 回显；标题回显靠 blockType+headingLevel 分流（不能只看 level，两类都有 1/2/3）。
+- 行内色无状态上行→showSelection=false；块级色靠 blockState 回显；标题回显靠**「是否 heading 块」+ headingToggleable 布尔**分流（v2026-09-22 勘误：折叠标题**不是**独立块类型 toggleHeading*，它同属 `heading` 块 + `props.isToggleable`，故原「靠 blockType 分流」的说法是错的——blockType 恒为 heading，永远分流不出来；级别数字 1/2/3 两类重叠，只能靠该布尔字段区分）。
 - 色板排版：色点边长按可用宽度自适应 clamp 24~36dp，SpaceBetween，首尾留白 ColorRowHorizontalPadding=12dp，点间距 8dp；斜杠字号=size×0.5。
 
 ## 块级拖拽 / 视觉教训
@@ -52,6 +52,8 @@
 - Bridge：下行 window.BlockNoteEditorHost.onMessage(json)；上行 AndroidBridge.postMessage；⚠️ 桥回调在 Java 桥线程，入口已统一 mainHandler.post（handleUpMessageOnMainThread），别拆散包装（踩坑：ready 分支同步 evaluateJavascript→异常被吞→init 永不下发→正文卡「正在装载」）。JS booted 只在收 init 置真。
 - 撤销可用态用 editor.canExec(command)（editor.can 不存在；命令从 yUndo/history 扩展取）。
 - 样式：padding-inline var(--bn-editor-gutter,20px)!important；sideMenu 已删（WebView 触摸不触发 HTML5 DnD→工具栏上移/下移）；库 CSS 变量就近覆盖（.bn-root 带 !important+JS setProperty important）；.bn-editor padding:0 首块 3px 0。
+- ⚠️ **transform 的 value 是「动作名」，不等于块类型名**（v2026-09-22 两起死按钮的共同根因）：`toggleHeading/-2/-3` → 实为 `heading` + `props.isToggleable=true`（BlockNote **无** toggleHeading* 块类型）；`toggleList` → `toggleListItem`。合法类型清单只有 defaultBlockSpecs 那一份（audio/bulletListItem/checkListItem/codeBlock/divider/file/heading/image/numberedListItem/paragraph/quote/table/toggleListItem/video）。把动作名当 type 传 `updateBlock` → `blockToNode` 里 `schema.nodes[t].isInGroup()` 对 undefined 取属性抛 TypeError；**而 format 分支没有 try/catch、整个下行 switch 也没有** → 异常从 Java 桥回调抛走，宿主 error 通道收不到 = "点了完全没反应且无日志"。查这类问题：先数产物里的 `case"xxx"` 出现次数，再核对该 value 是否有对应块类型。
+- ⚠️ 折叠标题（heading+isToggleable）官方 markdown 导出会丢标记（htmlToMarkdown.serializeDetails 削成普通 `### 文本`）→ 已由 converter.ts 用 `<details><summary>…</summary></details>` 三段 token 包裹往返（details/summary 在官方 HTML_BLOCK_TAGS 白名单里，rawHtml 原样透传，拼接成 HTML 后 DOMParser 解析；`<h3>` 落在未闭合 summary 内才命中 parse()）。消费方注意：纯文本转换必须剥离 details/summary 标记行（Kotlin `InspirationTextUtils.markdownToPlainText` 已加）。
 
 ## 工具/验证教训
 - 新增 layout/Modifier API 必须逐项核对 import（漏 import 只编译期暴露；本项目不主动编译）。「API 应该有但没反应」先 grep 确认存在。catch{return} 静默失败至少上行诊断。连续 2 次猜测失败→停猜加埋点。同一文件多次 Edit 串行。

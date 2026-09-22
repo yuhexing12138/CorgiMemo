@@ -35,7 +35,7 @@
 | `ready` | `{}` | 编辑器脚本就绪并已绑定下行宿主（Kotlin 侧解除 loading、随后发 `init`） |
 | `changed` | `{ markdown }` | 内容变更快照；**JS 侧防抖 800ms**；由 `blocksToMd` 生成（含分割线样式编码） |
 | `undoState` | `{ canUndo, canRedo }` | 撤销/重做可用态（v1.7）；历史栈变化后上报，宿主左上角按钮据此置灰 |
-| `blockState` | `{ blockType, headingLevel?, fontSizePx?, canSetBlockColor, blockTextColor?, blockBackgroundColor?, canToggleHeader, isHeaderRow, isHeaderCol }` | 当前光标块状态（v1.11；`headingLevel`/`fontSizePx` 为 v2026-09-21 新增）。驱动宿主工具栏「块操作」菜单的可用态与回显、以及「标题面板」的选中态。`headingLevel`：`blockType === "heading"` → 1–6；`blockType` 以 `toggleHeading` 开头 → 1–3（1 级兜底 1）；非标题块 → 0。`fontSizePx`：当前选区字号（`getActiveStyles().fontSize` 的 `"18px"` 解析为整数；WebView 内 1px=1dp，数值与宿主 sp 档位对应）；0 = 无字号样式（宿主回落默认档 16）。**仅在状态变化时上报**（JS 侧按 JSON 串去重） |
+| `blockState` | `{ blockType, headingLevel?, headingToggleable?, fontSizePx?, canSetBlockColor, blockTextColor?, blockBackgroundColor?, canToggleHeader, isHeaderRow, isHeaderCol }` | 当前光标块状态（v1.11；`headingLevel`/`fontSizePx` 为 v2026-09-21 新增，`headingToggleable` 为 v2026-09-22 新增）。驱动宿主工具栏「块操作」菜单的可用态与回显、以及「标题面板」的选中态。`headingLevel`：`blockType === "heading"` → 1–6（**普通与可折叠标题共用**）；非标题块 → 0。`headingToggleable`：`heading` 块且 `props.isToggleable === true` → 折叠标题；两类级别数字重叠，**必须靠该字段分流**（v2026-09-22 勘误：折叠标题不是独立块类型 `toggleHeading*`）。`fontSizePx`：当前选区字号（`getActiveStyles().fontSize` 的 `"18px"` 解析为整数；WebView 内 1px=1dp，数值与宿主 sp 档位对应）；0 = 无字号样式（宿主回落默认档 16）。**仅在状态变化时上报**（JS 侧按 JSON 串去重） |
 | `error` | `{ message }` | JS 异常上报（Kotlin 侧打 logcat / 展示错误态） |
 
 > `ready` 载荷自 v1.8 起带可选 `build` 字段（构建指纹，见下），故其类型为 `{ build?: string }`。
@@ -199,17 +199,57 @@ adb logcat -s BlockNoteEditor:V | grep "ready received"
 
   **口径**（JS 侧 `pushBlockState`）：
   - `blockType === "heading"` → `headingLevel = props.level`（1–6）
-  - `blockType` 以 `toggleHeading` 开头 → `props.level`，**1 级兜底 1**
-    （可折叠标题是**独立块类型**，且 1 级在 `transform` 写入时没有带 `props.level`）
   - 非标题块 → `0`（宿主据此不高亮任何格子）
   - `props.level` 非有限数或 ≤ 0 时按 0 处理，避免 NaN 污染 JS 侧的 JSON 去重键
 
-  ⚠️ **两类标题必须靠 `blockType` 区分，不能只看 level**：级别数字 1/2/3 在
-  `heading` 与 `toggleHeading*` 里都出现，只按 level 判断会让两类的同名格子同时亮起。
+  Kotlin 侧 `BlockState` 增加 `headingLevel: Int = 0`（缺省 0 = 不高亮）。
+  字段**可选**：旧 JS 产物（未带上行）时 `optInt(…, 0)` 兜底为 0，
+  宿主行为退化为"无回显"，不会异常。
 
-  Kotlin 侧 `BlockState` 增加 `headingLevel: Int = 0`（缺省 0 = 不高亮），
-  `HeadingPanel` 用 `blockType` 分流 + `headingLevel` 定位格子。字段**可选**：
-  旧 JS 产物（未带上行）时 `optInt(…, 0)` 兜底为 0，宿主行为退化为"无回显"，不会异常。
+- v2026-09-22：**`blockState` 新增可选字段 `headingToggleable`**（修正上一版对折叠标题的误判）。
+
+  ⚠️ **勘误**：上一版称"可折叠标题是独立块类型 `toggleHeading*`"，**这是错的**。
+  BlockNote 里折叠标题 = `heading` 块 + `props.isToggleable = true`（官方斜杠菜单
+  `getDefaultSlashMenuItems.ts` 即如此构造），并不存在 `toggleHeading*` 块类型。
+  原口径 `blockType.startsWith("toggleHeading")` 因此**永不成立**，后果是：
+  可折叠标题的格子永远点不亮，且会命中 `heading` 分支、误点亮「普通标题」的同号格子。
+
+  **现行口径**：
+  - `headingLevel = props.level`（普通与可折叠**共用**，1–6）
+  - `headingToggleable = block.type === "heading" && props.isToggleable === true`
+  - 两类标题级别数字重叠，**必须靠 `headingToggleable` 分流**，只按 level 无法区分
+
+  Kotlin 侧 `BlockState` 增加 `headingToggleable: Boolean = false`，
+  `HeadingPanel` 以「是否 `heading` 块」+ 该布尔字段分流两个分区。
+  同样**可选**：缺失时 `optBoolean(…, false)` 兜底为普通标题，向后兼容旧产物。
+
+- v2026-09-22（同上）：**可折叠标题的 markdown 往返编码**。
+
+  官方 markdown 导出（`htmlToMarkdown.serializeDetails`）会把
+  `<details><summary><h3>标题</h3></summary>…</details>` 削成普通 `### 标题`，
+  `isToggleable` 丢失——由于本项目正文只以 markdown 持久化，折叠状态会出现
+  "退出编辑页即退化"。故 JS 侧 `converter.ts` 自行编码，正文中会出现三段标记：
+
+  ```html
+  <details><summary>
+
+  ### 标题文本
+
+  </summary>
+
+  子块 markdown
+
+  </details>
+  ```
+
+  解析侧无需特殊处理：官方 markdown tokenizer 已把 `details` / `summary` 列入
+  HTML 块白名单并原样透传，拼接后的 HTML 交由 DOMParser 解析时，
+  `<h3>` 落在未闭合的 `<summary>` 内 → 命中 heading spec 的 DETAILS 分支
+  （`{ level, isToggleable: true }`），`</summary>` 之后的块成为该块的 children。
+
+  ⚠️ 消费方注意：这两类标记行**不含可见文字**，任何把 markdown 转纯文本的地方
+  （如 Kotlin 侧 `InspirationTextUtils.markdownToPlainText`，供列表摘要 / 字数 / 搜索）
+  都必须剥离 `details` / `summary` 标记行，否则会污染摘要与字数。
 
 - v2026-09-21（同日续）：**`blockState` 新增可选字段 `fontSizePx`**（供 H 面板「正文字号」档位回显）。
 

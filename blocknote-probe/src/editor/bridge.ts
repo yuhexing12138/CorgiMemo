@@ -85,6 +85,11 @@ export type DownMessage =
    * - alignLeft / alignCenter / alignRight（光标块对齐）
    * - transform（value = heading1–heading6、toggleHeading / toggleHeading2 / toggleHeading3、
    *   toggleList、quote、paragraph、codeBlock、table、pageBreak——块类型转换/插入）
+   *
+   * ⚠️ transform 的 value 是**动作名**，不等于块类型名（v2026-09-22 踩坑）：
+   * - `toggleHeading*` → 实为 `heading` + `props.isToggleable = true`（无 toggleHeading 类型）
+   * - `toggleList` → 实为 `toggleListItem`
+   * 把动作名直接当 `type` 传给 `updateBlock` 会因 schema 查不到类型而抛 TypeError。
    */
   | { type: "format"; action: string; value?: string }
   /**
@@ -181,12 +186,22 @@ export type UpMessage =
       blockType: string;
       /**
        * 光标块的标题级别（v2026-09-21 新增，供宿主「标题面板」回显选中态）：
-       * - `blockType === "heading"` → 1–6（普通标题，取 `props.level`）
-       * - `blockType` 以 `toggleHeading` 开头 → 1–3（可折叠标题是**独立块类型**，
-       *   其中 1 级在 JS 侧未显式写 `props.level`，此处兜底为 1）
+       * - `blockType === "heading"` → 1–6（普通标题**与**可折叠标题同级，级别取 `props.level`）
        * - 非标题块 → 0（宿主据此不高亮任何标题格子）
+       *
+       * ⚠️ v2026-09-22 修正：可折叠标题**不是独立块类型**，它同样落在 `heading` 上，
+       * 靠 `headingToggleable` 区分。原注释"以 `toggleHeading` 开头 → 1–3"是错的。
        */
       headingLevel?: number;
+      /**
+       * 是否为「可折叠标题」（v2026-09-22 新增）
+       *
+       * BlockNote 里折叠标题 = `type === "heading"` + `props.isToggleable === true`，
+       * 级别仍取 `headingLevel`。宿主「标题面板」据此在「普通标题 / 可折叠标题」
+       * 两个分区之间分流——两类都有 1/2/3 级，**只靠 headingLevel 无法区分**。
+       * 普通标题、非标题块一律为 false。
+       */
+      headingToggleable?: boolean;
       /** 当前块是否支持块级颜色（块 spec 声明了 textColor 或 backgroundColor） */
       canSetBlockColor: boolean;
       /** 当前块的文本色（预设色名；"default" 或 undefined = 默认色） */
