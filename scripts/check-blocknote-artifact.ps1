@@ -62,9 +62,50 @@ $Artifact = Join-Path $RepoRoot 'app\src\main\assets\blocknote-web\editor\editor
 $ArtifactRel = 'app/src/main/assets/blocknote-web/editor/editor.html'
 $HashMarker = 'bn-src:'
 
+<#
+   安全调用 git，返回其标准输出（字符串数组）。
+
+   ⚠️ 为什么必须包这一层（v2026-09-22 修复"钩子把提交硬拦下来"）：
+       PowerShell 5.1 在 `$ErrorActionPreference = 'Stop'` 下，**只要原生命令往 stderr
+       写了任何内容**，就会把这段文本包成 `NativeCommandError` 并立即终止脚本——
+       即使该命令本身执行成功、即使已经写了 `2>$null`（实测 5.1 仍会触发）。
+
+       git 在本机（core.autocrlf 生效）经常往 stderr 打
+       `warning: in the working copy of '...', LF will be replaced by CRLF...`，
+       于是脚本在第 164 行附近**异常退出 1**：本该打印的
+       「产物已重建但未加入暂存区，记得 git add」提醒根本没机会输出，
+       取而代之的是一屏 PowerShell 异常栈 + 提交被阻断。
+       （现象：钩子前面已经打印 `[OK] 产物与源码一致`，却仍然提交失败。）
+
+       修法：临时把 EAP 降为 `Continue`（原生命令的 stderr 只记录、不抛），
+       读完退出码后在 finally 里**恢复原值**，脚本其余部分继续享受 Stop 的严格性。
+       注意不能只在调用点降级——必须有 try/finally，否则中途 Fail 会把 EAP 永久改掉。
+
+   @param GitArgs 传给 git 的参数数组（不含 `-C <repo>`，本函数自动补）
+#>
+function Invoke-Git {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string[]]$GitArgs
+    )
+    $savedPref = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $out = @(& git -C $RepoRoot @GitArgs 2>$null)
+        $code = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $savedPref
+    }
+    if ($code -ne 0) {
+        Fail "git $($GitArgs -join ' ') 执行失败（exit $code）"
+    }
+    return $out
+}
+
 # ---------- pre-commit 场景：本次提交没碰编辑器源码就跳过 ----------
 if ($StagedOnly) {
-    $staged = & git -C $RepoRoot diff --cached --name-only 2>$null
+    $staged = @(Invoke-Git -GitArgs @('diff', '--cached', '--name-only'))
     $touchesSrc = @($staged | Where-Object { $_ -like 'blocknote-probe/src/*' }).Count -gt 0
     if (-not $touchesSrc) {
         Write-Host '[blocknote-artifact] 本次提交未涉及 blocknote-probe/src，跳过产物校验。'
@@ -160,10 +201,16 @@ if ($embedded -eq $current) {
 
 # ---------- 顺带提醒：产物重建了但没加进暂存区（pre-commit 场景常见）----------
 if ($StagedOnly) {
-    $stagedArtifact = @(& git -C $RepoRoot diff --cached --name-only -- $ArtifactRel 2>$null)
+    $stagedArtifact = @(Invoke-Git -GitArgs @('diff', '--cached', '--name-only', '--', $ArtifactRel))
     if ($stagedArtifact -notcontains $ArtifactRel) {
-        $null = & git -C $RepoRoot diff --quiet -- $ArtifactRel 2>$null
-        if ($LASTEXITCODE -ne 0) {
+        <#
+           用 `status --porcelain` 而不是 `diff --quiet`：前者只判「工作区相对暂存区有没有
+           变化」，且**退出码恒 0**（差异本身不是错误），不需要额外处理 $LASTEXITCODE；
+           后者会因"有差异"返回 1，还要额外区分「有差异」与「git 真出错」两种情况。
+           输出非空 = 该文件在工作区已改（或被删除），即"重建了但忘了 git add"。
+        #>
+        $dirty = @(Invoke-Git -GitArgs @('status', '--porcelain', '--', $ArtifactRel))
+        if ($dirty.Count -gt 0) {
             Write-Warning "[blocknote-artifact] 产物已在工作区重建，但**未加入暂存区**，本次提交不会带上它（记得 git add）。"
         }
     }
