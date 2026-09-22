@@ -121,3 +121,53 @@ describe("markdown 转换层：round-trip 往返", () => {
     expect(Array.isArray(blocks)).toBe(true);
   });
 });
+
+describe("markdown 转换层：链接往返（裸 URL autolink，v2026-09-22）", () => {
+  /**
+   * 背景：官方导出 `formatLink` 对「显示文本 == URL」的链接**有意退化为裸 URL**
+   * （BlockNote#2661），而官方 markdown 解析器没有 autolink ——
+   * "未选中文字插入链接"保存重进后编辑页链接丢失（详情页走 GFM_AUTOLINK 不受影响）。
+   * 修复：mdToBlocks 后处理在块模型层面把裸 URL 还原成 link 行内内容。
+   */
+  it("裸 URL（官方退化产物）载入还原为 link", async () => {
+    const blocks = await mdToBlocks(editor, "https://a.com/b");
+    const link = blocks[0]?.content?.find((x: any) => x.type === "link");
+    expect(link?.href).toBe("https://a.com/b");
+    expect(link?.content?.[0]?.text).toBe("https://a.com/b");
+  });
+
+  it("裸 URL 后跟中文标点：标点留在链接外", async () => {
+    const blocks = await mdToBlocks(editor, "看这个 https://a.com/b，很有用");
+    const content = blocks[0]?.content ?? [];
+    const linkIdx = content.findIndex((x: any) => x.type === "link");
+    expect(linkIdx).toBeGreaterThan(0); // 前面有"看这个 "文本
+    expect(content[linkIdx]?.href).toBe("https://a.com/b");
+    const tail = content[content.length - 1];
+    expect(tail?.type).toBe("text");
+    expect((tail?.text as string).startsWith("，")).toBe(true);
+  });
+
+  it("正文中间的裸 URL 也能识别（前置边界=空白）", async () => {
+    const blocks = await mdToBlocks(editor, "先看 https://a.com/x 再说");
+    const link = blocks[0]?.content?.find((x: any) => x.type === "link");
+    expect(link?.href).toBe("https://a.com/x");
+  });
+
+  it("显式标题链接不受 autolink 影响（不重复拆分）", async () => {
+    const blocks = await mdToBlocks(editor, "[点这里](https://a.com/b)");
+    const link = blocks[0]?.content?.find((x: any) => x.type === "link");
+    expect(link?.href).toBe("https://a.com/b");
+    expect(link?.content?.[0]?.text).toBe("点这里");
+  });
+
+  it("完整往返幂等：载入→导出（退化裸 URL）→再载入，链接不丢", async () => {
+    const blocks1 = await mdToBlocks(editor, "https://a.com/b");
+    // 官方 formatLink：text==href → 导出为裸 URL（不含 ]( 结构）
+    const md2 = blocksToMd(editor, blocks1);
+    expect(md2).not.toContain("](");
+    // 再载入：链接仍在（修复前这一步丢链接）
+    const blocks2 = await mdToBlocks(editor, md2);
+    const link = blocks2[0]?.content?.find((x: any) => x.type === "link");
+    expect(link?.href).toBe("https://a.com/b");
+  });
+});

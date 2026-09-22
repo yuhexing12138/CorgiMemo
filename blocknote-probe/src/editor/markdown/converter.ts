@@ -480,6 +480,142 @@ function normalizeImageUrls(blocks: any[]): void {
   }
 }
 
+/* ===== 裸 URL 的块模型级 autolink（v2026-09-22 新增，修复"链接重进失效"）===== */
+
+/**
+ * 裸 URL 识别（载入端）。只认 `http(s)://` 前缀——与编辑器内 autolink 插件
+ * （`@blocknote/core` Link 扩展的 `autolink.ts`）和详情页 markdown 解析
+ * （compose-rich-editor 认 `GFM_AUTOLINK`）的覆盖面保持一致；不带协议的
+ * `www.` 不处理，避免把普通文本误判成链接。
+ *
+ * ⚠️ 字符集**必须排除 CJK**（汉字 U+4E00-9FFF、CJK 标点 U+3000-303F、
+ * 全角字符 U+FF00-FFEF）：中文笔记里 URL 后面紧跟着中文极常见
+ * （`https://a.com/b，很有用`），若不排除，`[^\s]+` 会把整句中文吞进 URL。
+ * 排除空白与 `< > " \`` 则保证不吞 HTML 属性的引号（结构化 text 里本就
+ * 没有标签，此处属双保险）。
+ */
+const BARE_URL_GLOBAL_RE =
+  /https?:\/\/[^\s<>"`\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]+/g;
+
+/** URL 尾部要剥掉的标点（URL 不以这些收尾；中英文一并处理） */
+const URL_TRAILING_PUNCT_RE = /[.,;:!?"'，。；：！？、）】」》…]+$/;
+
+/**
+ * 剥掉 URL 尾部标点与**不平衡**的右括号 / 方括号。
+ * 按配对处理：`https://a.com/b_(c)` 平衡 → 保留；`https://a.com/b)` 多一个
+ * 右括号 → 剥掉（否则链接文字会拖上正文里的括号）。
+ */
+function trimUrlTail(raw: string): string {
+  let url = raw.replace(URL_TRAILING_PUNCT_RE, "");
+  for (;;) {
+    const last = url[url.length - 1];
+    if (last === ")") {
+      const open = (url.match(/\(/g) ?? []).length;
+      const close = (url.match(/\)/g) ?? []).length;
+      if (close > open) {
+        url = url.slice(0, -1);
+        continue;
+      }
+    }
+    if (last === "]") {
+      const open = (url.match(/\[/g) ?? []).length;
+      const close = (url.match(/\]/g) ?? []).length;
+      if (close > open) {
+        url = url.slice(0, -1);
+        continue;
+      }
+    }
+    break;
+  }
+  return url;
+}
+
+/**
+ * 把单个 text 片段里的裸 URL 拆成 text / link 交替序列。
+ *
+ * 前置边界对齐 tiptap autolink 的触发条件：URL 必须在片段开头，
+ * 或前一个字符是空白——`foohttps://a.com` 这类粘连文本不会误判。
+ *
+ * @returns 拆分后的片段数组；无匹配时原样返回单元素数组（不做无谓拷贝）
+ */
+function splitBareUrls(item: any): any[] {
+  const text = item.text as string;
+  /** 原片段样式：拆出的每个片段（前缀 / 链接内文字 / 后缀）都必须继承，
+   *  否则"带色文字里的裸 URL"拆完前后会掉色 */
+  const baseStyles = { ...((item.styles ?? {}) as Record<string, unknown>) };
+  const out: any[] = [];
+  let cursor = 0;
+  for (const m of text.matchAll(BARE_URL_GLOBAL_RE)) {
+    const url = trimUrlTail(m[0]);
+    if (!url) continue;
+    const start = m.index ?? 0;
+    if (start > 0 && !/\s/.test(text[start - 1])) continue;
+    const end = start + url.length;
+    if (end <= start) continue;
+    if (start > cursor) {
+      out.push({ type: "text", text: text.slice(cursor, start), styles: { ...baseStyles } });
+    }
+    /**
+     * link 行内内容与官方 `nodeToBlock` 产出的形态完全一致：
+     * `{ type: "link", href, content: [{ type: "text", text, styles }] }`
+     */
+    out.push({
+      type: "link",
+      href: url,
+      content: [{ type: "text", text: text.slice(start, end), styles: { ...baseStyles } }],
+    });
+    cursor = end;
+  }
+  if (out.length === 0) return [item];
+  if (cursor < text.length) {
+    out.push({ type: "text", text: text.slice(cursor), styles: { ...baseStyles } });
+  }
+  return out;
+}
+
+/**
+ * 载入后处理：把解析结果里 text 片段中的裸 URL 还原成链接（块模型级 autolink）。
+ *
+ * ⚠️ **为什么必须做**（修复"插入链接保存重进后编辑页失效"）：
+ * BlockNote 导出时，`htmlToMarkdown.ts` 的 `formatLink` 对「显示文本 == URL」的
+ * 链接**有意导出为裸 URL**（`if (!text || text === href) return href`，BlockNote#2661：
+ * 裸 URL 粘到别的输入框能被目标自动识别，避免 `<url>` 尖括号或冗余的 `[url](url)`）。
+ * 而"未选中文字插入链接"正是显示文本 = URL 原文 → 保存后 markdown 里只剩裸 URL。
+ * 但官方 markdown **解析器没有 autolink**（`markdownToHtml.ts` 的 inline tokenizers
+ * 只认 `[text](url)`），于是重进时裸 URL 被当纯文本，链接丢失。
+ * （详情页不受影响：compose-rich-editor 的 markdown 解析认 `GFM_AUTOLINK`。）
+ *
+ * **为什么在块模型层面做而不是给 markdown 加正则**：解析完成后数据已结构化，
+ * 代码块、行内代码、HTML 标记、已有链接都各归其位——在这里拆分天然不会误伤它们；
+ * 若在 markdown 文本上跑正则，就得逐个排除 `<a href="…">` 属性、``` 围栏、
+ * `](…)` 链接目标等一堆上下文，极易出漏。
+ *
+ * 幂等：载入拆成 link → 导出又退化为裸 URL（官方行为）→ 再载入再拆回 link，
+ * 数据形态稳定，不会越循环越乱。
+ *
+ * @param blocks 解析得到的块数组（原地修改；递归 children，quote/列表项等容器一并覆盖）
+ */
+function autolinkBareUrls(blocks: any[]): void {
+  for (const b of blocks) {
+    if (!b || typeof b !== "object") continue;
+    if (Array.isArray(b.content)) {
+      const next: any[] = [];
+      for (const item of b.content) {
+        if (item?.type === "text" && typeof item.text === "string") {
+          next.push(...splitBareUrls(item));
+        } else {
+          /** 已是 link（显式标题链接）/ 其它行内内容原样保留，不重复处理 */
+          next.push(item);
+        }
+      }
+      b.content = next;
+    }
+    if (Array.isArray(b.children) && b.children.length > 0) {
+      autolinkBareUrls(b.children);
+    }
+  }
+}
+
 /** 图片块 URL 还原（保存前处理）：file:// 剥离回本地原始路径（幂等） */
 function restoreImageUrls(blocks: any[]): void {
   for (const b of blocks) {
@@ -533,7 +669,11 @@ export async function mdToBlocks(editor: any, markdown: string): Promise<any[]> 
   // ④ 后处理：块级色行首 token → 块 props（必须在装载编辑器前完成，否则 token 会闪现）
   const colored = decodeBlockColorTokens(result);
 
-  // ⑤ 后处理：图片 URL 规范化（本地路径 → file://，WebView 可加载）
+  // ⑤ 后处理：裸 URL → link 行内内容（官方 markdown 解析器无 autolink，
+  //    而"显示文本==URL"的链接导出时会被官方退化为裸 URL，见 autolinkBareUrls 注释）
+  autolinkBareUrls(colored);
+
+  // ⑥ 后处理：图片 URL 规范化（本地路径 → file://，WebView 可加载）
   normalizeImageUrls(colored);
   return colored;
 }
