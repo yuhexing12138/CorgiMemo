@@ -101,6 +101,73 @@ function linkAnchorPos(view: any): number | undefined {
   return sel.empty ? sel.anchor : sel.from;
 }
 
+/**
+ * 校验并夹紧宿主下发的链接目标区间（v2026-09-22）。
+ *
+ * 快照区间来自 `saveSelection` 时刻的文档；若文档此后真的变了（弹窗期间宿主从不
+ * 注入内容变更，理论上不发生），位置可能越界或落在另一个块里。此处不拒绝、只夹紧
+ * ——"按夹紧后的位置写"总比"什么都不发生"好，且外层 try/catch + diagnostic 兜底。
+ *
+ * @returns 夹紧后的 { from, to }；任一位置缺失 / 非有限数 / 无文档时返回 null
+ *          （null = 宿主没给区间，走旧的"读当前选区"路径）
+ */
+function clampLinkRange(
+  ed: any,
+  from: number | undefined,
+  to: number | undefined
+): { from: number; to: number } | null {
+  if (typeof from !== "number" || !Number.isFinite(from)) return null;
+  const size = ed?.prosemirrorView?.state?.doc?.content?.size;
+  if (typeof size !== "number") return null;
+  const lo = Math.max(0, Math.min(from, size));
+  const hi =
+    typeof to === "number" && Number.isFinite(to)
+      ? Math.max(0, Math.min(to, size))
+      : lo;
+  return lo <= hi ? { from: lo, to: hi } : { from: hi, to: lo };
+}
+
+/**
+ * 在**显式区间**上写链接（v2026-09-22）。
+ *
+ * 与 BlockNote `StyleManager.createLink` 同构，但接受 from/to 而非读当前选区——
+ * 这是"链接精确落点"的核心：宿主把快照位置传回来，编辑器当前选区在不在都无所谓。
+ *
+ * ⚠️ 不能用 `ed.createLink(url, text)`：它内部固定读 `tr.selection`，位置传不进去；
+ *   而 `ed.transact()` + `ed.pmSchema.mark()` 都是公开 API，与官方实现完全同构。
+ *
+ * @returns 诊断用动作名（insert-at-range / replace-range / mark-range）
+ */
+function writeLinkAtRange(
+  ed: any,
+  url: string,
+  text: string | undefined,
+  from: number,
+  to: number
+): string {
+  const linkMark = ed.pmSchema.mark("link", { href: url });
+  if (from === to) {
+    /** 光标态：插入文字（标题或 URL 原文）并挂 link mark——正是"未选中文字直接插链接" */
+    const display = text || url;
+    ed.transact((tr: any) => {
+      tr.insertText(display, from, to).addMark(from, from + display.length, linkMark);
+    });
+    return "insert-at-range";
+  }
+  if (text) {
+    /** 有区间 + 填了标题：标题替换区间内文字后再挂链接 */
+    ed.transact((tr: any) => {
+      tr.insertText(text, from, to).addMark(from, from + text.length, linkMark);
+    });
+    return "replace-range";
+  }
+  /** 有区间 + 未填标题：只给区间内已有文字挂 link mark */
+  ed.transact((tr: any) => {
+    tr.addMark(from, to, linkMark);
+  });
+  return "mark-range";
+}
+
 /** 光标块类型切换（已是目标类型则退回普通段落）——列表/任务按钮的 toggle 语义 */
 function toggleBlockType(ed: any, type: string): void {
   const { block } = ed.getTextCursorPosition();
@@ -890,32 +957,65 @@ export default function EditorApp() {
                * 而**空选区下 from == to** —— 给零长度区间加 mark 是**静默空操作**，
                * 既不报错也不产生任何文档变更，真机表现为"点了按钮、填了 URL、什么都没发生"。
                *
-               * 现按四种情形分流（是否为空由 ProseMirror state 判定，宿主不参与）：
-               * - **有选区 + 未填标题** → 只给选中文字挂 link mark（选中文字即显示文字）；
-               * - **有选区 + 填了标题** → 用标题替换选中文字后再挂链接（createLink 自带语义）；
-               * - **无选区 + 光标正落在已有链接上** → 走 `editLink` **改**这条链接
+               * **落点优先级（v2026-09-22 两道防线）**：
+               * 1. 宿主下发的 `from` / `to`（`saveSelection` → `selectionRange` 上行 →
+               *    宿主暂存 → 随本命令带回）：**不依赖当前选区是否还在**，即便 WebView
+               *    失焦折叠了选区、`restoreSelection` 失败，也能按快照位置精确落点；
+               * 2. 缺省（旧宿主 / 未上行）→ 回落读**当前选区**（旧路径，向后兼容）。
+               *
+               * 按落点形态分流：
+               * - **有区间 + 未填标题** → 只给区间内文字挂 link mark（选中文字即显示文字）；
+               * - **有区间 + 填了标题** → 标题替换区间内文字后再挂链接；
+               * - **光标态 + 落点在已有链接上** → 走 `editLink` **改**这条链接
                *   （否则会在链接内部插出第二条链接，真机上表现为"链接里套链接"）；
-               * - **无选区 + 无链接** → 以「标题 or URL 原文」为文字**插入**一段带链接的新文本
+               * - **光标态 + 无链接** → 以「标题 or URL 原文」为文字**插入**一段带链接的新文本
                *   （这正是本次需求：未选择文字时直接把链接插进去）。
                *
                * 另：`value` 经 [normalizeLinkUrl] 补协议，避免 `example.com` 变成相对路径。
                */
               const linkText = (msg as any).text as string | undefined;
               const pm = ed.prosemirrorView;
-              const hasSelection = pm ? !pm.state.selection.empty : true;
               const url = normalizeLinkUrl(value || "");
               if (!url) break;
               try {
                 let mode: string;
+                /** 防线一：宿主带回来的快照区间（优先） */
+                const range = clampLinkRange(
+                  ed,
+                  (msg as any).from as number | undefined,
+                  (msg as any).to as number | undefined
+                );
+                if (range) {
+                  if (range.from === range.to) {
+                    /** 光标态：落点在已有链接上 → 改链（保留原显示文字，除非填了标题）。
+                     *  末位再兜一层 url：万一命中了零长度链接（理论不该出现），
+                     *  editLink(url, "") 会把文字删掉 —— 宁可退回"显示 URL"。 */
+                    const existing = linkDataAt(ed, range.from);
+                    if (existing) {
+                      ed.editLink(url, linkText || existing.text || url, range.from);
+                      mode = "edit-existing@range";
+                    } else {
+                      mode = writeLinkAtRange(ed, url, linkText, range.from, range.to);
+                    }
+                  } else {
+                    mode = writeLinkAtRange(ed, url, linkText, range.from, range.to);
+                  }
+                  sendUp({
+                    type: "diagnostic",
+                    message: `createLink: ${mode} (${range.from}-${range.to})`,
+                  });
+                  break;
+                }
+                /** 防线二：宿主没给区间 → 按当前选区分流（旧路径） */
+                const hasSelection = pm ? !pm.state.selection.empty : true;
                 if (hasSelection) {
                   if (linkText) ed.createLink(url, linkText);
                   else ed.createLink(url);
                   mode = "mark-selection";
                 } else {
-                  /** 光标停在已有链接上 → 改链（保留原显示文字，除非用户填了标题） */
                   const existing = linkDataAt(ed, linkAnchorPos(pm));
                   if (existing) {
-                    ed.editLink(url, linkText || existing.text);
+                    ed.editLink(url, linkText || existing.text || url);
                     mode = "edit-existing";
                   } else {
                     ed.createLink(url, linkText || url);
@@ -925,7 +1025,8 @@ export default function EditorApp() {
                 sendUp({ type: "diagnostic", message: `createLink: ${mode}` });
               } catch (e) {
                 /**
-                 * 光标落在无内联内容的块（图片/分割线等）上时 insertText 会抛异常。
+                 * 光标落在无内联内容的块（图片/分割线等）上时 insertText 会抛异常；
+                 * 区间越界（文档已变且夹紧后仍非法）同理。
                  * 静默吞掉会让问题再次变成"点了没反应"，故至少上行诊断。
                  */
                 sendUp({
@@ -949,13 +1050,19 @@ export default function EditorApp() {
                * 这样还原时无需 import 任何 ProseMirror 的 Selection 构造器
                * （prosemirror-state 只是 @blocknote/core 的传递依赖，本项目未声明）。
                */
+              const sel = view.state.selection;
               savedSelectionRef.current = {
-                selection: view.state.selection,
+                selection: sel,
                 doc: view.state.doc,
               };
+              /**
+               * 区间同时上行给宿主：createLink / deleteLink 会把它带回 JS，
+               * 作为「不依赖当前选区」的精确落点（防线一）。
+               */
+              sendUp({ type: "selectionRange", from: sel.from, to: sel.to });
               sendUp({
                 type: "diagnostic",
-                message: `saveSelection: ${view.state.selection.from}-${view.state.selection.to} empty=${view.state.selection.empty}`,
+                message: `saveSelection: ${sel.from}-${sel.to} empty=${sel.empty}`,
               });
               break;
             }
@@ -1002,7 +1109,13 @@ export default function EditorApp() {
             /** 移除链接（保留文字）：链接对话框「编辑链接」模式的「移除链接」按钮 */
             case "deleteLink": {
               try {
-                ed.deleteLink();
+                /**
+                 * 位置优先用宿主带回来的快照区间（防线一）：`StyleManager.deleteLink(position)`
+                 * 内部是 `getLinkMarkAtPos(position + 1)`，传快照位置即可不依赖
+                 * "当前选区恰好还在链接上"；缺省（旧宿主）回落当前选区锚点。
+                 */
+                const from = (msg as any).from as number | undefined;
+                ed.deleteLink(typeof from === "number" ? from : undefined);
                 sendUp({ type: "diagnostic", message: "deleteLink: ok" });
               } catch (e) {
                 sendUp({ type: "diagnostic", message: `deleteLink failed: ${String(e)}` });

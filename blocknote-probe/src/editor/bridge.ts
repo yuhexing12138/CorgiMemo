@@ -102,6 +102,18 @@ export type DownMessage =
        * 故 JS 侧取到 `undefined` 即"用户没填标题"。
        */
       text?: string;
+      /**
+       * 可选的**目标区间**（v2026-09-22 新增，目前仅 `action = "createLink"` 使用）。
+       *
+       * 来源 = 宿主 `saveSelection` 后 JS 经 `selectionRange` 上行、宿主暂存下来的
+       * 选区位置。有了它，写链接就**不依赖"编辑器当前选区是否还在"**：
+       * 即使 WebView 失焦折叠了选区、甚至 `restoreSelection` 失败，也能按快照位置
+       * 精确落点（`from === to` 表示光标态 → 插入新文本；`from < to` 表示区间 → 挂 mark）。
+       *
+       * 缺省（旧宿主 / saveSelection 未上行）时 JS 回落「读当前选区」的旧路径。
+       */
+      from?: number;
+      to?: number;
     }
   /**
    * 删除块（v1.11：原 ⋮⋮ 手柄点击菜单的「删除」项，桥接到宿主工具栏）。
@@ -204,6 +216,10 @@ export type DownMessage =
    *
    * 容错：若文档在快照之后发生了变化（无法安全复用原选区对象），则用位置信息
    * 重建；两者都失败时**静默保持现状**并回一条 `diagnostic`，绝不抛错中断后续命令。
+   *
+   * ⚠️ 本命令只是**第一道防线**（恢复可见选区与后续书写起点）。
+   * 真正的落点精度由 `format.createLink` 的 `from` / `to` 参数保证（第二道防线）——
+   * 即便本命令失败，写链接也不会插错位置。
    */
   | { type: "restoreSelection" }
   /**
@@ -211,8 +227,11 @@ export type DownMessage =
    *
    * 链接对话框在「编辑链接」模式下的「移除链接」按钮。JS 侧调 `editor.deleteLink()`：
    * 优先按光标位置找链接范围并去 mark；找不到时回落为「去掉当前选区上的 link mark」。
+   *
+   * @param from 快照选区的位置（可选，来自 `selectionRange`）。传了就按它定位，
+   *             免去"依赖当前选区恰好还在链接上"的隐患；缺省则按当前选区锚点。
    */
-  | { type: "deleteLink" };
+  | { type: "deleteLink"; from?: number };
 
 /** 上行消息（JS → Kotlin） */
 export type UpMessage =
@@ -368,6 +387,20 @@ export type UpMessage =
    * 是否落在 `.bn-editor` 内；仅在状态翻转时上行（去重，避免刷屏）。
    */
   | { type: "editorFocus"; focused: boolean }
+  /**
+   * 选区区间快照（v2026-09-22 新增）：对下行 `saveSelection` 的应答。
+   *
+   * 链路：宿主点 🔗 → `saveSelection` → JS 记下选区对象 + doc 引用，**并把区间上行** →
+   * 宿主暂存 from/to → 用户确认时，`createLink` / `deleteLink` 把这组位置带回 JS。
+   *
+   * 为什么要绕这一圈：`restoreSelection` 靠"文档未变则复用选区对象"工作，一旦文档
+   * 在快照后被改动就只能按位置重建/放弃。把位置**显式交给宿主保管**，写链接时即使
+   * 编辑器当前选区已丢失也能精确落点——两道防线各管一段，互不依赖。
+   *
+   * 位置语义与 ProseMirror 一致：文档内偏移（首块内首字符约为 1）。
+   * 宿主须原样暂存、不得自行推算（`from === to` = 光标态，`from < to` = 有选区）。
+   */
+  | { type: "selectionRange"; from: number; to: number }
   /**
    * 诊断信息上行（v1.11.7）：仅用于 logcat 排错，**不参与业务逻辑**。
    *

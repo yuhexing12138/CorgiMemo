@@ -30,11 +30,11 @@
 
 | `focusEditor` | `{}` | 让编辑器重新获得 DOM 焦点（v2026-09-22）。宿主收起「T / H / A」面板、要把键盘弹回来**之前**下发：Chromium 只在编辑元素持有焦点时才建立输入连接，宿主随后的 `InputMethodManager.showSoftInput` 才有效。JS 侧对 `.bn-editor` 调 `focus()`（已聚焦时为空操作，不打断现有选区），并回一条 `diagnostic` 说明是否命中节点。⚠️ 必须在 **IME 抑制解除之后**下发，否则页面还带着 `inputmode="none"`，聚焦后 Chromium 仍不会弹键盘 |
 | `requestBlockState` | `{}` | **主动要一次**块状态（v2026-09-22）。宿主在「T / H / A」面板**收起**时下发，让工具栏选中态在收起瞬间就是最新的——面板展开期间正文里的样式 / 选区变化若因 JS 侧 JSON 去重或时序没赶在收起前上行，收起后高亮会**滞后一拍**（显示面板操作之前的状态）。**无副作用**：不产生任何文档变更，只重新采集一次，且仍走 `pushBlockState` 的去重逻辑（状态没变则实际不上行），可放心多调。ready 前下发会进 `pendingCommands` 缓存，调用方无需判时机 |
-| `format` | `{ action, value?, text? }` | 底部格式工具栏的统一格式通道。`action` 见下表；`value` 随 action 而定（`fontSize="18px"`、`textColor="#RRGGBB"`、`transform` 的块类型名等）。⚠️ v2026-09-22：`text` 目前**只有 `createLink` 用**（可选显示文字），其余 action 一律不带该字段 |
-| └ `format.action = createLink` | `{ action: "createLink", value: url, text? }` | 插入/写入链接（v2026-09-22）。**宿主不判断有没有选区**——选区真值只在 WebView 的 ProseMirror state 里，Kotlin 侧无从取得（`View.hasFocus()` 会失真），故把 URL 与可选显示文字如实下发，由 JS 分流：① 有选区 + 未填标题 → 给选中文字挂 link mark；② 有选区 + 填了标题 → 标题替换选中文字再挂链接；③ **无选区且光标落在已有链接上 → 走 `editLink` 改这条链接**（不这么分流会插出「链接里套链接」）；④ **无选区且无链接 → 以标题（留空则用 URL 原文）为文字插入一段带链接的新文本**。缺协议的 URL 由 JS 侧 `normalizeLinkUrl()` 自动补 `https://`（对齐官方 LinkToolbar 的 `validateUrl`）。⚠️ 历史坑：只发 `createLink(url)` 时，空选区下走的是 `tr.addMark(from, to)` 且 `from == to` → **零长度区间加 mark 是静默空操作**，表现为"填了 URL 点确定毫无反应" |
-| `saveSelection` | `{}` | 保存当前选区快照（v2026-09-22）。宿主在**打开链接对话框之前**下发。存在理由：链接对话框是 Compose 的 `AlertDialog`，弹出时 WebView 会失焦；若 Android WebView 在失焦时折叠了内部选区，随后的 `createLink` 就会按「无选区」处理 —— 用户明明选了字，却在光标处插了 URL。**无副作用**（只读快照，存 Selection 对象 + doc 引用，故 JS 侧无需引入 prosemirror-state 依赖）。JS 回 `diagnostic`：`saveSelection: <from>-<to> empty=<bool>` |
-| `restoreSelection` | `{}` | 还原上一次 `saveSelection` 的选区（v2026-09-22）。宿主在对话框**确认 / 移除之后、写链接之前**下发；桥命令按序执行，故 restore 必定先于 `createLink` / `deleteLink` 生效。容错：文档未变则复用原选区对象；文档已变（理论不发生）则用保存的位置重建；两者都失败时**静默保持现状**并回 `diagnostic`，绝不抛错中断后续命令 |
-| `deleteLink` | `{}` | 移除光标 / 选区所在位置的**链接本身，保留文字**（v2026-09-22）。链接对话框「编辑链接」模式的「移除链接」按钮，JS 侧调 `editor.deleteLink()`：优先按光标位置定位链接范围去 mark，找不到时回落为「去掉当前选区上的 link mark」。与 `restoreSelection` 搭配使用 |
+| `format` | `{ action, value?, text?, from?, to? }` | 底部格式工具栏的统一格式通道。`action` 见下表；`value` 随 action 而定（`fontSize="18px"`、`textColor="#RRGGBB"`、`transform` 的块类型名等）。⚠️ v2026-09-22：`text` 与 `from`/`to` 目前**只有 `createLink` 用**，其余 action 一律不带 |
+| └ `format.action = createLink` | `{ action: "createLink", value: url, text?, from?, to? }` | 插入/写入链接（v2026-09-22）。**宿主不判断有没有选区**——选区真值只在 WebView 的 ProseMirror state 里，Kotlin 侧无从取得（`View.hasFocus()` 会失真）。**落点两道防线**：① 宿主把 `saveSelection` → `selectionRange` 上行暂存的 **from/to 随命令带回**（`from === to` = 光标态，`from < to` = 区间），JS 据此**按快照位置**写入——即便 WebView 失焦折叠了选区、`restoreSelection` 失败也能精确落点（实现为 `ed.transact` + `ed.pmSchema.mark("link")`，与官方 `StyleManager.createLink` 同构但接受显式区间；越界由 JS 夹紧）；② 未带位置（旧宿主/未上行）→ 回落读**当前选区**的旧路径。按落点形态分流：有区间未填标题 → 只挂 link mark；有区间填了标题 → 标题替换区间文字再挂链接；**光标态且落点在已有链接上 → 走 `editLink` 改这条链接**（不这么分流会插出「链接里套链接」）；光标态且无链接 → 以标题（留空则用 URL 原文）为文字**插入**一段带链接的新文本。缺协议的 URL 由 JS 侧 `normalizeLinkUrl()` 自动补 `https://`（对齐官方 LinkToolbar 的 `validateUrl`）。⚠️ 历史坑：只发 `createLink(url)` 时，空选区下走的是 `tr.addMark(from, to)` 且 `from == to` → **零长度区间加 mark 是静默空操作**，表现为"填了 URL 点确定毫无反应" |
+| `saveSelection` | `{}` | 保存当前选区快照（v2026-09-22）。宿主在**打开链接对话框之前**下发。存在理由：链接对话框是 Compose 的 `AlertDialog`，弹出时 WebView 会失焦；若 Android WebView 在失焦时折叠了内部选区，随后的 `createLink` 就会按「无选区」处理 —— 用户明明选了字，却在光标处插了 URL。**无副作用**（只读快照，存 Selection 对象 + doc 引用，故 JS 侧无需引入 prosemirror-state 依赖）。JS 回两条上行：**`selectionRange { from, to }`**（宿主须暂存，写链接时带回）与 `diagnostic: saveSelection: <from>-<to> empty=<bool>`。⚠️ 宿主在**下发前**要先作废上一份快照（快速连开两次对话框的间隙里，旧区间会把链接插到上一处） |
+| `restoreSelection` | `{}` | 还原上一次 `saveSelection` 的选区（v2026-09-22）。宿主在对话框**确认 / 移除之后、写链接之前**下发；桥命令按序执行，故 restore 必定先于 `createLink` / `deleteLink` 生效。容错：文档未变则复用原选区对象；文档已变（理论不发生）则用保存的位置重建；两者都失败时**静默保持现状**并回 `diagnostic`，绝不抛错中断后续命令。⚠️ 本命令只是**第一道防线**（恢复可见选区与书写起点）；落点精度由 `createLink` / `deleteLink` 携带的 from/to 保证（第二道防线），二者互不依赖 |
+| `deleteLink` | `{ from? }` | 移除光标 / 选区所在位置的**链接本身，保留文字**（v2026-09-22）。链接对话框「编辑链接」模式的「移除链接」按钮，JS 侧调 `editor.deleteLink(position)`：带 `from`（快照位置）则按它定位，否则按当前选区锚点；找不到链接范围时回落为「去掉当前选区上的 link mark」。与 `restoreSelection` 搭配使用 |
 
 ## 上行消息（JS → Kotlin）
 
@@ -45,6 +45,7 @@
 | `undoState` | `{ canUndo, canRedo }` | 撤销/重做可用态（v1.7）；历史栈变化后上报，宿主左上角按钮据此置灰 |
 | `blockState` | `{ blockType, headingLevel?, headingToggleable?, inlineTextColor?, inlineBackgroundColor?, fontSizePx?, bold?, italic?, underline?, strike?, textAlignment?, canNestBlock?, canUnnestBlock?, canSetBlockColor, blockTextColor?, blockBackgroundColor?, canToggleHeader, isHeaderRow, isHeaderCol, linkUrl? }` | 当前光标块状态（v1.11；`headingLevel`/`fontSizePx` 为 v2026-09-21 新增，`headingToggleable`/`inlineTextColor`/`inlineBackgroundColor`/`linkUrl` 为 v2026-09-22 新增）。驱动宿主工具栏「块操作」菜单的可用态与回显、以及「标题面板」「颜色面板」的选中态。`headingLevel`：`blockType === "heading"` → 1–6（**普通与可折叠标题共用**）；非标题块 → 0。`headingToggleable`：`heading` 块且 `props.isToggleable === true` → 折叠标题；两类级别数字重叠，**必须靠该字段分流**（v2026-09-22 勘误：折叠标题不是独立块类型 `toggleHeading*`）。`inlineTextColor` / `inlineBackgroundColor`：`getActiveStyles()` 的原始串（宿主下发的自由 hex，也可能是粘贴来的色名 / `rgb()`），供 A 面板两个「选中色」行反查色名回显；**缺失 = 该维度未设置**（宿主高亮第一个「/」清除块）。⚠️ 与 `blockTextColor` / `blockBackgroundColor`（**块级**色名，作用于整段）不是一回事。`fontSizePx`：当前选区字号（`getActiveStyles().fontSize` 的 `"18px"` 解析为整数；WebView 内 1px=1dp，数值与宿主 sp 档位对应）；0 = 无字号样式（宿主回落默认档 16）。`linkUrl`：光标/选区上的**已有链接** URL（缺失 / 空串 = 不在链接上），供 🔗 按钮激活态与链接对话框的「编辑链接」模式。`canNestBlock` / `canUnnestBlock`：缩进 / 回退缩进的**可用态**（v2026-09-22 新增；口径照抄官方 `editor.canNestBlock()` / `canUnnestBlock()` —— 前者 = 当前块前面还有块、首块为 false；后者 = 嵌套深度 > 1、顶层块为 false），宿主两个缩进按钮据此置灰。`bold` / `italic` / `underline` / `strike`：当前选区的四个**行内布尔样式激活态**（v2026-09-22 新增；取自同一份 `getActiveStyles()` 快照并归一为布尔），供底部工具栏 B / I / U / S 四个按钮高亮。`textAlignment`：光标块的**对齐方式**（v2026-09-22 新增；`"left"` / `"center"` / `"right"` / `"justify"`，非字符串时回落 `"left"`），供三个对齐按钮**互斥**高亮。⚠️ 对齐是**块级 prop**（`props.textAlignment`）、与上面四个行内样式不是一个维度；各 block spec 的默认值即 `"left"`，故未设置 = 左对齐按钮亮。**仅在状态变化时上报**（JS 侧按 JSON 串去重） |
 | `editorFocus` | `{ focused }` | 编辑器 DOM 焦点态（v2026-09-22）。JS 侧在 `document` 上监听 `focusin`/`focusout`，判定 `document.activeElement` 是否落在 `.bn-editor` 内，**仅在翻转时上行**。宿主据此在面板收起后决定是否弹回键盘。⚠️ 该真值只能由 JS 提供：Android 的 `View.hasFocus()` 会失真（点底部栏按钮后视图焦点已转移到 Compose 根视图，而 WebView 内的 contenteditable 仍持有 DOM 焦点、光标仍在闪） |
+| `selectionRange` | `{ from, to }` | 选区区间快照（v2026-09-22），**对下行 `saveSelection` 的应答**。链路：宿主点 🔗 → `saveSelection` → JS 上行本消息 → 宿主暂存 → 确认时 `createLink` / `deleteLink` 把 from/to 带回 JS 作**不依赖当前选区的精确落点**（两道防线之一）。位置为 ProseMirror 文档内偏移，宿主**原样暂存、不得自行推算**（`from === to` = 光标态）。⚠️ 旧产物不下发该消息 → 宿主保持 -1 → 写链接不带位置 → JS 回落当前选区（向后兼容） |
 | `error` | `{ message }` | JS 异常上报（Kotlin 侧打 logcat / 展示错误态） |
 
 > `ready` 载荷自 v1.8 起带可选 `build` 字段（构建指纹，见下），故其类型为 `{ build?: string }`。
@@ -86,10 +87,12 @@ Kotlin 收 changed → 落库（P0 内存态，P1 接 Repository）
               → 工具栏「块操作」菜单据此决定表头项显隐、色板高亮
 点工具栏「块操作」某项 → Kotlin sendDown(deleteBlock|setBlockColor|setTableHeader)
               → JS 执行 → onChange/onSelectionChange → sendUp(blockState) 回传新状态
-点工具栏 🔗（链接）→ Kotlin sendDown(saveSelection) 快照选区 → 弹 Compose 对话框
-                 （高亮态与「编辑链接」模式取自上一条 blockState.linkUrl）
-              → 确认/移除 → Kotlin sendDown(restoreSelection) → sendDown(createLink|deleteLink)
-              （桥命令按序执行，restore 必定先于写入命令生效）
+点工具栏 🔗（链接）→ Kotlin sendDown(saveSelection) 快照选区 → JS sendUp(selectionRange{from,to})
+                 （宿主暂存区间；高亮态与「编辑链接」模式取自上一条 blockState.linkUrl）
+              → 弹 Compose 对话框 → 确认/移除
+              → Kotlin sendDown(restoreSelection) → sendDown(createLink{from,to,text}|deleteLink{from})
+              （桥命令按序执行，restore 必定先于写入命令生效；写入命令自带快照区间，
+               即便 restore 失败也能按位置精确落点）
               → JS 执行 → onChange/onSelectionChange → sendUp(blockState)（linkUrl 随之更新）
 点面板收起（T / H / A）→ Kotlin sendDown(requestBlockState) → JS 重采一次 → sendUp(blockState)
               → 随后按焦点态恢复软键盘（见 focusEditor / editorFocus）

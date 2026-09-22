@@ -261,6 +261,21 @@ class BlockNoteBridgeController {
     private var pendingCommands = mutableListOf<JSONObject>()
 
     /**
+     * `saveSelection` 快照下来的选区区间（v2026-09-22；-1 = 尚无有效快照）
+     *
+     * 来源：JS 对 `saveSelection` 的应答 `selectionRange { from, to }` 上行。
+     * [createLink] / [deleteLink] 会把它随命令带回 JS，作为**不依赖当前选区**的
+     * 精确落点（第二道防线）——即便 `restoreSelection` 失败，链接也不会插错位置。
+     *
+     * ⚠️ 生命周期：[saveSelection] 调用即作废（归 -1），等下一次 `selectionRange`
+     * 上行再填。JS 的应答是异步的，但对话框从打开到确认之间隔着用户输入，
+     * 时间上必然足够；没等到（如旧产物不下发该消息）就保持 -1，
+     * [createLink] 不带位置、JS 回落当前选区——向后兼容。
+     */
+    private var savedSelectionFrom = -1
+    private var savedSelectionTo = -1
+
+    /**
      * 装载编辑器内容（宿主在内容就绪后调用；ready 前调用会缓存待 ready 补发）。
      *
      * @param markdown 正文初始内容（markdown 快照）
@@ -382,6 +397,16 @@ class BlockNoteBridgeController {
         val trimmed = text?.trim().orEmpty()
         /** 空标题不下发 `text` 字段：JS 侧靠「字段缺失」而非「空串」判定未填写，避免后续再判空 */
         if (trimmed.isNotEmpty()) msg.put("text", trimmed)
+        /**
+         * 随命令带回 `saveSelection` 快照下来的选区区间（v2026-09-22）：
+         * JS 侧据此**按快照位置**写链接，不再依赖"编辑器当前选区是否还在"——
+         * 这是第二道防线，即便 `restoreSelection` 失败也能精确落点。
+         * 未拿到上行（旧产物 / saveSelection 尚未应答）时不下发，JS 回落当前选区。
+         */
+        if (savedSelectionFrom >= 0 && savedSelectionTo >= savedSelectionFrom) {
+            msg.put("from", savedSelectionFrom)
+            msg.put("to", savedSelectionTo)
+        }
         enqueueCommand(msg)
     }
 
@@ -393,25 +418,41 @@ class BlockNoteBridgeController {
      * 用户明明选了字，结果却在光标处插了 URL。故先把此刻选区留在 JS 侧。
      *
      * 与 [restoreSelection] 成对使用；**无副作用**（只读快照）。
+     *
+     * ⚠️ 调用即**作废上一份快照**（[savedSelectionFrom] / [savedSelectionTo] 先归 -1）：
+     * JS 的 `selectionRange` 上行是异步的，若不复位，快速连点两次 🔗 的间隙里
+     * 第二次写链接可能拿到**第一次**的旧区间（链接插到上一处去）。
      */
-    fun saveSelection() = enqueueCommand(JSONObject().put("type", "saveSelection"))
+    fun saveSelection() {
+        savedSelectionFrom = -1
+        savedSelectionTo = -1
+        enqueueCommand(JSONObject().put("type", "saveSelection"))
+    }
 
     /**
      * 还原上一次 [saveSelection] 的选区（v2026-09-22）：**写链接 / 移除链接之前**下发。
      *
      * 命令经 [enqueueCommand] 顺序下发，WebView 侧也按序执行，故只要在本方法之后
      * 紧接着调 [createLink] 或 [deleteLink]，还原一定先生效。
+     *
+     * ⚠️ 这只是**第一道防线**（恢复可见选区与书写起点）；落点精度由
+     * [createLink] / [deleteLink] 携带的快照位置保证（第二道防线），二者互不依赖——
+     * 本方法失败也不会让链接插错位置。
      */
     fun restoreSelection() = enqueueCommand(JSONObject().put("type", "restoreSelection"))
 
     /**
      * 移除光标 / 选区所在位置的链接，**保留文字**（v2026-09-22）。
      *
-     * 链接对话框「编辑链接」模式的「移除链接」按钮。JS 侧调 `editor.deleteLink()`：
-     * 优先按光标位置定位链接范围后去 mark，找不到时回落为「去掉当前选区上的 link mark」。
+     * 链接对话框「编辑链接」模式的「移除链接」按钮。JS 侧调 `editor.deleteLink(position)`：
+     * 优先按快照位置定位链接范围后去 mark，找不到时回落为「去掉当前选区上的 link mark」。
      * 与 [restoreSelection] 搭配使用（先还原选区，再移除）。
      */
-    fun deleteLink() = enqueueCommand(JSONObject().put("type", "deleteLink"))
+    fun deleteLink() {
+        val msg = JSONObject().put("type", "deleteLink")
+        if (savedSelectionFrom >= 0) msg.put("from", savedSelectionFrom)
+        enqueueCommand(msg)
+    }
 
     /**
      * 删除当前块（v1.11）：原 ⋮⋮ 手柄点击菜单的「删除」项，移入宿主工具栏。
@@ -749,6 +790,15 @@ class BlockNoteBridgeController {
                 "editorFocus" -> {
                     editorFocused = msg.optBoolean("focused", false)
                     Log.d(TAG, "diag | editorFocus = $editorFocused")
+                }
+                /**
+                 * v2026-09-22：`saveSelection` 的应答——选区区间上行。
+                 * 暂存后由 [createLink] / [deleteLink] 随命令带回 JS 作精确落点。
+                 */
+                "selectionRange" -> {
+                    savedSelectionFrom = msg.optInt("from", -1)
+                    savedSelectionTo = msg.optInt("to", -1)
+                    Log.d(TAG, "diag | selectionRange = $savedSelectionFrom-$savedSelectionTo")
                 }
                 "error" -> Log.e(TAG, "js error: ${msg.optString("message")}")
             }
