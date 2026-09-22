@@ -374,6 +374,62 @@ export default function EditorApp() {
     }, 800);
   }, []);
 
+  /**
+   * 编辑器 DOM 焦点判定（v2026-09-22）
+   *
+   * 判据是 `document.activeElement` 是否落在 `.bn-editor` 内（编辑器容器本身带
+   * `contenteditable`，子节点是各块的 DOM）。用它而不是 BlockNote 的编辑器 API：
+   * 面板收起后宿主只需知道「编辑元素是否持有焦点」，与 ProseMirror 的选区无关。
+   */
+  const isEditorDomFocused = useCallback(() => {
+    const el = document.activeElement as HTMLElement | null;
+    if (!el || typeof el.closest !== "function") return false;
+    return !!el.closest(".bn-editor") || el.getAttribute("contenteditable") === "true";
+  }, []);
+
+  /** 上一次上报的焦点态（去重：只在翻转时上行，v2026-09-22） */
+  const lastEditorFocusRef = useRef<boolean | null>(null);
+
+  /**
+   * 上报编辑器焦点态（v2026-09-22）
+   *
+   * 用途：宿主收起「T / H / A」面板后，据此决定要不要把软键盘弹回来
+   * （面板展开期间键盘被抑制，但光标一直在正文里）。
+   *
+   * 初值不上报：`null` 表示"未知"，宿主侧初值同为 false，语义一致；
+   * 首次真实事件（用户点正文 / 失焦）才会产生上行。
+   */
+  const pushEditorFocus = useCallback(
+    (focused: boolean) => {
+      if (lastEditorFocusRef.current === focused) return;
+      lastEditorFocusRef.current = focused;
+      sendUp({ type: "editorFocus", focused });
+    },
+    []
+  );
+
+  /**
+   * document 级焦点监听（v2026-09-22）
+   *
+   * 挂在 `document` 而非编辑器节点上：编辑器 DOM 由 BlockNote 动态挂载/局部重建，
+   * 绑在具体节点上会随重建丢失；`focusin` / `focusout` 都会冒泡到 document，
+   * 且 `focusout` 时 `document.activeElement` 尚未完成切换，故延后一拍再判定。
+   *
+   * 监听与编辑器挂载时机无关（挂载前绑好也能收到后续事件），因此放在本组件顶层、
+   * `EditorCore` 之外——`booted` 之前也不影响。
+   */
+  useEffect(() => {
+    const report = () => pushEditorFocus(isEditorDomFocused());
+    /** focusout 时新焦点尚未生效，setTimeout(0) 等浏览器完成焦点转移后再判 */
+    const onFocusOut = () => setTimeout(report, 0);
+    document.addEventListener("focusin", report);
+    document.addEventListener("focusout", onFocusOut);
+    return () => {
+      document.removeEventListener("focusin", report);
+      document.removeEventListener("focusout", onFocusOut);
+    };
+  }, [pushEditorFocus, isEditorDomFocused]);
+
   // ---- Bridge 下行绑定 ----
   useEffect(() => {
     // 诊断日志：确认宿主桥是否存在（真机缺失 = ready 上行走不出去）
@@ -440,6 +496,25 @@ export default function EditorApp() {
             message: `setEditorMinHeight received: ${msg.height}`,
           });
           break;
+        /**
+         * 重新聚焦编辑器（v2026-09-22）
+         *
+         * 宿主收起「T / H / A」面板、要把键盘弹回来之前下发：Chromium 只在**编辑元素
+         * 持有焦点**时才建立输入连接，宿主侧的 `showSoftInput` 也才有效。
+         * 已聚焦时 `focus()` 为空操作，不会打断现有选区（抑制期间选区是保留的）。
+         *
+         * 找不到 `.bn-editor`（编辑器尚未挂载）时上行诊断而非静默——宿主据此
+         * 知道"键盘没弹起来"的原因。
+         */
+        case "focusEditor": {
+          const el = document.querySelector<HTMLElement>(".bn-editor");
+          if (el) el.focus();
+          sendUp({
+            type: "diagnostic",
+            message: `focusEditor: ${el ? "focused" : ".bn-editor missing"}`,
+          });
+          break;
+        }
         case "requestSave":
           pushChanged();
           break;

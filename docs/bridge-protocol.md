@@ -28,6 +28,8 @@
 | `moveBlockDown` | `{}` | 块下移（v1.11.5）。同上，内部取**选区末块**或**光标块**，调 `editor.moveBlocksDown()` |
 | `setEditorMinHeight` | `{ height }` | 设置编辑区最小高度（v1.11.6，单位 **dp**）。BlockNote 未给 `.bn-editor` 任何 `min-height`，高度完全由内容决定；宿主却给 WebView 设了 `heightIn(min = 屏高 × 62%)`。两者不一致会在 WebView 内留下一片**不属于 contenteditable 盒子**的"死区"（点击无法聚焦光标）。下发同一个高度值后 JS 写入 `--bn-editor-min-height`，由 `.bn-editor { min-height }` 消费，编辑区即铺满 WebView。**缺省 0 时与修复前一致**（向后兼容旧宿主）。⚠️ 不写 `62vh` 是因为本项目 WebView 高度会随内容增长、可能撑出屏幕（外层 Column 滚动），`vh` 语义不直观 |
 
+| `focusEditor` | `{}` | 让编辑器重新获得 DOM 焦点（v2026-09-22）。宿主收起「T / H / A」面板、要把键盘弹回来**之前**下发：Chromium 只在编辑元素持有焦点时才建立输入连接，宿主随后的 `InputMethodManager.showSoftInput` 才有效。JS 侧对 `.bn-editor` 调 `focus()`（已聚焦时为空操作，不打断现有选区），并回一条 `diagnostic` 说明是否命中节点。⚠️ 必须在 **IME 抑制解除之后**下发，否则页面还带着 `inputmode="none"`，聚焦后 Chromium 仍不会弹键盘 |
+
 ## 上行消息（JS → Kotlin）
 
 | type | 载荷 | 说明 |
@@ -36,6 +38,7 @@
 | `changed` | `{ markdown }` | 内容变更快照；**JS 侧防抖 800ms**；由 `blocksToMd` 生成（含分割线样式编码） |
 | `undoState` | `{ canUndo, canRedo }` | 撤销/重做可用态（v1.7）；历史栈变化后上报，宿主左上角按钮据此置灰 |
 | `blockState` | `{ blockType, headingLevel?, headingToggleable?, inlineTextColor?, inlineBackgroundColor?, fontSizePx?, canSetBlockColor, blockTextColor?, blockBackgroundColor?, canToggleHeader, isHeaderRow, isHeaderCol }` | 当前光标块状态（v1.11；`headingLevel`/`fontSizePx` 为 v2026-09-21 新增，`headingToggleable`/`inlineTextColor`/`inlineBackgroundColor` 为 v2026-09-22 新增）。驱动宿主工具栏「块操作」菜单的可用态与回显、以及「标题面板」「颜色面板」的选中态。`headingLevel`：`blockType === "heading"` → 1–6（**普通与可折叠标题共用**）；非标题块 → 0。`headingToggleable`：`heading` 块且 `props.isToggleable === true` → 折叠标题；两类级别数字重叠，**必须靠该字段分流**（v2026-09-22 勘误：折叠标题不是独立块类型 `toggleHeading*`）。`inlineTextColor` / `inlineBackgroundColor`：`getActiveStyles()` 的原始串（宿主下发的自由 hex，也可能是粘贴来的色名 / `rgb()`），供 A 面板两个「选中色」行反查色名回显；**缺失 = 该维度未设置**（宿主高亮第一个「/」清除块）。⚠️ 与 `blockTextColor` / `blockBackgroundColor`（**块级**色名，作用于整段）不是一回事。`fontSizePx`：当前选区字号（`getActiveStyles().fontSize` 的 `"18px"` 解析为整数；WebView 内 1px=1dp，数值与宿主 sp 档位对应）；0 = 无字号样式（宿主回落默认档 16）。**仅在状态变化时上报**（JS 侧按 JSON 串去重） |
+| `editorFocus` | `{ focused }` | 编辑器 DOM 焦点态（v2026-09-22）。JS 侧在 `document` 上监听 `focusin`/`focusout`，判定 `document.activeElement` 是否落在 `.bn-editor` 内，**仅在翻转时上行**。宿主据此在面板收起后决定是否弹回键盘。⚠️ 该真值只能由 JS 提供：Android 的 `View.hasFocus()` 会失真（点底部栏按钮后视图焦点已转移到 Compose 根视图，而 WebView 内的 contenteditable 仍持有 DOM 焦点、光标仍在闪） |
 | `error` | `{ message }` | JS 异常上报（Kotlin 侧打 logcat / 展示错误态） |
 
 > `ready` 载荷自 v1.8 起带可选 `build` 字段（构建指纹，见下），故其类型为 `{ build?: string }`。
@@ -382,4 +385,22 @@ adb logcat -s BlockNoteEditor:V | grep "ready received"
     宿主经 `BodyFontSizeManager`（内存）+ SharedPreferences（持久化）落库，
     再由 Screen 的响应式下发幂等确认。
   - 持久化为 **App 级排版偏好**（`body_font_size_px`，默认 16），非灵感实体字段。
+
+- v2026-09-22：**新增下行 `focusEditor` 与上行 `editorFocus`**（面板收起后按需恢复软键盘）。
+
+  - 背景：三个面板展开期间正文被 `suppressIme` 抑制（键盘不弹），但**光标一直在**正文里。
+    收起面板后用户看到的仍是闪烁光标，却要再点一次正文才拿得回键盘——多余的一步。
+  - 上行 `editorFocus { focused }`：JS 侧 document 级 `focusin`/`focusout` 监听，
+    判 `document.activeElement` 是否落在 `.bn-editor` 内，翻转才上行；
+    Kotlin 侧落到 `BlockNoteBridgeController.editorFocused`（Compose 快照态）。
+  - 下行 `focusEditor {}`：宿主收起面板后、调 `showSoftInput` **之前**下发，
+    让 `.bn-editor` 重新聚焦（Chromium 才建立输入连接）。
+  - 宿主侧顺序（Kotlin `BlockNoteBridgeController.restoreIme`）：
+    面板 `openPanel = null` → `suppressIme` 回 false（解除 `inputmode="none"`）
+    → 延迟 `IME_RESTORE_DELAY_MS`(180ms) → `focusEditor` → `requestFocus`
+    → `InputMethodManager.restartInput` + `showSoftInput`。
+    另外把 `WebSettings.keyboardDisplayRequiresUserGesture` 置 false（默认 true 会拒绝
+    程序化聚焦弹键盘），与 IMM 显式唤起互为保险。
+  - 判据优先级：正文 `editorFocused` → `restoreIme()`；否则标题 `isTitleFocused`
+    → `SoftwareKeyboardController.show()`；都没有则不弹（无光标就不抢键盘）。
 

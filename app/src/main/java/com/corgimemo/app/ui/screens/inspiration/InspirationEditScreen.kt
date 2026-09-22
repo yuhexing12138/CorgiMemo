@@ -79,6 +79,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+/** 标题焦点态观测：面板收起后据此决定是否弹回标题键盘（v2026-09-22） */
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
@@ -170,6 +172,15 @@ import java.util.Locale
  * 它只服务于 Aa 面板的预设色下行；行内色的「色名 → hex」转换现由
  * [com.corgimemo.app.ui.screens.inspiration.components.blockColorHexOf] 承担（与色板同源）。
  */
+
+/**
+ * 面板收起后「恢复键盘」的等待时长（ms，v2026-09-22）
+ *
+ * 要等三件事落定：面板退出动画、IME 抑制解除（页面 `inputmode` 标记的移除是异步的
+ * `evaluateJavascript`）、窗口 insets 回落。在此之前请求键盘会被"抑制尚未解除"吃掉。
+ * 180ms ≈ 10 帧，够覆盖动画与一次 JS 往返；再长会让用户明显感到键盘迟到。
+ */
+private const val IME_RESTORE_DELAY_MS = 180L
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -610,6 +621,17 @@ fun InspirationEditScreen(
      */
     val isFormatPanelOpen = openPanel != null
 
+    /**
+     * 标题输入框是否聚焦（v2026-09-22 新增）
+     *
+     * 与正文的 [BlockNoteBridgeController.editorFocused] 成对：面板收起后要恢复键盘时，
+     * 先看正文有没有光标，没有再看标题是否聚焦——两者都满足「光标处于聚焦状态」的语义。
+     *
+     * ⚠️ 面板展开期间标题的**点击**被 PointerEventPass.Initial 消费（不会新聚焦），
+     * 但**已存在的焦点不会被清掉**，所以这里仍可能为真——正是要处理的场景。
+     */
+    var isTitleFocused by remember { mutableStateOf(false) }
+
     /** 软键盘控制器：展开任一面板前收起键盘（面板高度 = 键盘高度，二者不同屏共存） */
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -622,7 +644,8 @@ fun InspirationEditScreen(
      *    因为 [openPanel] 是单一状态，"替换"本身就完成了互斥，无需手动关另两个面板
      *    （收敛前正是漏关导致过"从 A 切到 T / Aa 面板叠加"）。
      * 2. **键盘让位**：**仅在展开分支**收起软键盘——面板高度 = 键盘高度，二者不同屏共存。
-     *    收起分支**不主动弹回**键盘，沿用既定约定：用户再点正文 / 标题才恢复输入。
+     *    收起分支**不自行弹回**键盘，交给下方「面板收起 → 按需恢复键盘」的副作用统一处理
+     *    （v2026-09-22：面板收起后若正文/标题仍有光标，应把键盘交还用户）。
      *
      * ⚠️ 各面板的**专属副作用**不放在这里，由调用方在调用本函数**之前**执行
      * （目前只有字体面板：展开前要把 pending 重置为当前内容字体，见 onFontPickerClick）。
@@ -634,12 +657,51 @@ fun InspirationEditScreen(
      */
     fun togglePanel(panel: EditBottomPanel) {
         if (openPanel == panel) {
-            /** 收起：面板消失后键盘由输入框焦点决定，不主动弹回 */
+            /** 收起：键盘是否弹回由「面板收起 → 按需恢复键盘」副作用按焦点态决定 */
             openPanel = null
         } else {
             keyboardController?.hide()
             openPanel = panel
         }
+    }
+
+    /**
+     * 面板收起 → 按需把软键盘弹回来（v2026-09-22 新增）
+     *
+     * 背景：三个面板展开期间正文被 `suppressIme` 抑制（键盘不弹，但**光标一直在**）。
+     * 点「完成」/ 再次点按钮收起面板后，用户看到的仍是正文里闪烁的光标，却要再点
+     * 一次正文才拿得回键盘——这一步是多余的。现在收起即按焦点态把键盘交还用户。
+     *
+     * 判据（**都在收起后重新读取**，不用展开前的快照——用户在面板期间可能改点了标题）：
+     * - 正文：[BlockNoteBridgeController.editorFocused]（JS 上报的 DOM 焦点真值，
+     *   点过底部栏按钮后 Android 视图焦点已转移，`View.hasFocus()` 会失真）→
+     *   [BlockNoteBridgeController.restoreIme]（先让 JS 重新聚焦编辑器，再 IMM 弹键盘）；
+     * - 标题：[isTitleFocused] → `keyboardController?.show()`；
+     * - 都没有 → 什么都不做（无光标就不抢键盘）。
+     *
+     * 为什么用「上一帧是否展开」而非直接判 `!isFormatPanelOpen`：本 effect 在首次
+     * 组合时也会跑一次，那是**进页**（不该弹键盘）；只有真的从"展开"变"收起"才恢复。
+     *
+     * 为什么 [delay]：面板退出动画、IME 抑制解除（AndroidView.update 同步解除 +
+     * 页面 `inputmode` 标记移除是异步的 evaluateJavascript）、以及窗口 insets 回落
+     * 都需要一帧以上；在这之前请求键盘会被"抑制尚未解除"吃掉。
+     */
+    var wasFormatPanelOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(isFormatPanelOpen) {
+        if (wasFormatPanelOpen && !isFormatPanelOpen) {
+            delay(IME_RESTORE_DELAY_MS)
+            val bodyFocused = blockNoteController.editorFocused
+            when {
+                bodyFocused -> blockNoteController.restoreIme()
+                isTitleFocused -> keyboardController?.show()
+                else -> Unit
+            }
+            Log.d(
+                "BlockNoteEditor",
+                "diag | panel closed → ime restore: body=$bodyFocused, title=$isTitleFocused"
+            )
+        }
+        wasFormatPanelOpen = isFormatPanelOpen
     }
 
     /**
@@ -1385,11 +1447,10 @@ fun InspirationEditScreen(
                  *
                  * 应用后 ContentFontManager 与 pending 一致 → remember key 变化自动重置
                  * pending → [hasPendingFontChange] 归 false → 按钮变回「完成」，面板保持
-                 * 展开便于连续对比；**无改动 = 「完成」= 收起面板**（键盘不自动弹回，由
-                 * 输入框焦点决定）。
+                 * 展开便于连续对比；**无改动 = 「完成」= 收起面板**。
                  *
-                 * 面板收起即解除键盘抑制（[isFormatPanelOpen] → false，v2026-09-21）：
-                 * 仅恢复"可唤起"能力，不主动弹回键盘——用户再点一次正文/标题即恢复输入。
+                 * v2026-09-22：两条收起路径（点「完成」、再次点 T 按钮）都会走到
+                 * 「面板收起 → 按需恢复键盘」——正文仍聚焦时键盘会自己弹回来，无需本处处理。
                  */
                 onFontPanelDismiss = {
                     val cjkChanged = pendingCjkFontId != contentFontEntry.id
@@ -1878,7 +1939,13 @@ fun InspirationEditScreen(
                         } else {
                             Modifier
                         }
-                    ),
+                    )
+                    /**
+                     * 记录标题焦点态（v2026-09-22）：面板收起后若正文无光标、但标题仍聚焦，
+                     * 需要把键盘弹回来继续输入标题（见上方「面板收起 → 按需恢复键盘」）。
+                     * 只观测、不改行为，故挂在链尾不影响上面的指针消费逻辑。
+                     */
+                    .onFocusChanged { isTitleFocused = it.isFocused },
                 placeholder = {
                     Text(
                         "标题",
@@ -2105,7 +2172,8 @@ fun InspirationEditScreen(
                  * 面板展开期间抑制软键盘（v2026-09-21）：
                  * 用户在正文中聚焦光标 / 多选时不再唤起 IME，键盘不会把「T / H / A」面板
                  * 顶走、也不会压缩 WebView 视口；**光标与选区能力完全保留**。
-                 * 收起面板后本参数回 false，键盘不主动弹回（用户再点正文即恢复）。
+                 * v2026-09-22：收起面板后本参数回 false，键盘由「面板收起 → 按需恢复键盘」
+                 * 副作用决定是否弹回（正文仍有光标就弹回，不再是"用户再点一次正文"）。
                  */
                 suppressIme = isFormatPanelOpen
             )

@@ -156,6 +156,19 @@ class BlockNoteBridgeController {
     var blockState by mutableStateOf(BlockState())
         private set
 
+    /**
+     * 编辑器 DOM 是否持有焦点（v2026-09-22 新增；JS 侧 `editorFocus` 上行）
+     *
+     * 用途：宿主底部「T / H / A」面板收起后，据此判断「正文里是否还有光标」
+     * 以决定是否把软键盘弹回来（面板展开期间键盘被抑制，但光标一直存在）。
+     *
+     * ⚠️ 为什么必须走 JS 上报而不是 `webView.hasFocus()`：点底部栏按钮时 Android
+     * 的**视图焦点**已转移到 Compose 根视图，而 WebView 内的 `contenteditable`
+     * 仍持有 **DOM 焦点**（用户看到光标还在闪）。前者会失真，后者才是真值。
+     */
+    var editorFocused by mutableStateOf(false)
+        private set
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pendingInit: JSONObject? = null
     private var pendingCommands = mutableListOf<JSONObject>()
@@ -357,6 +370,38 @@ class BlockNoteBridgeController {
         )
     }
 
+    /**
+     * 让编辑器重新获得 DOM 焦点（v2026-09-22）
+     *
+     * 宿主收起「T / H / A」面板后要弹回键盘时**必须先发这一条**：Chromium 只有在编辑
+     * 元素持有焦点时才肯建立输入连接，[restoreIme] 里的 `showSoftInput` 才有效。
+     * 已聚焦时 JS 侧 `focus()` 为空操作，不会打断现有选区（抑制期间选区是保留的）。
+     */
+    fun focusEditor() = enqueueCommand(JSONObject().put("type", "focusEditor"))
+
+    /**
+     * 面板收起后把软键盘弹回来（v2026-09-22）
+     *
+     * 两步缺一不可：
+     * 1. [focusEditor]：DOM 焦点交还 `.bn-editor`（Chromium 才建立输入连接）；
+     * 2. [ImeSuppressibleWebView.showImeNow]：视图焦点 + `InputMethodManager.showSoftInput`。
+     *
+     * ⚠️ 调用前提（顺序不能乱）：
+     * - 必须在 **IME 抑制解除之后**（`suppressIme` 已回 false、页面的 `inputmode="none"`
+     *   标记已移除）——否则第 1 步聚焦后 Chromium 仍认为自己不该弹键盘；
+     * - 必须在 **UI 线程**（WebView 方法 + IMM 调用都有线程要求）；
+     * - 只应在 [editorFocused] 为真时调用（无光标就不要抢键盘）。
+     */
+    fun restoreIme() {
+        val wv = webView as? ImeSuppressibleWebView
+        if (wv == null) {
+            Log.w(TAG, "restoreIme: webView not suppressible")
+            return
+        }
+        focusEditor()
+        wv.showImeNow()
+    }
+
     private fun enqueueCommand(msg: JSONObject) {
         if (ready && !initSent) {
             // ready 前的命令无编辑器可作用，直接丢弃（init 会在 ready 后重放内容）
@@ -494,6 +539,14 @@ class BlockNoteBridgeController {
                      * 幂等确认）并写 SharedPreferences 持久化。
                      */
                     onBaseFontSizeChanged?.invoke(msg.optInt("fontSizePx", 0))
+                /**
+                 * v2026-09-22：编辑器 DOM 焦点态上行（面板收起后是否弹回键盘的判据）。
+                 * 缺失字段时按 false 处理（旧产物不下发 → 不弹键盘，行为与改动前一致）。
+                 */
+                "editorFocus" -> {
+                    editorFocused = msg.optBoolean("focused", false)
+                    Log.d(TAG, "diag | editorFocus = $editorFocused")
+                }
                 "error" -> Log.e(TAG, "js error: ${msg.optString("message")}")
             }
         } catch (e: Exception) {
@@ -521,7 +574,10 @@ class BlockNoteBridgeController {
  *   两个面板高度 = 键盘高度、占据键盘位，若用户在正文里聚焦光标 / 多选时
  *   键盘再弹出来，会把面板顶走并让 WebView 视口被压缩（v1.11.9 曾因此触发
  *   失控循环）。抑制期间**焦点与选区功能完全保留**，只是不唤起 IME；
- *   传回 false 时解除抑制，但**不主动弹回键盘**（由用户下次点正文触发）。
+ *   传回 false 时解除抑制。**v2026-09-22 起**：解除后是否把键盘弹回来由宿主按
+ *   [BlockNoteBridgeController.editorFocused] 决定——正文仍有光标则调
+ *   [BlockNoteBridgeController.restoreIme] 主动弹回（面板收起即恢复输入），
+ *   无光标则保持收起（不再要求用户"再点一次正文"）。
  */
 @Composable
 fun BlockNoteEditorWebView(
@@ -682,6 +738,17 @@ private fun createEditorWebView(
             useWideViewPort = true
             loadWithOverviewMode = true
             cacheMode = WebSettings.LOAD_DEFAULT
+            /**
+             * v2026-09-22：允许**非用户手势**触发的聚焦弹出键盘。
+             *
+             * 该设置默认 **true**（Chromium 只在用户真实触摸后才弹键盘）。面板收起时
+             * 的「JS `focus()` + 宿主 `showSoftInput`」属于程序化聚焦，默认会被拒绝；
+             * 置 false 后这条路径才走得通（宿主侧另有 `InputMethodManager` 兜底，
+             * 两道互为保险）。
+             *
+             * 编辑器本身没有 `autofocus`，故不会因此"进页就弹键盘"。
+             */
+            keyboardDisplayRequiresUserGesture = false
         }
 
         addJavascriptInterface(
@@ -857,8 +924,10 @@ private const val IME_SUPPRESS_SCRIPT = """
  *    连"尝试显示键盘"都不会做）；
  * 4. 向页面注入 `inputmode="none"`（Chromium 侧就不再请求键盘）。
  *
- * 传回 false 时全部解除，且**不主动弹回键盘**——沿用宿主既定约定：面板收起后
- * 键盘由输入框焦点决定，用户再点一次正文即恢复。
+ * 传回 false 时全部解除。**v2026-09-22 修订**：解除后是否弹回键盘不再"一律不弹"——
+ * 宿主（InspirationEditScreen）在面板收起且正文仍持有 DOM 焦点时，会先令编辑器
+ * 重新聚焦（[BlockNoteBridgeController.focusEditor]）再调 [showImeNow] 把键盘交还用户。
+ * 焦点已不在正文时则维持原行为（保持收起），不会抢键盘。
  *
  * ⚠️ 本状态**不影响光标与选区**：WebView 的点击定位光标、长按选词、拖动选择手柄
  * 都由其自身的触摸手势与渲染层承担，与 IME 无关；`onCheckIsTextEditor` 只被
@@ -911,6 +980,36 @@ private class ImeSuppressibleWebView(context: Context) : WebView(context) {
         val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
             ?: return
         imm.hideSoftInputFromWindow(token, 0)
+    }
+
+    /**
+     * 主动弹出软键盘（v2026-09-22；与 [hideImeNow] 成对）
+     *
+     * 面板收起后把键盘交还给用户（正文仍有光标时）。三步各自解决一类失败：
+     * 1. **恢复可聚焦性**：触摸模式下 `View.requestFocus()` 只对
+     *    `focusableInTouchMode` 的视图生效，而焦点此前可能已被 Compose 根视图拿走，
+     *    故先显式打开这两个标志再 `requestFocus`；
+     * 2. **`restartInput`**：抑制期间 `onCreateInputConnection` 返回过 null，
+     *    IMM 侧可能仍缓存着"这不是文本编辑器"的判断，这里强制重建输入连接；
+     * 3. **`showSoftInput`**：真正请求键盘面板（放到 `post` 里，等焦点与布局稳定）。
+     *
+     * ⚠️ 前提是 DOM 焦点已在编辑器上（见 [BlockNoteBridgeController.restoreIme] 的
+     * 第 1 步）——否则 Chromium 建立连接后自己又会把它收起来。
+     */
+    fun showImeNow() {
+        isFocusable = true
+        isFocusableInTouchMode = true
+        val focused = requestFocus()
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        if (imm == null) {
+            Log.w(TAG, "showImeNow: no InputMethodManager")
+            return
+        }
+        post {
+            imm.restartInput(this)
+            imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
+        }
+        Log.d(TAG, "ime show requested | viewFocus=$focused")
     }
 
     /**

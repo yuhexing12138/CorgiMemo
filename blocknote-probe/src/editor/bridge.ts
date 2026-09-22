@@ -149,7 +149,19 @@ export type DownMessage =
    * 高度会随内容增长（外层 Column 滚动、WebView 可能撑出屏幕），此时 vh 语义不直观；
    * 下发一个确定值行为才可预测。1 CSS px = 1 dp（`initial-scale=1.0`），故单位即 dp。
    */
-  | { type: "setEditorMinHeight"; height: number };
+  | { type: "setEditorMinHeight"; height: number }
+  /**
+   * 让编辑器重新获得 DOM 焦点（v2026-09-22）
+   *
+   * 背景：宿主「T / H / A」面板展开期间会抑制软键盘（`inputmode="none"` +
+   * 原生拦截输入连接），此时用户在正文里点光标**仍然会聚焦** contenteditable，
+   * 只是不弹键盘。面板收起后宿主要把键盘弹回来，而 Chromium 只有在**编辑元素
+   * 持有焦点**时才肯建立输入连接——故宿主先下发本命令把焦点交还 `.bn-editor`，
+   * 再调 `InputMethodManager.showSoftInput`。两步顺序不能反。
+   *
+   * 幂等：编辑器已聚焦时 `focus()` 为空操作，不会打断现有选区。
+   */
+  | { type: "focusEditor" };
 
 /** 上行消息（JS → Kotlin） */
 export type UpMessage =
@@ -236,6 +248,18 @@ export type UpMessage =
    * SharedPreferences 持久化。
    */
   | { type: "baseFontSize"; fontSizePx: number }
+  /**
+   * 编辑器焦点态上行（v2026-09-22）
+   *
+   * 宿主「T / H / A」面板收起时要判断「正文里是不是还有光标」，以决定是否弹回键盘。
+   * 这个真值**只能在 JS 侧取**：Android 侧 `View.hasFocus()` 会失真——点底部栏按钮时
+   * 焦点已转移到 Compose 根视图，但 WebView 内的 contenteditable **仍持有 DOM 焦点**
+   * （用户看到光标还在闪）。
+   *
+   * JS 侧在 document 上监听 `focusin` / `focusout`，判定 `document.activeElement`
+   * 是否落在 `.bn-editor` 内；仅在状态翻转时上行（去重，避免刷屏）。
+   */
+  | { type: "editorFocus"; focused: boolean }
   /**
    * 诊断信息上行（v1.11.7）：仅用于 logcat 排错，**不参与业务逻辑**。
    *

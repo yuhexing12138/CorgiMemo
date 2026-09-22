@@ -2,68 +2,59 @@
 
 ## 项目约定与工具链
 - 不主动编译（除明确要求）；无 BuildConfig（版本走 getPackageInfo().versionName）。
-- 依赖签名核对：技能 gradle-cache-source-lookup（find_sources_jar.py / extract_source.py）。
-- 检索 .workbuddy/.gradle：Glob path 放绝对路径，pattern 只写相对通配。
-- 本机坑：Bash 的 ls/head/find/grep/wc 全 Exit 127→用绝对路径调 python；PowerShell stdout 可能被吞→落盘再 Read；rm 被 safe-delete 拦→[System.IO.File]::Delete()。
-- 设计稿 Ardot fileId 707225018209249。
-- 顶层扩展属性包归属：Color.isSpecified 在 androidx.compose.ui.graphics；TextUnit.isSpecified 在 ui.unit。判据：inline val X.isY 的 import 包=声明文件 package。
+- 依赖签名核对：技能 gradle-cache-source-lookup。检索 .workbuddy/.gradle：Glob path 用绝对路径、pattern 只写相对通配。
+- 本机坑：Bash 的 ls/head/find/grep/wc 全 Exit 127 → 用绝对路径调 python；PowerShell stdout 可能被吞 → 落盘再 Read；rm 被 safe-delete 拦 → [System.IO.File]::Delete()。
+- 大段删行：「行范围切分 + 保留行尾」，禁 ReadAllLines/WriteAllLines（会把行尾统一成 CRLF → git diff 全文件）。
+- 设计稿 Ardot fileId 707225018209249。顶层扩展归属：Color.isSpecified→ui.graphics，TextUnit.isSpecified→ui.unit。
 
-## 字体体系与 T 面板字体链（v2026-09-21 修复）
-- 9 OFL 中文+3 拉丁；FontCatalog/FontManager/buildTypography；预览铁律：统一 FontPreviewEngine（有界池+位图 LruCache），禁批量 ResourcesCompat.getFont（驻留→OOM）；合成族 combinedFamilyFonts（latin+cjk fallback）；用户内容走 ContentFontManager+LocalContentTypography。
-- ⚠️ **单一真相源=ContentFontManager**，四路消费：标题 LocalContentTypography、字重探测、面板回显、VM 保存持久化。v2026-09-21 实测根因：T 面板「应用」只给 WebView 单发 setFontFamily、**绕过状态链**（VM onCjkFontSelected/onLatinFontSelected 定义后 0 调用点）→ 标题不换字/字体不持久化/重开面板回显旧值/「应用」恒亮。修复：onFontPanelDismiss 走 VM 回调；新增 LaunchedEffect(contentFontEntry.id) 响应式下发 WebView；load(markdown, fontFamilyId) init 携带回显（原硬编码 system_default）。教训：改面板/桥时「谁更新真相源」必须闭环；孤儿函数=断链信号。
-- 拉丁下行通道（v2026-09-21 已打通）：bridgeFontResMap=entries+latinEntries 全量；桥 load 双 id + setLatinFontFamily 命令；JS fontStack=[latin, cjk, system-ui]（**拉丁在前**=拉丁字形优先，与 Compose combinedFamily 语义一致）；Screen 双 LaunchedEffect 分别跟随 contentFontEntry.id 与 contentLatinFontId。
-- ⚠️ WebView 字体四关（缺一即"正文不生效"）：①桥下发（init/setFontFamily，Kotlin down 日志须打值）②CSS 声明链两层——库在 `.bn-root`（var(--bn-font-family)）**和** `.bn-default-styles`（**字面量** Inter，@blocknote/core editor.css，挂在编辑器容器、位于 root 与 .ProseMirror 之间，自身声明压过祖先继承；搜 var 引用会漏掉字面量）都声明了 font-family，editor.css 用选择器组 `.bn-root,.bn-default-styles,.bn-editor` 统一覆盖 `var(--content-font,...)!important`。诊断判读：rootFf 对而 contentFf 错 = 中间层有声明 ③@font-face 资源可达（document.fonts.check/load 探测，check=false=未注册、loaded=0=文件加载失败）④诊断三件套：WebChromeClient console 转发 + JS `font |` 诊断行（setFontFamily 后 600ms 上行）+ sendDown 打参数值（init 特判 fontFamily+fonts 条数）。
-- WebView 字体流：JS 请求 https://corgimemo.local/fonts/{id}/{weight}.ttf → shouldInterceptRequest openRawResource 回流；@font-face 由 init fonts 清单生成。
+## 字体体系
+- 单一真相源 = ContentFontManager（四路消费：标题 LocalContentTypography、字重探测、面板回显、VM 持久化）。改面板/桥必须闭环「谁更新真相源」；孤儿函数 = 断链信号。
+- 预览铁律：统一 FontPreviewEngine（有界池 + 位图 LruCache），禁批量 ResourcesCompat.getFont（驻留 → OOM）。合成族 = latin + cjk fallback；Web 侧 fontStack = [latin, cjk, system-ui]（拉丁在前）。
+- WebView 字体四关：①桥下发（down 日志须打值）②CSS 声明链两层——`.bn-root` 的 var **与** `.bn-default-styles` 的**字面量 Inter**（editor.css 用选择器组统一 `!important` 覆盖；只搜 var 引用会漏）③@font-face 可达（document.fonts.check/load）④诊断三件套（console 转发 + JS 诊断行 + sendDown 打值）。判读：rootFf 对而 contentFf 错 = 中间层有声明。
+- 字体流：JS 请求 `https://corgimemo.local/fonts/{id}/{weight}.ttf` → shouldInterceptRequest → openRawResource。
 
 ## 主题色 / 编辑态块 / TaskList
-- 六色主题；亮色 background=暖米色 #FFFBF5。内容区背景三语义：userPickedBackgroundColor / contentBackgroundColor（唯一真值）/ contentBackgroundPaint（绘制真值），别一变量两义。
-- 正文=BlockNote WebView；BodyBlocksController 仅数据层。新增 sealed 块子类必须全项目 Grep `is BodyBlock.` 补穷尽 when。
-- 非文本块点选焦点必须留 Text 块（cursorColor=Transparent），夺焦点=键盘消失。
-- 图片块：fillMaxWidth+aspectRatio；ImageAspectRatioCache 防塌陷；选中工具栏 Popup 独立窗口（focusable=false, clippingEnabled=false）；图片间空 Text 块（EMPTY_BLOCK_PLACEHOLDER，判空 isBlank()）。
-- TaskList 行级（v2026-09-16 定稿）：单段落+段内 \n；checked=行0，checkedLines=行≥1；withCheckedLines 换新实例；reconcileCheckedLines 行数变清 checkedLines（行0保留）后必恢复 textRange。
+- 六色主题；亮色 background = #FFFBF5。背景三语义别混：userPickedBackgroundColor / contentBackgroundColor（唯一真值）/ contentBackgroundPaint（绘制真值）。
+- 正文 = BlockNote WebView，BodyBlocksController 仅数据层。新增 sealed 块子类须全项目 Grep `is BodyBlock.` 补穷尽 when。
+- 非文本块点选焦点必须留 Text 块（cursorColor=Transparent），夺焦点 = 键盘消失。图片块 fillMaxWidth+aspectRatio + ImageAspectRatioCache；选中工具栏 Popup 独立窗口（focusable=false）。
+- TaskList 行级（v2026-09-16）：单段落 + 段内 \n；checked=行0，checkedLines=行≥1；reconcileCheckedLines 后必恢复 textRange。
 
-## IME 抑制与底部栏面板（v2026-09-21 现状）
-- T/H/A 三面板互斥占同一槽位（单一状态 openPanel: EditBottomPanel?，**勿退回多 boolean**），高度=键盘高度；isFormatPanelOpen → WebView suppressIme + 标题 PointerEventPass.Initial 消费指针（勿 enabled=false）。H=标题+字号（FONT_SIZE_TIERS/DEFAULT_BODY_SP 在 HeadingPanel.kt 须 public）；A=行内/块级四组色板（两种维度别混）；T=字体（分离式预览：点选只改 pending 高亮，「应用」才生效且不收起）。
-- IME 抑制四层互兜：setter 即 hide（windowToken 守卫）/onCreateInputConnection→null/onCheckIsTextEditor→false/注入 inputmode=none+MutationObserver 补标；注入覆盖三时机（状态变化/onPageFinished/桥 ready）。抑制期间保留光标选区；解除不主动弹回键盘。实现 ImeSuppressibleWebView（BlockNoteEditorWebView.kt）。
-- 图标 BlockNotePlusMenuIcons：属性+defs map 两处都加，path 取 react-icons/ri；必须同步 blocknote-probe/tools/extract-ri-icons.cjs 的 WANT 清单。
-- 面板行距节奏（H 对齐 A）：每行/分区上下 6dp（BlockColorRow vertical padding，横向 12dp）；H 分区间不放额外 Spacer。
-- 锁定态：HeadingPanel/ColorStylePanel 有 enabled 参数——禁用仅内容区 alpha(0.38)+Initial 消费，面板头「完成」保持可点；T 面板尚无 enabled（未统一）。
-- 行内色无状态上行→showSelection=false；块级色靠 blockState 回显；标题回显靠**「是否 heading 块」+ headingToggleable 布尔**分流（v2026-09-22 勘误：折叠标题**不是**独立块类型 toggleHeading*，它同属 `heading` 块 + `props.isToggleable`，故原「靠 blockType 分流」的说法是错的——blockType 恒为 heading，永远分流不出来；级别数字 1/2/3 两类重叠，只能靠该布尔字段区分）。
-- 色板排版：色点边长按可用宽度自适应 clamp 24~36dp，SpaceBetween，首尾留白 ColorRowHorizontalPadding=12dp，点间距 8dp；斜杠字号=size×0.5。
+## IME 抑制与底部栏面板
+- T/H/A 三面板互斥占同一槽位（单一状态 `openPanel: EditBottomPanel?`，**勿退回多 boolean**），高度 = 键盘高度。
+- 抑制四层互兜：setter 即 hide / onCreateInputConnection→null / onCheckIsTextEditor→false / 注入 `inputmode=none` + MutationObserver；注入三时机（状态变化、onPageFinished、桥 ready）。抑制期间保留光标与选区。
+- **v2026-09-22：面板收起后按焦点态弹回键盘**。Screen 用 `LaunchedEffect(isFormatPanelOpen)` + `wasFormatPanelOpen` 判「true→false」，delay 180ms 后：正文 editorFocused → `controller.restoreIme()`（focusEditor 下行 → requestFocus → restartInput → showSoftInput）；否则标题 isTitleFocused → `keyboardController.show()`。WebSettings.keyboardDisplayRequiresUserGesture 已置 false（默认 true 会拒绝程序化聚焦弹键盘），与 IMM 显式唤起互为保险。
+- 焦点真值只能由 JS 提供：Android `View.hasFocus()` 失真（点底部栏按钮后视图焦点已转到 Compose 根视图，DOM 焦点仍在 contenteditable）。
+- 锁定态面板：禁用仅内容区 alpha(0.38) + Initial 消费指针，面板头「完成」保持可点。
+- 标题回显靠「是否 heading 块」+ headingToggleable 布尔分流（折叠标题 = `heading` + `props.isToggleable`，**不是**独立块类型；级别数字两类重叠）。
 
 ## 块级拖拽 / 视觉教训
-- BlocksReorderableList fork：settle()=抓快照→立即 onSettle→滑行交 BlocksGlideController；拖拽期间不能改列表（库 intervals 定长）；itemKey 身兼身份锚定+滑行归属+zIndex。
-- alpha 动画裁边界→悬浮元素勿挂 shadow；animateContentSize 内部 clipToBounds 持续裁剪。
-- 无限高约束穿透吞 heightIn(min)→逐层 grep fillMaxSize 全改 fillMaxWidth（每层都写）。
-- 盒等距≠墨迹等距：RichTextEditor 默认 minHeight 56dp 幽灵空隙（矮内容传 0.dp）；Text 无显式 lineHeight 继承大行盒。常量 UiDimensions.inspirationTitleToMetaGap(6)/inspirationMetaToBodyGap(8)，改任一须逐像素复测另一段。
+- BlocksReorderableList fork：settle()=抓快照→立即 onSettle→滑行交 Controller；拖拽期间不能改列表；itemKey 身兼身份锚定+滑行归属+zIndex。
+- alpha 动画裁边界 → 悬浮元素勿挂 shadow；animateContentSize 内部 clipToBounds 持续裁剪。
+- 无限高约束穿透吞 heightIn(min) → 逐层 grep fillMaxSize 全改 fillMaxWidth。
+- 盒等距 ≠ 墨迹等距：RichTextEditor 默认 minHeight 56dp 幽灵空隙；Text 无显式 lineHeight 继承大行盒。常量 UiDimensions.inspirationTitleToMetaGap(6)/inspirationMetaToBodyGap(8)，改一须复测另一。
 
 ## Compose 陷阱
-- remember{} calculation lambda 内读 MaterialTheme/LocalXxx 报错→组合读取提到 remember 外；remember key 勿传每次重组的新实例。
-- 局部函数/变量先声明后引用；isXxx 属性与 setXxx 函数 JVM 撞签名（用 add/toggleXxx）；kotlinx delay 只收 Long；internal 跨模块不可见→语义化 API 收进库；ParagraphStyle range 注入 lineHeight 会被编辑器 textStyle 压制（须剥 default）。
-- ⚠️ TextUnit（`Int.sp`）的 toString 是 `"18.0.sp"` 格式——字符串插值 `"${x.sp}px"` 会拼出 `"18.0.sppx"` 非法值（H 面板字号不生效真因，v2026-09-21）；桥接 CSS 值一律数值直接插值。
+- remember{} calculation lambda 内读 MaterialTheme/LocalXxx 报错 → 提到 remember 外；remember key 勿传每次重组的新实例。
+- 局部函数/变量先声明后引用；isXxx 属性与 setXxx 函数 JVM 撞签名（用 add/toggleXxx）；kotlinx delay 只收 Long；internal 跨模块不可见 → 语义化 API 收进库；ParagraphStyle range 注入 lineHeight 须剥 default。
+- ⚠️ TextUnit（`Int.sp`）toString 是 `"18.0.sp"` → `"${x.sp}px"` 拼出 `"18.0.sppx"` 非法值；桥接 CSS 一律数值直接插值。
 
 ## 图片附件页
-- MainActivity configChanges 不含 uiMode→旋转不重建，改 requestedOrientation。
-- 双指缩放 consume；单指 scale>1 才平移否则放行 Pager；缩放锚点 offset_new=d−(d−offset_old)×ratio；越界跟手翻页+橡皮筋（≤72dp）；缩放期间绝不夹紧；手势结束才收回。
-- findDialogWindow()（tailrec）；系统栏竖屏常显横屏双通道 hide；Pager 阈值横屏 0.08 竖屏 0.35。
+- MainActivity configChanges 不含 uiMode → 旋转不重建，改 requestedOrientation。
+- 双指缩放 consume；单指 scale>1 才平移否则放行 Pager；缩放锚点 offset_new=d−(d−offset_old)×ratio；越界跟手翻页+橡皮筋（≤72dp）；缩放期间绝不夹紧。
+- findDialogWindow()（tailrec）；系统栏竖屏常显、横屏双通道 hide；Pager 阈值横屏 0.08 竖屏 0.35。
 
 ## BlockNote WebView
-- 产物 assets/blocknote-web/editor/editor.html（viteSingleFile ~1.88MB）；源码 blocknote-probe/src/editor/，改完必须重建（Gradle :app:buildBlockNoteEditor 已接入 assemble）。⚠️「JS 改了没生效」第一反应=产物没重建；diff 行数是假象，用关键字计数。构建指纹随 ready 上行（logcat build=）。
-- Bridge：下行 window.BlockNoteEditorHost.onMessage(json)；上行 AndroidBridge.postMessage；⚠️ 桥回调在 Java 桥线程，入口已统一 mainHandler.post（handleUpMessageOnMainThread），别拆散包装（踩坑：ready 分支同步 evaluateJavascript→异常被吞→init 永不下发→正文卡「正在装载」）。JS booted 只在收 init 置真。
-- 撤销可用态用 editor.canExec(command)（editor.can 不存在；命令从 yUndo/history 扩展取）。
-- 样式：padding-inline var(--bn-editor-gutter,20px)!important；sideMenu 已删（WebView 触摸不触发 HTML5 DnD→工具栏上移/下移）；库 CSS 变量就近覆盖（.bn-root 带 !important+JS setProperty important）；.bn-editor padding:0 首块 3px 0。
-- ⚠️ **transform 的 value 是「动作名」，不等于块类型名**（v2026-09-22 两起死按钮的共同根因）：`toggleHeading/-2/-3` → 实为 `heading` + `props.isToggleable=true`（BlockNote **无** toggleHeading* 块类型）；`toggleList` → `toggleListItem`。合法类型清单只有 defaultBlockSpecs 那一份（audio/bulletListItem/checkListItem/codeBlock/divider/file/heading/image/numberedListItem/paragraph/quote/table/toggleListItem/video）。把动作名当 type 传 `updateBlock` → `blockToNode` 里 `schema.nodes[t].isInGroup()` 对 undefined 取属性抛 TypeError；**而 format 分支没有 try/catch、整个下行 switch 也没有** → 异常从 Java 桥回调抛走，宿主 error 通道收不到 = "点了完全没反应且无日志"。查这类问题：先数产物里的 `case"xxx"` 出现次数，再核对该 value 是否有对应块类型。
-- ⚠️ 折叠标题（heading+isToggleable）官方 markdown 导出会丢标记（htmlToMarkdown.serializeDetails 削成普通 `### 文本`）→ 已由 converter.ts 用 `<details><summary>…</summary></details>` 三段 token 包裹往返（details/summary 在官方 HTML_BLOCK_TAGS 白名单里，rawHtml 原样透传，拼接成 HTML 后 DOMParser 解析；`<h3>` 落在未闭合 summary 内才命中 parse()）。消费方注意：纯文本转换必须剥离 details/summary 标记行（Kotlin `InspirationTextUtils.markdownToPlainText` 已加）。
-- ⚠️ **行内样式的渲染走 markView 的 `render()`，不是 `renderHTML`**（v2026-09-22 定论）：`createStyleSpec`/`createReactStyleSpec` 型样式都定义了 `addMarkView`，而 Tiptap `EditorView` **无条件**接收 markViews（`@tiptap/core/src/Editor.ts`）→ 编辑器内用 `render()`；`createStyleSpecFromTipTapMark` 型（bold/italic 等）无 addMarkView → 走 renderHTML。**官方 textColor/backgroundColor 的 render() 只造裸 span 不上色**，颜色全靠 CSS 的 9 条预设色名规则（`Block.css` 的 `[data-style-type=textColor][data-value=gray…pink]`）→ **自由 hex 完全没渲染**（这是 A 面板行内色"点了没反应"的真因，通道与 mark 都是好的）。修法：`editor/schema.ts` 同名覆盖两个 spec，`render` 内联 `span.style.color/backgroundColor`（官方 `COLORS_DEFAULT` 从 core 根导出可做色名映射）；`styleSpecs` 展开后同名 key 只留一份，不会重复 mark。
-- ⚠️ **官方 markdown 导出剥掉颜色 span**（`htmlToMarkdown.serializeInlineContent` 的 `case "span": // strip the tag`）→ 行内色不进 markdown，块级色同理（`data-text-color` 等块属性也没人读）。已由 converter.ts 用行内 token 往返：`@@@CORGI_IC_TC_<值>@@@`…`@@@CORGI_IC_END@@@` → 还原成原生 `<span style="color:…">`（官方 `tryInlineHtml` 透传行内标签，本项目覆盖后的 parse 认；`span` 不在 HTML_BLOCK_TAGS 里，所以行内处理正确）。⚠️ 纯文本转换要**只删 span 标签本体、保留标签间文字**。
-- ⚠️ `element.style.color` 读出来是 **`rgb(r, g, b)`** 而非 hex（浏览器归一），若原样入库，第二轮保存会被"值形态不安全"判定跳过 → "第一次有颜色、重进再存就丢"的半失效。必须在校验/编码前归一成大写 `#RRGGBB`。
-- ⚠️ **块级色（段落色）不能用 HTML 包裹承载**：块级属性必须贴在块自己的标签上（`<p data-text-color=…>`），而块导出成 p/h2/li/blockquote 不可预知；外包 `<div data-…>` 会在 ProseMirror 解析时被当不匹配元素**下钻丢弃**。改用**块内容行首纯文本 token**（`@@@CORGI_BC_TC_red@@@`）→ 导出插入 + 剥 props，载入（装载编辑器前）剥离并写回 props。不需 CSS、语义无损（含背景铺满）。⚠️ 纯文本转换必须整段移除 `@@@CORGI_…@@@`（Kotlin markdownToPlainText 已按统一前缀通配剥离）。
+- 产物 `assets/blocknote-web/editor/editor.html`（viteSingleFile ~1.88MB），源码 blocknote-probe/src/editor/，Gradle `buildBlockNoteEditor` 已接入 assemble。「JS 改了没生效」第一反应 = 产物没重建；用关键字计数而非 diff 行数；构建指纹随 ready 上行（logcat `build=`）。
+- 桥：下行 `window.BlockNoteEditorHost.onMessage(json)`，上行 `AndroidBridge.postMessage`。⚠️ 桥回调在 Java 桥线程，入口已统一 mainHandler.post，别拆散包装。
+- 撤销可用态用 `editor.canExec(command)`（`editor.can` 不存在；命令取 yUndo/history 扩展）。
+- ⚠️ **transform 的 value 是动作名，不等于块类型名**：`toggleHeading*` → `heading` + `props.isToggleable`；`toggleList` → `toggleListItem`。合法类型只有 defaultBlockSpecs 那一份。传错会在 `blockToNode` 抛 TypeError，而 format 分支无 try/catch → "点了没反应且无日志"。
+- ⚠️ **行内样式渲染走 markView 的 `render()`，不是 renderHTML**；官方 textColor/backgroundColor 的 render() 只造裸 span，颜色靠 CSS 预设色名规则 → 自由 hex 不渲染。修法：schema.ts 同名覆盖 spec，render 内联 `span.style.color`。
+- ⚠️ 官方 markdown 导出剥颜色 span / 丢折叠标记 → converter.ts 用 token 往返：行内色 `@@@CORGI_IC_TC_<值>@@@`…`@@@CORGI_IC_END@@@`；块级色用**块内容行首**纯文本 token `@@@CORGI_BC_TC_red@@@`（外包 div 会被 ProseMirror 下钻丢弃）；折叠标题用 `<details><summary>` 三段。纯文本转换必须剥离这些标记（Kotlin markdownToPlainText 已加）。
+- ⚠️ `element.style.color` 读出是 `rgb(r,g,b)` 而非 hex → 必须归一成大写 `#RRGGBB`，否则二次保存被"值形态不安全"跳过。
+- 样式：padding-inline `var(--bn-editor-gutter,20px)!important`；sideMenu 已删（HTML5 DnD 触摸不触发）。
 
 ## 工具/验证教训
-- ⚠️ **「markdown → 纯文本」唯一入口 = `MarkdownParser.toPlainText()`**（v2026-09-22 收敛）：`stripMarkdown` **只处理 markdown 语法**，不剥 HTML 标签、不剥 `@@@CORGI_…@@@` 占位 token。此前灵感保存路径（InspirationEditViewModel）与启动回填（InspirationRepository）各自调 stripMarkdown，导致行内色 span 与块级色 token 被写进 `Inspiration.content`，真机表现为列表页/详情卡摘要出现字面量。`InspirationTextUtils.markdownToPlainText` 现为薄委托。⚠️ 待办有独立口径（`#标签` 文字要保留），勿混用；待办的两处 stripMarkdown（HomeViewModel/HomeScreen 搜索）保持原样。
-- ⚠️ **改数据清洗规则必须同时修历史数据**：卡片摘要优先读 `content`（非空即不再走 markdownToPlainText 兜底），所以"代码修好"对已污染行无效。`InspirationRepository.repairInspirationPlainText()`（原 backfillEmpty…，扩权改名）在启动时幂等清洗：content 空 或 含 `@@@CORGI_` / `<span` 即以 toPlainText 重算。
-- ⚠️ **A 面板行内色回显**：`blockState` 新增 `inlineTextColor`/`inlineBackgroundColor`（JS 直接给 `getActiveStyles()` 原始串 = hex）；宿主 `blockColorNameOf`（blockColorHexOf 的反函数）按当前主题色板反查色名点亮色点；空→高亮第一个「/」默认块、不在色板→**无高亮**（不谎报默认）。⚠️ 与块级 `blockTextColor`/`blockBackgroundColor`（色名、整段）是两回事。
-- 新增 layout/Modifier API 必须逐项核对 import（漏 import 只编译期暴露；本项目不主动编译）。「API 应该有但没反应」先 grep 确认存在。catch{return} 静默失败至少上行诊断。连续 2 次猜测失败→停猜加埋点。同一文件多次 Edit 串行。
-- 删文件/裁 import 前按 `by ` 反查依赖（by 委托隐式 getValue/setValue）；删后反向全项目 grep 顶层声明名；最终以编译为准。
-- 产物关键字计数只证字符串在文件里；样式是否生效必须真机/computed style。逐像素分析截图（pillow 扫描）是定位渲染问题的可靠手段。
-- 提交：中文提交信息，Write 临时文件→提交→删除。
+- 新增 layout/Modifier API 必须逐项核对 import（漏 import 只编译期暴露）。「API 应该有但没反应」先 grep 确认存在。静默 catch 至少上行诊断；连续 2 次猜测失败 → 停猜加埋点。同一文件多次 Edit 串行。
+- 删文件/裁 import 前按 `by ` 反查委托依赖；删后全项目 grep 顶层声明名。
+- 产物关键字计数只证字符串在文件里；样式生效必须真机/computed style；逐像素分析截图（pillow）是定位渲染问题的可靠手段。
+- 提交：中文提交信息，Write 临时文件 → 提交 → 删除。
