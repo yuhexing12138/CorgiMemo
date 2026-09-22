@@ -22,7 +22,8 @@
 ## IME 抑制与底部栏面板
 - T/H/A 三面板互斥占同一槽位（单一状态 `openPanel: EditBottomPanel?`，**勿退回多 boolean**），高度 = 键盘高度。
 - 抑制四层互兜：setter 即 hide / onCreateInputConnection→null / onCheckIsTextEditor→false / 注入 `inputmode=none` + MutationObserver；注入三时机（状态变化、onPageFinished、桥 ready）。抑制期间保留光标与选区。
-- **v2026-09-22：面板收起后按焦点态弹回键盘**。Screen 用 `LaunchedEffect(isFormatPanelOpen)` + `wasFormatPanelOpen` 判「true→false」，delay 180ms 后：正文 editorFocused → `controller.restoreIme()`（focusEditor 下行 → requestFocus → restartInput → showSoftInput）；否则标题 isTitleFocused → `keyboardController.show()`。WebSettings.keyboardDisplayRequiresUserGesture 已置 false（默认 true 会拒绝程序化聚焦弹键盘），与 IMM 显式唤起互为保险。
+- **v2026-09-22：面板收起后按焦点态弹回键盘**。Screen 用 `LaunchedEffect(isFormatPanelOpen)` + `wasFormatPanelOpen` 判「true→false」，delay 180ms 后：正文 editorFocused → `controller.restoreIme()`（focusEditor 下行 → requestFocus → restartInput → showSoftInput）；否则标题 isTitleFocused → `keyboardController.show()`。弹键盘只能靠 IMM 显式 showSoftInput（post 里执行，等焦点稳定）。
+- ⚠️ `WebSettings` **不存在** `keyboardDisplayRequiresUserGesture`（API 35 android.jar 里只有 MediaPlayback 那个；该语义属别的平台/别的 WebView 封装，别再搬）→ 程序化聚焦弹键盘只能走 IMM。
 - 焦点真值只能由 JS 提供：Android `View.hasFocus()` 失真（点底部栏按钮后视图焦点已转到 Compose 根视图，DOM 焦点仍在 contenteditable）。
 - 锁定态面板：禁用仅内容区 alpha(0.38) + Initial 消费指针，面板头「完成」保持可点。
 - 标题回显靠「是否 heading 块」+ headingToggleable 布尔分流（折叠标题 = `heading` + `props.isToggleable`，**不是**独立块类型；级别数字两类重叠）。

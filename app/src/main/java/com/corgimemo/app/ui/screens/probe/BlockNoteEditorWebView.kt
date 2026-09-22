@@ -737,18 +737,16 @@ private fun createEditorWebView(
             allowUniversalAccessFromFileURLs = true
             useWideViewPort = true
             loadWithOverviewMode = true
-            cacheMode = WebSettings.LOAD_DEFAULT
             /**
-             * v2026-09-22：允许**非用户手势**触发的聚焦弹出键盘。
-             *
-             * 该设置默认 **true**（Chromium 只在用户真实触摸后才弹键盘）。面板收起时
-             * 的「JS `focus()` + 宿主 `showSoftInput`」属于程序化聚焦，默认会被拒绝；
-             * 置 false 后这条路径才走得通（宿主侧另有 `InputMethodManager` 兜底，
-             * 两道互为保险）。
-             *
-             * 编辑器本身没有 `autofocus`，故不会因此"进页就弹键盘"。
+             * ⚠️ 这里**没有** `keyboardDisplayRequiresUserGesture` 可用（v2026-09-22 实测）：
+             * Android 的 `android.webkit.WebSettings` 从 API 35 的 android.jar 里查，
+             * 与键盘相关的只有 `MediaPlaybackRequiresUserGesture`——**不存在**任何
+             * "键盘是否需要用户手势"的开关（该语义存在于别的平台/别的 WebView 封装，
+             * 别再往这里搬）。因此"程序化聚焦后弹键盘"只能靠宿主侧显式
+             * `InputMethodManager.showSoftInput`（见 [ImeSuppressibleWebView.showImeNow]），
+             * 由 IMM 直接请求输入法，与 WebView 内部对"用户手势"的策略无关。
              */
-            keyboardDisplayRequiresUserGesture = false
+            cacheMode = WebSettings.LOAD_DEFAULT
         }
 
         addJavascriptInterface(

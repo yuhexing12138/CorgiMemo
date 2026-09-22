@@ -399,8 +399,10 @@ adb logcat -s BlockNoteEditor:V | grep "ready received"
     面板 `openPanel = null` → `suppressIme` 回 false（解除 `inputmode="none"`）
     → 延迟 `IME_RESTORE_DELAY_MS`(180ms) → `focusEditor` → `requestFocus`
     → `InputMethodManager.restartInput` + `showSoftInput`。
-    另外把 `WebSettings.keyboardDisplayRequiresUserGesture` 置 false（默认 true 会拒绝
-    程序化聚焦弹键盘），与 IMM 显式唤起互为保险。
+    ⚠️ **`WebSettings` 上没有 `keyboardDisplayRequiresUserGesture`**（v2026-09-22 编译报错实测）：
+    android.jar（API 35）里与键盘相关的只有 `MediaPlaybackRequiresUserGesture`，该语义属于别的
+    平台/别的 WebView 封装。弹键盘只能靠 IMM 显式 `showSoftInput`（直接请求输入法，
+    不受 WebView 对用户手势的策略约束），JS `focus()` 只是保证"有输入连接可建"。
   - 判据优先级：正文 `editorFocused` → `restoreIme()`；否则标题 `isTitleFocused`
     → `SoftwareKeyboardController.show()`；都没有则不弹（无光标就不抢键盘）。
 
