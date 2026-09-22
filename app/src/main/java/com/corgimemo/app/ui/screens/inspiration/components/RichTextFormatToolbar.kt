@@ -1,6 +1,8 @@
 package com.corgimemo.app.ui.screens.inspiration.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.minimumInteractiveComponentSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -538,17 +541,23 @@ fun RichTextFormatToolbar(
              * v2026-09-22：这两个判据的来源已换成 JS 侧 `ed.canNestBlock()` /
              * `ed.canUnnestBlock()`（首块不能 Nest、顶层块不能 Unnest），
              * 语义見同名参数的注释；连发逻辑本身不变。
+             *
+             * ⚠️ v2026-09-22 补一个锁定态闸门：连发按钮的动作在 **down 即执行**，
+             * 而锁定态的透明遮罩只在 Initial pass 消费事件——消费拦得住普通按钮的
+             * onClick（clickable 要求 up 未被消费），却拦不住本手势层的
+             * `awaitFirstDown(requireUnconsumed = false)`。故这里显式用工具栏整体
+             * 可用态（[enabled]，锁定态为 false）闸一次动作，与遮罩双保险。
              */
             RiFormatButton(
                 "RiIndentIncrease",
-                onClick = onIncreaseIndent,
+                onClick = { if (enabled) onIncreaseIndent() },
                 contentDescription = "增加缩进",
                 enabled = canIncreaseIndent,
                 canRepeat = canIncreaseIndent,
             )
             RiFormatButton(
                 "RiIndentDecrease",
-                onClick = onDecreaseIndent,
+                onClick = { if (enabled) onDecreaseIndent() },
                 contentDescription = "减少缩进",
                 enabled = canDecreaseIndent,
                 canRepeat = canDecreaseIndent,
@@ -696,6 +705,10 @@ fun RichTextFormatToolbar(
  * 浮层按钮。适配「连续操作」类按钮（缩进/反缩进需连按多级）。
  * 传 null（默认）则保持原「即点即走」行为，零回归。
  *
+ * v2026-09-22：连发按钮（[canRepeat] 非 null）改用**自绘按压圈**替代 IconButton 的
+ * ripple——真机复现"点完水波纹圆圈一直留在按钮上"，根因是 down 即动作引发的
+ * 同帧状态翻转与 ripple 交互源收尾的时序缝隙（详见函数内注释）。
+ *
  * @param canRepeat 非 null 时启用长按连发，且该值实时决定「是否继续连发」；
  *                  null = 不启用连发（普通点击）
  */
@@ -716,27 +729,9 @@ private fun RiFormatButton(
     val vector = remember(riName) {
         com.corgimemo.app.ui.screens.probe.BlockNotePlusMenuIcons.vectorFor(riName)
     }
-    /**
-     * 连发开关：仅当调用方显式传入 canRepeat（非 null）时才挂手势 Modifier。
-     * 否则保持原样，避免给所有按钮都引入 pointerInput 的额外开销。
-     */
-    val repeatModifier = if (canRepeat != null) {
-        Modifier.longPressRepeat(
-            onAction = onClick,
-            enabled = enabled,
-            canRepeat = canRepeat,
-        )
-    } else {
-        Modifier
-    }
-    IconButton(
-        /** 启用连发时动作交给手势 Modifier（否则会双执行）；未启用时走常规 onClick */
-        onClick = if (canRepeat != null) ({}) else onClick,
-        enabled = enabled,
-        modifier = Modifier
-            .size(40.dp)
-            .then(repeatModifier)
-    ) {
+
+    /** 按钮内容（图标 / 文字兜底），IconButton 分支与自绘按压分支共用 */
+    val iconContent: @Composable () -> Unit = {
         if (vector != null) {
             Icon(
                 imageVector = vector,
@@ -753,6 +748,64 @@ private fun RiFormatButton(
                 maxLines = 1
             )
         }
+    }
+
+    if (canRepeat == null) {
+        /** 普通按钮：保持 IconButton（动作走 onClick，ripple 由库接管） */
+        IconButton(onClick = onClick, enabled = enabled) {
+            iconContent()
+        }
+        return
+    }
+
+    /**
+     * 连发按钮（Nest / Unnest）：**自绘按压圈，不用 IconButton 的 ripple**
+     * （v2026-09-22 水波纹卡死修复）
+     *
+     * ⚠️ 真机 bug：点击 Nest / Unnest 后水波纹圆圈一直留在按钮上不消失（仅这两个
+     * 连发按钮可复现，其余普通按钮正常）。与普通按钮的差别只有一点：连发按钮的
+     * 动作在**按下瞬间（down）**就执行（[longPressRepeat] 的"按下即一次"），而该
+     * 动作会在同一帧内引发 `blockState` 上行 → `enabled` 翻转 / 重组（典型：Unnest
+     * 一次退回顶层 → 立即置灰）——即 **ripple 的按压交互还活着的时候，按钮的
+     * 交互参数就被原地改写了**。Foundation 1.11 的 clickable 对这条时序的收尾
+     * 存在缝隙（静态核对过 mid-press 置灰 / 延迟波纹 / 取消三条路径均有兜底，
+     * 但真机仍复现卡圈，不再深挖库内时序），表现为松手后圆圈永久残留。
+     *
+     * 修法（构造性消除）：连发按钮不再依赖 IconButton 的 ripple 交互源，按压视觉
+     * 改为**自绘圆圈**，由 [longPressRepeat] 的手势生命周期直接驱动
+     * （`onPressChanged`），并在其 `finally` 里保证任何退出路径（抬起 / 滑出 /
+     * 被上层消费 / pointerInput 重启 / 组合离开）都会复位——所见即所指，
+     * 不依赖库内部交互源的收尾时序。
+     *
+     * 边界置灰语义不变：`enabled = false` 时手势层直接不响应（无按压圈、无动作）。
+     */
+    var pressed by remember { mutableStateOf(false) }
+    /** 按压圈淡入淡出（100ms），视觉贴近原 ripple 的浮现/消散 */
+    val pressedColor by animateColorAsState(
+        targetValue = if (pressed) {
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.14f)
+        } else {
+            Color.Transparent
+        },
+        animationSpec = tween(durationMillis = 100),
+        label = "repeatButtonPressedLayer"
+    )
+    Box(
+        modifier = Modifier
+            /** 与 IconButtonImpl 同款顺序：先保交互目标下限，再定 40dp 视觉尺寸 */
+            .minimumInteractiveComponentSize()
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(pressedColor)
+            .longPressRepeat(
+                onAction = onClick,
+                enabled = enabled,
+                canRepeat = canRepeat,
+                onPressChanged = { pressed = it },
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        iconContent()
     }
 }
 

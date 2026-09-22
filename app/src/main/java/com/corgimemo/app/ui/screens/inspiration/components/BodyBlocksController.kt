@@ -1571,20 +1571,16 @@ class BodyBlocksController(
     }
 
     /**
-     * 聚焦块当前是否为复选框块（v2026-09-07，工具栏复选框按钮激活态高亮用）。
+     * ⚠️ v2026-09-22 删除 `val isFocusedBlockCheckbox`（原 v2026-09-07 新增，工具栏
+     * 复选框按钮的激活态高亮用）：它判的是**宿主本地块对象**的段落类型
+     * （`state.isTaskList`），而 BlockNote 模式下正文只在 JS 侧 ProseMirror 文档树里，
+     * 那份镜像与真实块类型无关 → 按钮**永远不高亮**。
      *
-     * 快照响应式：[focusedBlockId]（mutableStateOf）与 [blocks]（SnapshotStateList
-     * 结构性读取）均为快照状态；v2026-09-15 起勾选态由**库**的段落类型承载（结构性
-     * 写入）同样可追踪——聚焦块切换 / 勾选翻转都会触发读取方重组刷新。
+     * 现由 JS 经 `blockState` 上行 `isCheckboxBlock`（判据 = 块类型 `checkListItem`），
+     * 见 InspirationEditScreen 的接线——本属性零调用后一并移除，避免后人误用。
+     * **结论（同类问题已踩 4 次）：工具栏的可用态 / 激活态一律以 JS 上行为准，
+     * 宿主本地镜像不可信。**
      */
-    val isFocusedBlockCheckbox: Boolean
-        get() {
-            val block = focusedBlockId
-                ?.let { id -> blocks.firstOrNull { it.id == id } }
-            /** v2026-09-15：勾选态改由**库**的段落类型承载（`state.isTaskList`），
-             *  不再有块级 checked 属性 */
-            return block is BodyBlock.Text && block.state.isTaskList
-        }
 
     // ---------- 图片插入 ----------
 

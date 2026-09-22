@@ -61,6 +61,11 @@ const val DEFAULT_REPEAT_INTERVAL_MS = 150L
  * @param canRepeat 是否允许继续连发；连发期间实时读取，变 false 即停
  * @param initialDelayMs 按下到开始连发的等待时长
  * @param repeatIntervalMs 连发间隔
+ * @param onPressChanged 按压态回调（v2026-09-22 新增）：按下置 true，**任何**退出路径
+ *   （抬起 / 滑出 / 被上层消费 / pointerInput 因参数变化重启）都置 false。供调用方
+ *   自绘按压视觉——不要依赖 IconButton 的 ripple：连发按钮的动作在 down 即执行，
+ *   动作引发的重组/置灰与 ripple 的交互源收尾存在时序缝隙（真机表现：松手后
+ *   水波纹圆圈一直留在按钮上），自绘按压态并由手势生命周期直接驱动才是确定的。
  */
 @Composable
 fun Modifier.longPressRepeat(
@@ -69,6 +74,7 @@ fun Modifier.longPressRepeat(
     canRepeat: Boolean,
     initialDelayMs: Long = DEFAULT_REPEAT_INITIAL_DELAY_MS,
     repeatIntervalMs: Long = DEFAULT_REPEAT_INTERVAL_MS,
+    onPressChanged: ((Boolean) -> Unit)? = null,
 ): Modifier {
     /**
      * `pointerInput` 的 lambda 只在 key 变化时重启；直接捕获 onAction / canRepeat
@@ -95,28 +101,42 @@ fun Modifier.longPressRepeat(
     return this.pointerInput(enabled, initialDelayMs, repeatIntervalMs) {
         if (!enabled) return@pointerInput
         awaitEachGesture {
-            /**
-             * requireUnconsumed = false：IconButton 的水波纹（clickable 内部
-             * detectTapGestures）可能已消费 down，这里仍要拿到以确保响应。
-             */
-            awaitFirstDown(requireUnconsumed = false)
-            // 按下即刻执行一次（对齐原 JS onPointerDown 语义；轻点即一次）
-            currentAction()
-            // 交给普通作用域按节拍重复；受限域内不挂起于 delay，合规
-            repeatJobRef[0]?.cancel()
-            repeatJobRef[0] = timerScope.launch {
-                delay(initialDelayMs)
-                while (isActive) {
-                    // 见底立即停发，不产生无效点击
-                    if (!currentCanRepeat) break
-                    currentAction()
-                    delay(repeatIntervalMs)
+            try {
+                /**
+                 * requireUnconsumed = false：IconButton 的水波纹（clickable 内部
+                 * detectTapGestures）可能已消费 down，这里仍要拿到以确保响应。
+                 */
+                awaitFirstDown(requireUnconsumed = false)
+                // 先标记按压态（自绘按压视觉用），再执行动作，视觉与行为同拍
+                onPressChanged?.invoke(true)
+                // 按下即刻执行一次（对齐原 JS onPointerDown 语义；轻点即一次）
+                currentAction()
+                // 交给普通作用域按节拍重复；受限域内不挂起于 delay，合规
+                repeatJobRef[0]?.cancel()
+                repeatJobRef[0] = timerScope.launch {
+                    delay(initialDelayMs)
+                    while (isActive) {
+                        // 见底立即停发，不产生无效点击
+                        if (!currentCanRepeat) break
+                        currentAction()
+                        delay(repeatIntervalMs)
+                    }
                 }
+                // 挂起点：抬起 / 滑出边界 / 被上层拦截都会返回，随后停发
+                waitForUpOrCancellation()
+            } finally {
+                /**
+                 * ⚠️ 任何退出路径都必须收尾（v2026-09-22 补强）：
+                 * 1) 正常路径——waitForUpOrCancellation 返回（抬起/滑出/被消费）；
+                 * 2) pointerInput 因 key（enabled 等）变化**重启**——协程在上面的挂起点
+                 *    被取消，若不加 finally，连发 Job 将无人取消（停不下来）、
+                 *    按压态永远为 true（自绘按压圈不消失）。
+                 * finally 块内只做非挂起操作（写 State / cancel Job），取消环境下安全。
+                 */
+                onPressChanged?.invoke(false)
+                repeatJobRef[0]?.cancel()
+                repeatJobRef[0] = null
             }
-            // 挂起点：抬起 / 滑出边界 / 被上层拦截都会返回，随后停发
-            waitForUpOrCancellation()
-            repeatJobRef[0]?.cancel()
-            repeatJobRef[0] = null
         }
     }
 }
