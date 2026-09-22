@@ -574,9 +574,27 @@ export default function EditorApp() {
             case "transform":
               // S10 补充：块类型转换/插入（+ 菜单同款能力进工具栏）
               switch (value) {
+                /**
+                 * 普通标题 H1–H6
+                 *
+                 * ⚠️ v2026-09-22 修复：原分支只声明 heading1–3，于是宿主标题面板
+                 * 「普通标题」的 H4/H5/H6 下发 `heading4`–`heading6` 后**落不进任何 case**，
+                 * 内层 switch 又无 default → 整个操作被静默丢弃（不报错、无上行诊断），
+                 * 真机表现为"点了没反应"。该缺陷自旧工具栏时代就存在（旧
+                 * RichTextFormatToolbar 的 RiH4–RiH6 发的是同样的 action），并非面板迁移引入。
+                 *
+                 * 六级齐备的依据：@blocknote/core 的 heading spec 取
+                 * `HEADING_LEVELS = [1,2,3,4,5,6]` 作 `level` 的合法值域，渲染侧
+                 * `createElement("h" + level)` 不分级，CSS 也备有 1em/.9em/.8em 三档，
+                 * 故 JS 侧补齐分支后 H4–H6 即可正常渲染（下方 `Number(value.slice(-1))`
+                 * 本就按尾字符取级别，无需额外改动）。
+                 */
                 case "heading1":
                 case "heading2":
-                case "heading3": {
+                case "heading3":
+                case "heading4":
+                case "heading5":
+                case "heading6": {
                   const level = Number(value.slice(-1));
                   const { block } = ed.getTextCursorPosition();
                   const targetType =
@@ -648,6 +666,20 @@ export default function EditorApp() {
                     ed.getTextCursorPosition().block,
                     "after"
                   );
+                  break;
+                /**
+                 * 未知 transform 值的兜底诊断（v2026-09-22 新增）
+                 *
+                 * 本分支的直接由来就是 heading4–6 曾在此静默消失——内层 switch 无 default 时，
+                 * 任何拼错/漏声明的 action 都会表现为"点了完全没反应"，且不产生任何日志，
+                 * 只能靠逐行读源码排查。现改为上行 `error`（宿主 BlockNoteEditorWebView
+                 * 的 "error" 分支会打 logcat：`js error: ...`），使同类问题一次可诊。
+                 */
+                default:
+                  sendUp({
+                    type: "error",
+                    message: `transform: unknown value "${value}" (ignored)`,
+                  });
                   break;
               }
               break;

@@ -83,7 +83,8 @@ export type DownMessage =
    * - bulletList / numberedList / checkList / paragraph（光标块类型切换）
    * - indent / outdent（嵌套层级 ±1）
    * - alignLeft / alignCenter / alignRight（光标块对齐）
-   * - transform（value = heading1/2/3、quote、codeBlock、table、pageBreak——块类型转换/插入）
+   * - transform（value = heading1–heading6、toggleHeading / toggleHeading2 / toggleHeading3、
+   *   toggleList、quote、paragraph、codeBlock、table、pageBreak——块类型转换/插入）
    */
   | { type: "format"; action: string; value?: string }
   /**
