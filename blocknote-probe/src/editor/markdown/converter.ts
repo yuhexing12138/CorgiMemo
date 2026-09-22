@@ -10,23 +10,34 @@
  *   ② editor.tryParseMarkdownToBlocks()
  *   ③ 后处理：
  *      - token 占位段落 → divider 块（props.style）
+ *      - 块级色的行首 token → 块 props（见 [decodeBlockColorTokens]）
  *      - image 块本地路径 → file:// URL（WebView 可加载；保存时剥离还原）
  *
- *   可折叠标题（`<details>`）**无需在此特殊处理**：官方 markdown tokenizer 已把
- *   `details` / `summary` 列入 HTML 块白名单（原样透传），heading 块 spec 的
- *   `parse()` 命中 DETAILS 后会返回 `{ props: { level, isToggleable: true } }`，
- *   并由 `getDetailsContent` 取 `<summary>` 内的标题与其后内容作为 blocks。
+ *   另外两类自编码**无需在此特殊处理**：
+ *   - 可折叠标题（`<details>`）：官方 markdown tokenizer 已把 `details` / `summary`
+ *     列入 HTML 块白名单（原样透传），heading 块 spec 的 `parse()` 命中 DETAILS 后
+ *     返回 `{ props: { level, isToggleable: true } }`，并由 `getDetailsContent`
+ *     取 `<summary>` 内的标题与其后内容作为 blocks；
+ *   - 行内色（`<span style="color:…">`）：官方 `tryInlineHtml` 原样透传行内标签，
+ *     再由本项目覆盖后的 color 样式 `parse` 还原为 mark。
  *
  * 保存 blocksToMd：
  *   ① blocks 中 divider(style=dashed/wavy) → token 占位段落（solid 走官方 hr）
  *      image 块 file:// URL → 本地原始路径
- *   ②**可折叠标题 → 三段 HTML 标记包裹**（v2026-09-22 新增，见下方
+ *   ②**行内色 → 行内 token**（v2026-09-22 新增，见 [encodeInlineColorsDeep] /
+ *      [decodeInlineColorTokens]；官方导出会把颜色 span 直接剥掉）
+ *   ③**块级色 → 块内容行首 token**（v2026-09-22 新增，见 [encodeBlockColorsDeep] /
+ *      [decodeBlockColorTokens]；官方块序列化器不读块元素属性）
+ *   ④**可折叠标题 → 三段 HTML 标记包裹**（v2026-09-22 新增，见下方
  *      [encodeToggleHeadings] 与 [TOGGLE_MARKER_HTML]；官方导出会丢掉该标记）
- *   ③ editor.blocksToMarkdownLossy()
- *   ④ 后处理：token 占位行 → `--- dashed` / `--- wavy` 文本行；折叠标题 token 行 →
+ *   ⑤ editor.blocksToMarkdownLossy()
+ *   ⑥ 后处理：行内色 token → `<span style="color|background-color:…">`
+ *   ⑦ 后处理：token 占位行 → `--- dashed` / `--- wavy` 文本行；折叠标题 token 行 →
  *      `<details><summary>` / `</summary>` / `</details>` 标记行
+ *      （块级色 token 保持纯文本原样落库——它的还原发生在载入方向）
  *
- * 已接受损失（不在往返保证内）：fontSize 等自定义 inline 样式（官方 lossy 导出丢弃）。
+ * 已接受损失（不在往返保证内）：fontSize 行内样式（官方 lossy 导出丢弃）。
+ * v2026-09-22 追加：**textColor / backgroundColor 已纳入往返**（行内 + 块级，曾经都是损失项）。
  */
 
 /** 与 Compose 版 BodyBlocksEditor.EMPTY_BLOCK_PLACEHOLDER 同语义（NBSP） */
@@ -106,7 +117,6 @@ const TOGGLE_MARKER_HTML = new Map<string, string>([
 function markerParagraph(token: string): any {
   return { type: "paragraph", content: [{ type: "text", text: token, styles: {} }] };
 }
-
 /**
  * 导出前预处理：把「可折叠标题」块展开为"标记段落 + 原标题 + 标记段落 + 子块 + 标记段落"序列
  *
@@ -151,6 +161,289 @@ function encodeToggleHeadings(blocks: any[]): any[] {
     );
   }
   return out;
+}
+
+/* ===== 行内文字色 / 背景色的 markdown 往返编码（v2026-09-22 新增）===== */
+
+/**
+ * 行内色的开/闭标记 token
+ *
+ * **为什么需要**：官方 markdown 导出会**主动剥掉颜色 span**——
+ * `htmlToMarkdown.serializeInlineContent` 里明写
+ * `case "span": // Color spans, etc. — strip the tag, keep content`。
+ * 而本项目正文只以 markdown 持久化，于是行内色在保存那一刻就丢了
+ * （与 fontSize 同属"markdown 无对应语法"的一类，只是颜色还被官方显式丢弃）。
+ *
+ * **编码形态**（与折叠标题同一套"token + 后处理"思路）：
+ * 导出前把带色的 text 片段拆成
+ * `@@@CORGI_IC_TC_#FF9A5C@@@` + 原文 + `@@@CORGI_IC_END@@@`（背景色用 `BG_` 前缀），
+ * 官方导出后再把 token 反向替换成**原生行内 HTML**
+ * `<span style="color:#FF9A5C">…</span>`。
+ *
+ * **解析侧为何能还原**：官方 markdown tokenizer 有 `tryInlineHtml`，
+ * 会把形如 `<span style="…">` 的行内标签**原样透传**进 HTML 字符串；
+ * 随后 heading/paragraph 的 inline 解析由各 style spec 的 `parse` 处理，
+ * 而本项目已同名覆盖 color 样式（见 `editor/schema.ts`），其 `parse` 认
+ * `<span style="color:…">` / `<span style="background-color:…">`。
+ *
+ * ⚠️ 值只接受 `[0-9A-Za-z#]+`（本项目面板下发 6 位 hex；同时兼容 3 位 hex 与
+ * 官方色名）。含其它字符的值（如 `rgb(255,0,0)`）**不编码**，退化为既有行为
+ * （颜色不持久化），以免把引号等危险字符带进 style 属性。
+ */
+const INLINE_TEXT_COLOR_PREFIX = "@@@CORGI_IC_TC_";
+const INLINE_BG_COLOR_PREFIX = "@@@CORGI_IC_BG_";
+const INLINE_COLOR_TOKEN_SUFFIX = "@@@";
+/** 闭标记（开闭总是成对输出，故单一只即可） */
+const INLINE_COLOR_END_TOKEN = "@@@CORGI_IC_END@@@";
+/** token 内允许出现的值字符集（hex 与色名；刻意不含引号/括号/空格） */
+const INLINE_COLOR_SAFE_VALUE = /^[0-9A-Za-z#]+$/;
+
+/** 只含标记文本的行内片段（styles 留空，确保官方导出不会为它再生成 span） */
+function colorMarkerText(token: string): any {
+  return { type: "text", text: token, styles: {} };
+}
+
+/**
+ * 把一段 inline content 里的行内色"转义"为 token 序列
+ *
+ * 处理粒度是**单个带色的 text 片段**（不做跨片段的同色合并）：
+ * 同色相邻片段会各自带一对标记，markdown 略长，但实现简单、不会因合并逻辑
+ * 引入配对错误；解析回来是多个 mark 片段，视觉完全一致。
+ *
+ * ⚠️ `link` 的行内内容（`content: StyledText[]`）也要递归——带色链接文字同样要保色。
+ *
+ * @param content 块的 inline content 数组
+ * @returns 展开后的 inline content 数组
+ */
+function encodeInlineColors(content: any[]): any[] {
+  const out: any[] = [];
+  for (const item of content) {
+    /** 链接：递归其内部文本，其余字段保持不变 */
+    if (item?.type === "link" && Array.isArray(item.content)) {
+      out.push({ ...item, content: encodeInlineColors(item.content) });
+      continue;
+    }
+    /** 非文本行内内容（自定义 inline content 等）原样透传 */
+    if (item?.type !== "text" || typeof item.text !== "string") {
+      out.push(item);
+      continue;
+    }
+    const styles = (item.styles ?? {}) as Record<string, unknown>;
+    const textColor = typeof styles.textColor === "string" ? styles.textColor : undefined;
+    const bgColor =
+      typeof styles.backgroundColor === "string" ? styles.backgroundColor : undefined;
+    const encodeTc = textColor !== undefined && INLINE_COLOR_SAFE_VALUE.test(textColor);
+    const encodeBg = bgColor !== undefined && INLINE_COLOR_SAFE_VALUE.test(bgColor);
+    if (!encodeTc && !encodeBg) {
+      out.push(item);
+      continue;
+    }
+    /** 剥掉已编码成功的颜色维度（未编码的维度保留，交给官方行为处理） */
+    const restStyles = { ...styles };
+    if (encodeTc) delete restStyles.textColor;
+    if (encodeBg) delete restStyles.backgroundColor;
+
+    if (encodeTc) out.push(colorMarkerText(`${INLINE_TEXT_COLOR_PREFIX}${textColor}${INLINE_COLOR_TOKEN_SUFFIX}`));
+    if (encodeBg) out.push(colorMarkerText(`${INLINE_BG_COLOR_PREFIX}${bgColor}${INLINE_COLOR_TOKEN_SUFFIX}`));
+    out.push({ ...item, styles: restStyles });
+    /** 闭标记按开标记的逆序补回，保证 span 正确嵌套 */
+    if (encodeBg) out.push(colorMarkerText(INLINE_COLOR_END_TOKEN));
+    if (encodeTc) out.push(colorMarkerText(INLINE_COLOR_END_TOKEN));
+  }
+  return out;
+}
+
+/**
+ * 导出前预处理：递归整棵块树，把所有行内色片段编码为 token
+ *
+ * @param blocks 任一层的块数组（递归 content 与 children）
+ * @returns 编码后的块数组（可安全交给 editor.blocksToMarkdownLossy）
+ */
+function encodeInlineColorsDeep(blocks: any[]): any[] {
+  return blocks.map((b) => {
+    const next: any = { ...b };
+    if (Array.isArray(b?.content) && b.content.length > 0) {
+      next.content = encodeInlineColors(b.content);
+    }
+    if (Array.isArray(b?.children) && b.children.length > 0) {
+      next.children = encodeInlineColorsDeep(b.children);
+    }
+    return next;
+  });
+}
+
+/**
+ * 导出后处理：把行内色 token 还原成原生 HTML 标签
+ *
+ * token 是**行内**出现的（不像折叠标题那样独占一行），故对整篇 markdown 做
+ * 全局替换，而非逐行处理。
+ *
+ * @param md 官方导出的 markdown
+ * @returns 带 `<span style="…">` 的 markdown
+ */
+function decodeInlineColorTokens(md: string): string {
+  return md
+    .replace(
+      new RegExp(`${INLINE_TEXT_COLOR_PREFIX}([0-9A-Za-z#]+)${INLINE_COLOR_TOKEN_SUFFIX}`, "g"),
+      '<span style="color:$1">'
+    )
+    .replace(
+      new RegExp(`${INLINE_BG_COLOR_PREFIX}([0-9A-Za-z#]+)${INLINE_COLOR_TOKEN_SUFFIX}`, "g"),
+      '<span style="background-color:$1">'
+    )
+    .split(INLINE_COLOR_END_TOKEN)
+    .join("</span>");
+}
+
+/* ===== 段落（块级）文字色 / 背景色的 markdown 往返编码（v2026-09-22 新增）===== */
+
+/**
+ * 块级色的行首标记 token
+ *
+ * **为什么需要**：块级色是**块 props**（`textColor` / `backgroundColor`，取值为 BlockNote
+ * 预设色名），官方导出会把它们写成块元素上的 `data-text-color` / `data-background-color`
+ * 属性（`blocks/defaultProps.ts` 的 `addDefaultPropsExternalHTML`）——但
+ * `htmlToMarkdown` 的块序列化器**只读结构与 inline 内容、不读元素属性**，
+ * 于是块级色同样进不了 markdown，重进笔记即丢。
+ *
+ * **为什么不像行内色那样用 HTML 承载**：块级色需要贴在"块自己的标签"上
+ * （`<p data-text-color="red">`），而该块导出成 `p` / `h2` / `li` / `blockquote`
+ * 哪一种**无法预知**，固定开闭标记包不出这个形态；若外包一层 `<div data-…>`，
+ * 该 div 在解析时会被 ProseMirror 当作不匹配元素**下钻丢弃**，属性也随之丢失。
+ *
+ * **采用机制**：把 token 作为**块内容的第一个文本片段**（`@@@CORGI_BC_TC_red@@@`
+ * 与/或 `@@@CORGI_BC_BG_blue@@@`，TC 恒在 BG 之前）。token 是块内普通文本，
+ * 会随 markdown 正常往返、位置永远贴在该块内容的最前面；载入后再由
+ * [decodeBlockColorTokens] 从行首剥离并写回块 props——**不需要任何 CSS**，
+ * 块级色继续走官方渲染路径，语义无损（含"背景色铺满整块"这一块级特性）。
+ *
+ * ⚠️ 只在**成功插入 token** 时才剥掉原 props（与行内色同一原则：
+ * 不具备编码条件的块宁可维持现状，也不制造"属性丢了、标记也没带上"的净损失）。
+ */
+const BLOCK_TEXT_COLOR_PREFIX = "@@@CORGI_BC_TC_";
+const BLOCK_BG_COLOR_PREFIX = "@@@CORGI_BC_BG_";
+
+/** 块内容行首的 token 匹配（值字符集与行内色一致，`@` 不在集内故不会吞掉后缀） */
+const BLOCK_COLOR_PREFIX_RE = /^@@@CORGI_BC_(TC|BG)_([0-9A-Za-z#]+)@@@/;
+
+/** 块级色的有效取值（非空、非 "default"） */
+function blockColorValue(raw: unknown): string | undefined {
+  return typeof raw === "string" && raw.length > 0 && raw !== "default" && INLINE_COLOR_SAFE_VALUE.test(raw)
+    ? raw
+    : undefined;
+}
+
+/**
+ * 导出前预处理：把带块级色的块打上行首 token，并剥掉其颜色 props
+ *
+ * @param blocks 任一层的块数组（递归 children；块级色可能出现在嵌套块上）
+ * @returns 编码后的块数组
+ */
+function encodeBlockColorsDeep(blocks: any[]): any[] {
+  return blocks.map((b) => {
+    const textColor = blockColorValue((b?.props ?? {}).textColor);
+    const bgColor = blockColorValue((b?.props ?? {}).backgroundColor);
+    /** 无块级色，或该块没有 inline 内容（table / image / divider 等）→ 原样透传 */
+    if (
+      (textColor === undefined && bgColor === undefined) ||
+      !Array.isArray(b?.content)
+    ) {
+      return Array.isArray(b?.children) && b.children.length > 0
+        ? { ...b, children: encodeBlockColorsDeep(b.children) }
+        : b;
+    }
+    const restProps = { ...(b.props ?? {}) } as Record<string, unknown>;
+    delete restProps.textColor;
+    delete restProps.backgroundColor;
+    const markers: any[] = [];
+    if (textColor !== undefined) {
+      markers.push(colorMarkerText(`${BLOCK_TEXT_COLOR_PREFIX}${textColor}${INLINE_COLOR_TOKEN_SUFFIX}`));
+    }
+    if (bgColor !== undefined) {
+      markers.push(colorMarkerText(`${BLOCK_BG_COLOR_PREFIX}${bgColor}${INLINE_COLOR_TOKEN_SUFFIX}`));
+    }
+    return {
+      ...b,
+      props: restProps,
+      content: [...markers, ...b.content],
+      ...(Array.isArray(b.children) && b.children.length > 0
+        ? { children: encodeBlockColorsDeep(b.children) }
+        : {}),
+    };
+  });
+}
+
+/**
+ * 从文本**开头**连续剥离块级色 token
+ *
+ * 之所以做"前缀剥离"而不是"整段等于 token"判断：token 与其后的正文在
+ * markdown → HTML → 文本节点这条路上**可能被合并成同一个 text 片段**
+ * （`@@@CORGI_BC_TC_red@@@标题文本`），整段相等判断会漏掉这种情况。
+ *
+ * @param text 待剥离的文本
+ * @returns 剥离结果（含剩余文本与取到的色值）；开头没有 token 时返回 null
+ */
+function stripBlockColorTokens(
+  text: string
+): { text: string; textColor?: string; bgColor?: string } | null {
+  let rest = text;
+  let textColor: string | undefined;
+  let bgColor: string | undefined;
+  for (;;) {
+    const matched = BLOCK_COLOR_PREFIX_RE.exec(rest);
+    if (!matched) break;
+    if (matched[1] === "TC") textColor = matched[2];
+    else bgColor = matched[2];
+    rest = rest.slice(matched[0].length);
+  }
+  if (textColor === undefined && bgColor === undefined) return null;
+  return { text: rest, textColor, bgColor };
+}
+
+/**
+ * 载入后处理：从块内容行首剥离块级色 token，并写回块 props
+ *
+ * 必须在编辑器装载**之前**完成（本函数在 [mdToBlocks] 的解析后处理里调用）——
+ * 否则 token 会作为可见文本一闪而过。
+ *
+ * @param blocks 解析得到的块数组（递归 children）
+ * @returns 已还原块级色的块数组
+ */
+function decodeBlockColorTokens(blocks: any[]): any[] {
+  return blocks.map((b) => {
+    let textColor: string | undefined;
+    let bgColor: string | undefined;
+    let content = b?.content;
+    if (Array.isArray(content) && content.length > 0) {
+      const rest = [...content];
+      /** 逐个剥离：导出的 token 是独立文本节点，但可能被合并回同一个片段 */
+      while (rest.length > 0) {
+        const head = rest[0];
+        if (head?.type !== "text" || typeof head.text !== "string") break;
+        const stripped = stripBlockColorTokens(head.text);
+        if (!stripped) break;
+        textColor = stripped.textColor ?? textColor;
+        bgColor = stripped.bgColor ?? bgColor;
+        if (stripped.text.length === 0) rest.shift();
+        else rest[0] = { ...head, text: stripped.text };
+      }
+      if (textColor !== undefined || bgColor !== undefined) content = rest;
+    }
+    const children =
+      Array.isArray(b?.children) && b.children.length > 0
+        ? decodeBlockColorTokens(b.children)
+        : undefined;
+    if (content === b?.content && children === undefined) return b;
+    const props = { ...(b?.props ?? {}) } as Record<string, unknown>;
+    if (textColor !== undefined) props.textColor = textColor;
+    if (bgColor !== undefined) props.backgroundColor = bgColor;
+    return {
+      ...b,
+      props,
+      ...(content !== b?.content ? { content } : {}),
+      ...(children !== undefined ? { children } : {}),
+    };
+  });
 }
 
 /** 本地路径（/data/... 或 /storage/...）→ file:// URL（逐段 URI 编码，WebView 可加载） */
@@ -222,7 +515,7 @@ export async function mdToBlocks(editor: any, markdown: string): Promise<any[]> 
   // ② 官方解析
   const blocks: any[] = await editor.tryParseMarkdownToBlocks(preMarkdown);
 
-  // ③ 后处理：token 段落 → divider 块（带样式）；图片 URL 规范化
+  // ③ 后处理：token 段落 → divider 块（带样式）
   const result = blocks.map((b) => {
     const content = b?.content;
     if (b?.type === "paragraph" && Array.isArray(content) && content.length === 1) {
@@ -236,8 +529,13 @@ export async function mdToBlocks(editor: any, markdown: string): Promise<any[]> 
     }
     return b;
   });
-  normalizeImageUrls(result);
-  return result;
+
+  // ④ 后处理：块级色行首 token → 块 props（必须在装载编辑器前完成，否则 token 会闪现）
+  const colored = decodeBlockColorTokens(result);
+
+  // ⑤ 后处理：图片 URL 规范化（本地路径 → file://，WebView 可加载）
+  normalizeImageUrls(colored);
+  return colored;
 }
 
 /**
@@ -264,13 +562,22 @@ export function blocksToMd(editor: any, blocks: any[]): string {
     return b;
   });
 
-  // ② 可折叠标题展开为 HTML 标记序列（官方导出会丢掉 isToggleable，必须自编码）
-  const encoded = encodeToggleHeadings(mapped);
+  // ② 行内色编码为 token（官方导出会剥掉颜色 span，必须自编码）
+  const colored = encodeInlineColorsDeep(mapped);
 
-  // ③ 官方导出（同步）
+  // ③ 块级色编码为行首 token（官方块序列化器不读块元素属性，必须自编码）
+  const blockColored = encodeBlockColorsDeep(colored);
+
+  // ④ 可折叠标题展开为 HTML 标记序列（官方导出会丢掉 isToggleable，必须自编码）
+  const encoded = encodeToggleHeadings(blockColored);
+
+  // ⑤ 官方导出（同步）
   let md: string = editor.blocksToMarkdownLossy(encoded);
 
-  // ④ 后处理：token 行 → 带样式分割线行 / 折叠标题的 HTML 标记行
+  // ⑥ 后处理：行内色 token → 原生 <span style>（块级色 token 是纯文本，此处不动）
+  md = decodeInlineColorTokens(md);
+
+  // ⑦ 后处理：token 行 → 带样式分割线行 / 折叠标题的 HTML 标记行
   md = md
     .split("\n")
     .flatMap((line) => {

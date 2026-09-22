@@ -251,6 +251,67 @@ adb logcat -s BlockNoteEditor:V | grep "ready received"
   （如 Kotlin 侧 `InspirationTextUtils.markdownToPlainText`，供列表摘要 / 字数 / 搜索）
   都必须剥离 `details` / `summary` 标记行，否则会污染摘要与字数。
 
+- v2026-09-22（同上）：**行内文字色 / 背景色的渲染修复与 markdown 往返编码**。
+
+  **渲染侧**（A 面板「选中文字色 / 选中背景色」为何点了没反应）：
+  `format("textColor" | "backgroundColor", "#RRGGBB")` 的通道本身是通的、mark 也确实写进
+  了文档，但**看不见**——官方 color 样式是 `createStyleSpec` 型（定义了 `addMarkView`），
+  而 Tiptap 的 `EditorView` 会无条件启用 mark views，编辑器内渲染走 spec 的 `render()`；
+  官方 `render()` 只造**裸 span**（不设任何颜色，颜色只写在 `toExternalHTML()` 里），
+  颜色因而**完全依赖 CSS 的 9 条预设色名规则**
+  （`Block.css` 的 `[data-style-type="textColor"][data-value="gray"…"pink"]`）。
+  宿主下发的是**自由 hex**，没有任何规则命中 → 视觉零变化。
+
+  对照：同面板「段落文字色 / 段落背景色」传的是**色名**且走块 props
+  （`data-text-color` / `data-background-color`），因此正常。
+
+  **修法**：JS 侧 `editor/schema.ts` **同名覆盖** `textColor` / `backgroundColor`，
+  在 `render()` 里把值直接写进**内联 style**（与项目 fontSize 样式同一机制），
+  并把 `parse` 读到的值做**形态归一**（`rgb(r,g,b)` → 大写 `#RRGGBB`）——
+  否则第二轮保存时编码判定会因值形态变化而失效。
+
+  **持久化侧**：官方 markdown 导出**主动剥掉颜色 span**
+  （`htmlToMarkdown.serializeInlineContent` 的 `case "span"`）。故 `converter.ts`
+  采用与折叠标题同一套 token 手法：导出前把带色 text 片段拆成
+  `@@@CORGI_IC_TC_<值>@@@` + 原文 + `@@@CORGI_IC_END@@@`（背景色用 `BG_` 前缀），
+  导出后反向替换为**原生行内 HTML**：
+
+  ```html
+  <span style="color:#FF9A5C">文字</span>
+  ```
+
+  解析侧无需改动：官方 markdown tokenizer 的 `tryInlineHtml` 会原样透传行内标签，
+  再交由本项目覆盖后的 color 样式 `parse` 还原。
+
+  ⚠️ 消费方注意：行内 `<span …>` **行内出现**（不像折叠标题独占一行），
+  纯文本转换必须只删标签本体、**保留标签之间的文字**
+  （Kotlin 侧 `markdownToPlainText` 已加规则）。
+
+  **块级色（段落文字色 / 段落背景色）的持久化**：同属"进不了 markdown"——
+  块级色是块 props，官方导出把它写成块元素的 `data-text-color` /
+  `data-background-color` 属性，而 `htmlToMarkdown` 的块序列化器只读结构与
+  inline 内容、**不读元素属性**。
+
+  这里刻意**不用 HTML 承载**（与行内色不同）：块级属性必须贴在"块自己的标签"上
+  （`<p data-text-color="red">`），而该块导出成 `p` / `h2` / `li` / `blockquote`
+  哪一种无法预知；外包 `<div data-…>` 又会在解析时被当作不匹配元素**下钻丢弃**，
+  属性照样丢。故改用**块内容行首的纯文本 token**：
+
+  ```
+  @@@CORGI_BC_TC_red@@@段落文本
+  ```
+
+  - 导出：把 token 插到该块 inline 内容最前面，并剥掉原 props；
+  - 载入：解析后从句首剥离 token，写回块 props 并删除该文本
+    （必须在装载编辑器**之前**完成，否则 token 会闪现）。
+
+  好处是**不需要任何 CSS**，块级色继续走官方渲染路径，语义无损
+  （含"背景色铺满整块"这一块级特性）。
+
+  ⚠️ 消费方注意：这类 token 是**纯文本**、会留在库里的 markdown 原文中，
+  纯文本转换必须整段移除 `@@@CORGI_…@@@`（Kotlin 侧 `markdownToPlainText`
+  已按统一前缀通配剥离），否则会污染摘要与正文字数。
+
 - v2026-09-21（同日续）：**`blockState` 新增可选字段 `fontSizePx`**（供 H 面板「正文字号」档位回显）。
 
   **动机**：字号档位回显原先从 `richTextState.currentSpanStyle` 派生——那是旧

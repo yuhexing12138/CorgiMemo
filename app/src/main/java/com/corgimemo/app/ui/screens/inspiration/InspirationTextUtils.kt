@@ -92,6 +92,10 @@ object InspirationTextUtils {
      * - 引用符 `>` → 移除
      * - 可折叠标题的结构标记行 `<details>` / `<summary>` / `</summary>` / `</details>`
      *   → 整行移除（v2026-09-22；纯结构、无可见文字）
+     * - 行内色 `<span style="color|background-color:…">` / `</span>` → 只删标签本体、
+     *   **保留标签之间的文字**（v2026-09-22）
+     * - 项目内部占位 token `@@@CORGI_…@@@`（块级色 / 分割线等自编码标记）→ 整段移除
+     *   （v2026-09-22）
      * - 其余行内 / 块级标记（粗体 `**`、斜体 `*`、删除线 `~~`、标题 `#`、列表 / 待办符号）
      *   交给 [MarkdownParser.stripMarkdown] 去除
      *
@@ -126,7 +130,20 @@ object InspirationTextUtils {
         //    字数统计与搜索关键词。
         //    ⚠️ 只删**独占一行的标记**（`[^>\n]*` 限定不跨行匹配），标题文本与其子块行必须保留。
         text = text.replace(Regex("""(?m)^[ \t]*</?(?:details|summary)[^>\n]*>[ \t]*\r?$"""), " ")
-        // 8) 其余 Markdown 标记（粗斜体 / 删除线 / 列表 / 待办）
+        // 8) 行内色 span（v2026-09-22 新增）：标签本体移除、**文字保留**
+        //    行内文字色/背景色同样以原生 HTML 持久化（`<span style="color:#FF9A5C">文字</span>`，
+        //    见 converter.ts 的 encodeInlineColorsDeep）。标签不承载可见文字，必须去掉，
+        //    否则摘要里会出现 `style="color:#FF9A5C"` 之类的字面量；但**不能整行删**——
+        //    文字就在标签之间。
+        text = text.replace(Regex("""</?span[^>\n]*>"""), "")
+        // 9) 项目内部占位 token（v2026-09-22 新增）：整段移除
+        //    converter.ts 会往 markdown 里写若干**纯文本**形式的自编码标记，例如
+        //    块级色的 `@@@CORGI_BC_TC_red@@@`（段落色）、分割线的 `@@@CORGI_DIVIDER_xxx@@@`。
+        //    它们只在 WebView 侧解析时被消费（载入即剥离/还原），但**留在库里的 markdown 原文**
+        //    会被本方法读到，不剥离就会直接污染列表摘要与正文字数。
+        //    ⚠️ 用统一前缀通配，后续新增同类 token 无需再改这里。
+        text = text.replace(Regex("""@@@CORGI_[A-Za-z0-9_#]*@@@"""), " ")
+        // 10) 其余 Markdown 标记（粗斜体 / 删除线 / 列表 / 待办）
         text = MarkdownParser.stripMarkdown(text)
         return text
     }
