@@ -1,0 +1,8 @@
+# Git hooks 必须以 LF 存储与检出。
+#
+# 原因：CRLF 会让 shebang 变成 "#!/bin/sh\r"，Git Bash 找不到解释器
+# （报 /bin/sh^M: bad interpreter），**钩子静默失效**——本机 core.autocrlf
+# 会把 LF 转成 CRLF，而 .githooks/pre-commit 正是一个 sh 脚本。
+#
+# 只对本目录下文件生效，不影响仓库其余文件的换行处理。
+/.githooks/* text eol=lf

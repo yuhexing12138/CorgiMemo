@@ -1,0 +1,45 @@
+#!/bin/sh
+#
+# pre-commit：校验 BlockNote 编辑器产物是否与当前源码一致
+#
+# 【为什么需要】
+#   app/src/main/assets/blocknote-web/editor/editor.html 是 vite 打包出来的
+#   **单文件产物**，不跟 JS 源码在同一批编辑里。本项目已两次出现
+#   「src/editor 改了、也提交了，但产物没重建」——提交里只有源码，真机继续跑
+#   旧 bundle，表现为"改了没生效"，而且从提交记录上完全看不出来。
+#
+# 【怎么校验】
+#   构建期由 vite.editor.config.ts 把「editor.html + src/editor 全量内容」算成
+#   sha256 前 12 位、以字面量 `bn-src:xxxxxxxxxxxx` 注入产物；
+#   scripts/check-blocknote-artifact.ps1 用同一口径现算一次并比对。
+#
+# 【生效前提】
+#   本仓库已配置 core.hooksPath = .githooks（git 因此不读 .git/hooks）。
+#   新 clone 的机器需执行一次：  git config core.hooksPath .githooks
+#
+# 【临时跳过】  git commit --no-verify
+#
+# 仅在本次提交涉及 blocknote-probe/src/ 时才校验（-StagedOnly），不碰编辑器源码
+# 的提交一律零开销、零误伤。
+
+ROOT=$(git rev-parse --show-toplevel)
+if [ -z "$ROOT" ]; then
+  exit 0
+fi
+
+CHECK="$ROOT/scripts/check-blocknote-artifact.ps1"
+
+# --- 环境不完整时【放行】（只提示，不阻断） ---
+# 缺脚本 / 缺 powershell 属于"本机没装好"，不是"产物过期"。若在这里 exit 1，
+# 提交会被一个与本次改动无关的原因卡住。真正的校验失败由脚本自己 exit 1 表达。
+if [ ! -f "$CHECK" ]; then
+  echo "[blocknote-artifact] 未找到 $CHECK，跳过产物校验（建议 git pull 同步脚本）。"
+  exit 0
+fi
+if ! command -v powershell >/dev/null 2>&1; then
+  echo "[blocknote-artifact] 本机未找到 powershell，跳过产物校验。"
+  exit 0
+fi
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "$CHECK" -StagedOnly
+exit $?

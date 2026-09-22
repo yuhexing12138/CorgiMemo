@@ -45,9 +45,10 @@
 - findDialogWindow()（tailrec）；系统栏竖屏常显、横屏双通道 hide；Pager 阈值横屏 0.08 竖屏 0.35。
 
 ## BlockNote WebView
-- 产物 `assets/blocknote-web/editor/editor.html`（viteSingleFile ~1.88MB），源码 blocknote-probe/src/editor/，Gradle `buildBlockNoteEditor` 已接入 assemble。「JS 改了没生效」第一反应 = 产物没重建；用关键字计数而非 diff 行数；构建指纹随 ready 上行（logcat `build=`）。
+- 产物 `assets/blocknote-web/editor/editor.html`（viteSingleFile ~1.88MB），源码 blocknote-probe/src/editor/，Gradle `buildBlockNoteEditor` 已接入 assemble。「JS 改了没生效」第一反应 = 产物没重建；用关键字计数而非 diff 行数；构建指纹随 ready 上行（logcat `build=`）。⚠️ **提交 JS 源码 ≠ 产物入库**：产物不在同一批编辑里，改完 `src/` 必须单独重建 + 单独提交，否则提交里只有源码、真机仍跑旧 bundle；核对产物要取**上下文片段**（`inlineBackgroundColor` 后一串）而非只看关键字存在。重建命令走 **PowerShell 调 npm.cmd**（bash shim 缺 coreutils）。
 - 桥：下行 `window.BlockNoteEditorHost.onMessage(json)`，上行 `AndroidBridge.postMessage`。⚠️ 桥回调在 Java 桥线程，入口已统一 mainHandler.post，别拆散包装。
 - 撤销可用态用 `editor.canExec(command)`（`editor.can` 不存在；命令取 yUndo/history 扩展）。
+- ⚠️ **工具栏选中态的真值必须走 JS 上行**：BlockNote 模式下宿主 `RichTextState.currentSpanStyle` 恒空（本地镜像而已），照它判断 → 按钮永不点亮。**B/I/U/S 是行内样式**（`getActiveStyles()`），**对齐是块级 prop**（`props.textAlignment`，spec 默认 `"left"` → 缺省即左对齐亮）——维度不同，不能一起取。另：`toggleStyles` 在**光标态（无选区）**只改 stored marks、**不产生文档变更** → `onChange` 不触发 → 必须在这类分支后**主动 `pushBlockState()`**，否则「点了加粗但不高亮」。
 - ⚠️ **transform 的 value 是动作名，不等于块类型名**：`toggleHeading*` → `heading` + `props.isToggleable`；`toggleList` → `toggleListItem`。合法类型只有 defaultBlockSpecs 那一份。传错会在 `blockToNode` 抛 TypeError，而 format 分支无 try/catch → "点了没反应且无日志"。
 - ⚠️ **行内样式渲染走 markView 的 `render()`，不是 renderHTML**；官方 textColor/backgroundColor 的 render() 只造裸 span，颜色靠 CSS 预设色名规则 → 自由 hex 不渲染。修法：schema.ts 同名覆盖 spec，render 内联 `span.style.color`。
 - ⚠️ 官方 markdown 导出剥颜色 span / 丢折叠标记 → converter.ts 用 token 往返：行内色 `@@@CORGI_IC_TC_<值>@@@`…`@@@CORGI_IC_END@@@`；块级色用**块内容行首**纯文本 token `@@@CORGI_BC_TC_red@@@`（外包 div 会被 ProseMirror 下钻丢弃）；折叠标题用 `<details><summary>` 三段。纯文本转换必须剥离这些标记（Kotlin markdownToPlainText 已加）。
@@ -57,11 +58,23 @@
 - ⚠️ **「markdown → 纯文本」唯一入口 = `MarkdownParser.toPlainText()`**：`stripMarkdown` 只处理 markdown 语法，不剥 HTML 标签与 `@@@CORGI_…@@@`。灵感保存路径（InspirationEditViewModel）与启动回填曾各自误用 stripMarkdown → 摘要出现字面量。`InspirationTextUtils.markdownToPlainText` 现为薄委托。⚠️ 待办有独立口径（`#标签` 要保留），勿混用。
 - 样式：padding-inline `var(--bn-editor-gutter,20px)!important`；sideMenu 已删（HTML5 DnD 触摸不触发）。
 
+- 产物**新鲜度可机检**（v2026-09-22）：`vite.editor.config.ts` 的 `collectSrcHash()` 把 `editor.html + src/editor/` 全量算 sha256 前 12 位、以 `bn-src:` 前缀注入 `__SRC_HASH__` → `bridge.ts` 导出 `SRC_HASH` 随 `ready` 上行（logcat `src=`）。校验脚本 `scripts/check-blocknote-artifact.ps1` 同口径现算比对（`-WarnOnly` / `-StagedOnly` / `-PrintOnly`）；hook 模板 `scripts/git-hooks/pre-commit` 已装到 `.git/hooks/pre-commit`，凡提交涉及 `blocknote-probe/src/` 即校验、滞后则**阻断提交**（跳过用 `--no-verify`）。⚠️ 哈希口径三处必须逐条对齐（字节、范围、`/` 分隔+码元序、路径+内容的拼接顺序）。
+- ⚠️ **模式判据要显式命名**：`boldSingleTier`（B 按钮 UI 形态）与 `useBlockNote`（选中态真值读 JS 还是读本地）已拆分，别再合并——名字必须能说明"改它影响哪些按钮"。
+- ⚠️ **面板收起时要主动刷一次 `blockState`**（下行 `requestBlockState` → `refreshBlockState()`）：与"恢复软键盘"同一时机、**先刷状态再弹键盘**，避免高亮滞后一拍。
+- ⚠️ **工具栏任何「可用态 / 选中态」判据都必须由 JS 经 `blockState` 上行，宿主本地镜像一律不可信**（同一坑已踩 5 次）：正文在 WebView 里，宿主的 `RichTextState.currentSpanStyle` 恒空、`BodyBlocksController.indentLevel` 恒为 1、`isFocusedBlockCheckbox` 恒 false —— 沿用 Compose 时代判据的表现是「按钮永远不高亮」或「永远置灰」。已上行：headingLevel / headingToggleable / inlineTextColor / inlineBackgroundColor / fontSizePx / bold·italic·underline·strike / textAlignment / canNestBlock·canUnnestBlock / isCheckboxBlock / canUndo·canRedo / editorFocus。新增同类状态一律照抄官方同名 API 的口径（如 `ed.canNestBlock()`），不要自创判定；**迁移完记得删掉宿主侧那个已零调用的镜像属性**（否则后人接着误用）。
+- ⚠️ 新增上行字段后**必须重建产物**并在 `editor.html` 里按**上下文**（不能只看关键字计数）确认 payload 里带上了该字段；宿主侧默认 false 时「两个按钮一起灰」= 产物没重建。
+
+- ⚠️ **「当前块」口径一律取选区首块**：`editor.getSelection()?.blocks[0]`，回退 `getTextCursorPosition().block`（选区折叠/NodeSelection 时 `getSelection()` 返回 undefined）。绝不能只用 `getTextCursorPosition()` —— 它按 selection.**anchor** 取块，反向拖选时 anchor 在选区末端，回显块 ≠ 命令实际作用的块；它也**不抛异常**（别再按"抛异常"描述）。`getSelection()` 少数边界会抛，单独包 try 回落。
+
 ## 工具/验证教训
+- ⚠️ **同一工作区可能被并发写入**（另一会话/IDE 操作）：表现为 commit 只进了部分文件、上一轮已提交的文件又变「已修改」、`git log` 出现不认识的提交。核对某改动是否已入库必须 `git show HEAD:<path>` 做**精确断言**（如 `val canIncreaseIndent` → false）；**grep 关键字会假阳性**（自己写的注释里常原文引用被删的代码）。发现并发写入时不要替另一路提交它的在制品。
 - 新增 layout/Modifier API 必须逐项核对 import（漏 import 只编译期暴露）。「API 应该有但没反应」先 grep 确认存在。静默 catch 至少上行诊断；连续 2 次猜测失败 → 停猜加埋点。同一文件多次 Edit 串行。
 - 删文件/裁 import 前按 `by ` 反查委托依赖；删后全项目 grep 顶层声明名。
 - 产物关键字计数只证字符串在文件里；样式生效必须真机/computed style；逐像素分析截图（pillow）是定位渲染问题的可靠手段。
 - 提交：中文提交信息，Write 临时文件 → 提交 → 删除。
+- ⚠️ **`.ps1` 必须存成 UTF-8 with BOM**：Windows PowerShell 5.1 对**无 BOM** 文件按系统 ANSI 读，中文注释里的 emoji 会让字节错位、吞掉引号 → 满屏 `ParserError`（"[" 后面缺少类型名称 / 字符串缺少终止符）——**看着像语法错，其实是编码错**。写法：`[System.IO.File]::WriteAllText($p,$s,(New-Object System.Text.UTF8Encoding($true)))`。
+- ⚠️ **`[Array]::Sort($arr, [StringComparer]::Ordinal)` 的比较器会静默失效**：`Get-ChildItem | Select -ExpandProperty Name` 是 `PSObject[]`，重载解析挑中不带比较器的 `Sort(Array)`，实际按**文化敏感**排序（与 Node 的码元序不同）。要码元序排序用 `List[string].Sort(IComparer<string>)`。凡"跨语言同一套哈希/摘要"的实现，先造一个**最小对照实验**（两边各算一次同参输入）确认口径一致，别拿"结果不同"直接下结论。
+- ⚠️ 脚本里的 `exit` 用 `& script.ps1` 调用时会**终止整个调用会话**（后续语句不执行、重定向文件可能不落地）→ 测试脚本要开子进程 `powershell -NoProfile -File ...`，并用 `$LASTEXITCODE` 取退出码。
 - 编译检查（经用户同意后）：**不用 bash 跑 `./gradlew`**（本机 shim 缺 coreutils，`dirname` 都报 not found）→ 用 **PowerShell 调 `.\gradlew.bat`**；输出重定向 `*> 文件` 后是 **UTF-16**，读时须 `-Encoding Unicode`。单模块校验用 `:app:compileDebugKotlin`（不出包、不安装，约 1.5 分钟）。
 - ⚠️ **修数据清洗规则必须同时修历史数据**：卡片摘要优先读 `Inspiration.content`（非空即不走兜底），所以"代码修好"对已污染行无效。做法：启动时幂等清洗（`InspirationRepository.repairInspirationPlainText`：content 空 或 含 `@@@CORGI_`/`<span` → 以 toPlainText 重算）。
 - ⚠️ 同一份数据的**多个渲染出口**要用「共享的识别函数」，不要各写正则：内部标记的识别现收敛在 `MarkdownParser.stripInternalTokens` / `toPlainText`，新增标记只需改一处（本轮两次泄漏都源于"另一处消费方自己拼正则")。

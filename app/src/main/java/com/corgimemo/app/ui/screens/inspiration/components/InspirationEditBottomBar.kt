@@ -220,8 +220,18 @@ fun InspirationEditBottomBar(
     onInsertMedia: (String) -> Unit = {},
     /** BlockNote 迁移（P1.5）：打开表情选择面板 */
     onOpenEmojiPicker: () -> Unit = {},
-    /** BlockNote 模式加粗单档（点击直接 toggle，不展开 B1/B2/B3 菜单） */
+    /** BlockNote 模式加粗单档（点击直接 toggle，不展开 B1/B2/B3 菜单）——只管 B 按钮形态 */
     boldSingleTier: Boolean = false,
+    /**
+     * 正文是否由 BlockNote WebView 接管（v2026-09-22 新增）
+     *
+     * 透传给 [RichTextFormatToolbar]：决定格式按钮选中态 / 可用态的**真值来源**
+     * （true = 读 JS 上行的 `blockState`；false = 读本地 RichTextState）。
+     *
+     * ⚠️ 与 [boldSingleTier] 是两个语义：后者只描述 B 按钮是"单档"还是"字重菜单"，
+     * 当前二者取值相同但**不可互相替代**，别再合成一个参数（混用的历史教训）。
+     */
+    useBlockNote: Boolean = false,
     /**
      * 是否可增加缩进（Nest 按钮视觉降级）：透传给 [RichTextFormatToolbar]。
      * v2026-09-22 起由 JS 侧 `ed.canNestBlock()` 提供（首块为 false）。
@@ -232,7 +242,10 @@ fun InspirationEditBottomBar(
      * v2026-09-22 起由 JS 侧 `ed.canUnnestBlock()` 提供（顶层块为 false）。
      */
     canDecreaseIndent: Boolean = true,
-    /** 聚焦块是否为复选框块（v2026-09-07）：复选框按钮激活态，透传给 [RichTextFormatToolbar] */
+    /**
+     * 聚焦块是否为复选框块（复选框按钮激活态）：透传给 [RichTextFormatToolbar]。
+     * v2026-09-22 起由 JS 侧 `blockState.isCheckboxBlock` 提供（块类型 `checkListItem`）。
+     */
     isCheckboxActive: Boolean = false,
     onAlignLeft: () -> Unit = {},
     onAlignCenter: () -> Unit = {},
@@ -323,6 +336,7 @@ fun InspirationEditBottomBar(
                     onOpenEmojiPicker = onOpenEmojiPicker,
                     onColorPanelClick = onColorPanelClick,
                     boldSingleTier = boldSingleTier,
+                    useBlockNote = useBlockNote,
                     canIncreaseIndent = canIncreaseIndent,
                     canDecreaseIndent = canDecreaseIndent,
                     isCheckboxActive = isCheckboxActive,
