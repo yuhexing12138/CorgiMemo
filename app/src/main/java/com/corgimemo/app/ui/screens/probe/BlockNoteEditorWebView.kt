@@ -70,6 +70,10 @@ private const val EDITOR_URL = "file:///android_asset/blocknote-web/editor/edito
  * - 表头取决于是否 table 块（且 `settings.tables.headers` 为真）。
  *
  * @param blockType 光标块类型（BlockNote 的 block.type，如 paragraph / heading / table / image）
+ * @param isCheckboxBlock 当前块是否为「复选框块」（v2026-09-22 新增；工具栏复选框按钮
+ *   的激活态）：JS 侧 `blockType == "checkListItem"`。原先读宿主本地镜像
+ *   `BodyBlocksController.isFocusedBlockCheckbox`，BlockNote 模式下恒为 false
+ *   → 按钮永远不高亮（与 B / I / U / S 同一个坑），故改为由 JS 上行。
  * @param headingLevel 光标块的标题级别（v2026-09-21 新增；供「标题面板」回显选中态）：
  *   `blockType == "heading"` 时为 1–6（普通标题**与**可折叠标题同为 heading 块），
  *   非标题块为 0（不高亮任何格子）。
@@ -97,6 +101,19 @@ private const val EDITOR_URL = "file:///android_asset/blocknote-web/editor/edito
  */
 data class BlockState(
     val blockType: String = "",
+    /**
+     * 当前光标块是否为「复选框块」（v2026-09-22 新增；工具栏复选框按钮的激活态）
+     *
+     * JS 侧判据即块类型：`blockType == "checkListItem"`（BlockNote 的复选框是独立
+     * 块类型，与宿主下发 `format("checkList")` → `toggleBlockType("checkListItem")`
+     * 同一口径，故本质上是 [blockType] 的派生值，单独上行只为宿主读起来更直白）。
+     *
+     * ⚠️ 修复背景（v2026-09-22）：此前该按钮的激活态读宿主侧
+     * `BodyBlocksController.isFocusedBlockCheckbox`——判的是**宿主本地块对象**的
+     * 段落类型。BlockNote 模式下正文只在 JS 侧 ProseMirror 文档树里，那份镜像恒为
+     * false → 复选框按钮**永远不高亮**（与 B / I / U / S 同一个坑）。
+     */
+    val isCheckboxBlock: Boolean = false,
     /** 标题级别（v2026-09-21 新增）：heading → 1–6（两类标题同块类型）；非标题块 → 0 */
     val headingLevel: Int = 0,
     /**
@@ -169,6 +186,20 @@ data class BlockState(
      * 故缩进可用态必须由 JS 判定后经 `blockState` 上行，宿主不得自行推算。
      */
     val canUnnestBlock: Boolean = false,
+    /**
+     * 光标 / 选区上的**已有链接 URL**（v2026-09-22 新增；空串 = 当前不在链接上）
+     *
+     * 两个消费方：
+     * 1. 底部工具栏 🔗 按钮的**激活态**（`linkUrl.isNotEmpty()`）——
+     *    ⚠️ 修复背景：此前该按钮读的是 Compose 时代遗留的 `RichTextState.isLink`，
+     *    而 BlockNote 模式下正文只存在于 ProseMirror 文档树、link mark 从不上行，
+     *    宿主那份镜像恒为 false → 光标落在链接上时按钮**永远不高亮**。
+     * 2. 链接对话框据此进入「**编辑链接**」模式：预填 URL、确定按钮改文案，
+     *    并额外提供「移除链接」（[BlockNoteBridgeController.deleteLink]）。
+     *
+     * 取值口径与官方 `CreateLinkButton` 一致：`getLinkMarkAtPos(选区锚点)`。
+     */
+    val linkUrl: String = "",
     val canSetBlockColor: Boolean = false,
     val blockTextColor: String = "",
     val blockBackgroundColor: String = "",
@@ -310,6 +341,21 @@ class BlockNoteBridgeController {
     }
 
     /**
+     * 主动要一次块状态（v2026-09-22 新增）：让 JS 侧重新采集并上行 `blockState`。
+     *
+     * 用途：底部「T / H / A」面板**收起**时调用，保证工具栏的选中态 / 可用态在
+     * 收起瞬间就是最新的。面板展开期间正文中可能发生了样式或选区变化，若恰好
+     * 被 JS 侧的去重吸收、或时序上没赶在收起前上行，工具栏高亮就会**滞后一拍**
+     * （显示面板操作之前的状态）。
+     *
+     * ⚠️ 本命令**不产生任何文档变更**，只是重新采集一次；JS 侧仍走 `pushBlockState`
+     * 的 JSON 去重，状态没变就不会真的上行——可以放心多调。
+     *
+     * ready 之前调用会进 [pendingCommands] 缓存，ready 后统一补发，无需调用方判时机。
+     */
+    fun refreshBlockState() = enqueueCommand(JSONObject().put("type", "requestBlockState"))
+
+    /**
      * 插入链接（v2026-09-22）：底部工具栏 🔗 按钮的专用下行，取代原先的
      * `format("createLink", url)`——因为需要额外携带「显示文字」这一维度。
      *
@@ -318,10 +364,15 @@ class BlockNoteBridgeController {
      * 因此这里只把「URL + 可选的显示文字」如实下发，由 JS 侧按选区分流：
      * - **有选区 + 未填标题** → 只给选中文字挂 link mark（选中文字即标题）；
      * - **有选区 + 填了标题** → 用标题替换选中文字再挂链接；
-     * - **无选区** → 以标题（留空则用 URL 原文）为文字**插入**一段带链接的新文本。
+     * - **无选区 + 光标落在已有链接上** → 改这条链接（避免插出「链接里套链接」）；
+     * - **无选区 + 无链接** → 以标题（留空则用 URL 原文）为文字**插入**一段带链接的新文本。
+     *
+     * ⚠️ 与「编辑链接」配套：宿主在弹出链接对话框前先发 [saveSelection]，
+     * 确认时先发 [restoreSelection]；桥命令按序执行，故本命令拿到的一定是还原后的选区。
      *
      * @param url 目标链接地址（非空；JS 侧会在缺协议时自动补 `https://`）
-     * @param text 显示文字，传 null / 空串表示未填写，交由 JS 侧回落为 URL 原文
+     * @param text 显示文字，传 null / 空串表示未填写：无选区且无链接时回落 URL 原文，
+     *             光标在已有链接上时保留该链接的原显示文字
      */
     fun createLink(url: String, text: String? = null) {
         val msg = JSONObject()
@@ -333,6 +384,34 @@ class BlockNoteBridgeController {
         if (trimmed.isNotEmpty()) msg.put("text", trimmed)
         enqueueCommand(msg)
     }
+
+    /**
+     * 保存当前选区快照（v2026-09-22）：**链接对话框打开前**下发。
+     *
+     * 为什么需要：链接对话框是 Compose 的 `AlertDialog`，弹出时 WebView 会失焦。
+     * 若 Android WebView 在失焦时把内部选区折叠了，随后按「无选区」处理 ——
+     * 用户明明选了字，结果却在光标处插了 URL。故先把此刻选区留在 JS 侧。
+     *
+     * 与 [restoreSelection] 成对使用；**无副作用**（只读快照）。
+     */
+    fun saveSelection() = enqueueCommand(JSONObject().put("type", "saveSelection"))
+
+    /**
+     * 还原上一次 [saveSelection] 的选区（v2026-09-22）：**写链接 / 移除链接之前**下发。
+     *
+     * 命令经 [enqueueCommand] 顺序下发，WebView 侧也按序执行，故只要在本方法之后
+     * 紧接着调 [createLink] 或 [deleteLink]，还原一定先生效。
+     */
+    fun restoreSelection() = enqueueCommand(JSONObject().put("type", "restoreSelection"))
+
+    /**
+     * 移除光标 / 选区所在位置的链接，**保留文字**（v2026-09-22）。
+     *
+     * 链接对话框「编辑链接」模式的「移除链接」按钮。JS 侧调 `editor.deleteLink()`：
+     * 优先按光标位置定位链接范围后去 mark，找不到时回落为「去掉当前选区上的 link mark」。
+     * 与 [restoreSelection] 搭配使用（先还原选区，再移除）。
+     */
+    fun deleteLink() = enqueueCommand(JSONObject().put("type", "deleteLink"))
 
     /**
      * 删除当前块（v1.11）：原 ⋮⋮ 手柄点击菜单的「删除」项，移入宿主工具栏。
@@ -554,7 +633,14 @@ class BlockNoteBridgeController {
                     // assets 里的 editor.html 是静态资源，Gradle 不会重新生成——
                     // 排查「JS 改了但真机没生效」时，看这一行即可确认加载的产物版本。
                     val build = msg.optString("build", "unknown")
-                    Log.d(TAG, "ready received | build=$build")
+                    /**
+                     * v2026-09-22：连同**源码内容哈希**一起打——指纹只说"哪一版"，
+                     * 哈希才能确认"这版是不是当前 `src/editor/` 编出来的"。
+                     * 与 `scripts/check-blocknote-artifact.ps1` 算出的值比对，
+                     * 即可判断产物是否需要重建（旧产物不下发该字段时为空串）。
+                     */
+                    val srcHash = msg.optString("srcHash", "")
+                    Log.d(TAG, "ready received | build=$build | src=$srcHash")
                     ready = true
                     /**
                      * v2026-09-21：编辑器挂载完成后补一次「软键盘抑制」注入。
@@ -585,6 +671,11 @@ class BlockNoteBridgeController {
                     // 注意 optString 对缺失字段返回 ""，正好与 BlockState 的默认值语义一致。
                     blockState = BlockState(
                         blockType = msg.optString("blockType"),
+                        /**
+                         * v2026-09-22：是否复选框块（缺失时 false —— 与"旧产物不下发
+                         * 该字段"向后兼容，行为等于复选框按钮不高亮）。
+                         */
+                        isCheckboxBlock = msg.optBoolean("isCheckboxBlock", false),
                         /** v2026-09-21：标题级别（缺失/非法时 0 → 面板不高亮任何格子） */
                         headingLevel = msg.optInt("headingLevel", 0),
                         /**
@@ -623,6 +714,11 @@ class BlockNoteBridgeController {
                          */
                         canNestBlock = msg.optBoolean("canNestBlock", false),
                         canUnnestBlock = msg.optBoolean("canUnnestBlock", false),
+                        /**
+                         * v2026-09-22：光标/选区上的已有链接（缺失时空串 = 不在链接上）。
+                         * 空串口径与 [BlockState.blockTextColor] 一致，下游用 isNotEmpty() 判定即可。
+                         */
+                        linkUrl = msg.optString("linkUrl"),
                         canSetBlockColor = msg.optBoolean("canSetBlockColor", false),
                         blockTextColor = msg.optString("blockTextColor"),
                         blockBackgroundColor = msg.optString("blockBackgroundColor"),

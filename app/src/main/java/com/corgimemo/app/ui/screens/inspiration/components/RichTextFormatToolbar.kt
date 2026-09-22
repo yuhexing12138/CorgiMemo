@@ -174,9 +174,33 @@ fun RichTextFormatToolbar(
     /**
      * BlockNote 迁移（P1）：加粗单档模式——true 时 B 按钮点击直接 toggle 加粗
      * （onSetFontWeight(700)），不展开 B1/B2/B3 字重菜单（HTML 无多档字重概念）。
+     *
+     * ⚠️ 本参数**只描述 B 按钮的 UI 形态**（单档 vs 字重菜单），**不兼作模式判据**——
+     * 选中态真值走哪条链路由 [useBlockNote] 决定，两者语义已拆开（v2026-09-22）。
      */
     boldSingleTier: Boolean = false,
-    /** 聚焦块是否为复选框块（v2026-09-07 视觉降级）：复选框按钮激活态高亮用 */
+    /**
+     * 正文是否由 BlockNote WebView 接管（v2026-09-22 新增，取代此前"拿 [boldSingleTier]
+     * 当模式判据"的混用写法）
+     *
+     * true = 正文在 WebView 里 → 选中态 / 可用态的**真值只能来自 JS 上行**的
+     * [BlockState]；宿主的 [RichTextState] 只是「聚焦块 / 首块」的本地镜像，
+     * 其 `currentSpanStyle` 恒空，照它判断会让按钮永远不高亮。
+     * false = 旧 Compose rich-editor 路径 → 沿用 [RichTextState.currentSpanStyle]。
+     *
+     * 为什么要与 [boldSingleTier] 分开：二者当前取值恰好相同（都是 BlockNote 模式才
+     * 为 true），但**含义不同**——一个是按钮形态、一个是数据来源。合成一个参数后
+     * 读者无法从名字判断"改它会影响哪些按钮的高亮"，且将来若给 BlockNote 模式加回
+     * 多档字重，两个语义会立刻打架。
+     */
+    useBlockNote: Boolean = false,
+    /**
+     * 聚焦块是否为复选框块（复选框按钮激活态高亮用）
+     *
+     * v2026-09-22 变更数据源：改由 JS 侧 `blockState.isCheckboxBlock` 上行
+     * （判据 = 块类型 `checkListItem`）。原先走宿主 `isFocusedBlockCheckbox`
+     * （读本地块对象的段落类型），BlockNote 模式下恒为 false → 按钮永不高亮。
+     */
     isCheckboxActive: Boolean = false,
     onAlignLeft: () -> Unit = {},
     onAlignCenter: () -> Unit = {},
@@ -244,6 +268,9 @@ fun RichTextFormatToolbar(
      *
      * v2026-09-22 起另承担 **B / I / U / S 与三个对齐按钮**的选中态真值
      * （BlockNote 模式下本地 [RichTextState] 的 spanStyle 不可信，详见各按钮处说明）。
+     *
+     * v2026-09-22 追加：[BlockState.linkUrl] → 🔗 按钮的激活态
+     * （光标/选区落在链接上时高亮；此前读 Compose 遗留的 `state.isLink` 恒为 false）。
      */
     blockState: BlockState = BlockState(),
     /**
@@ -293,24 +320,24 @@ fun RichTextFormatToolbar(
     /**
      * B / I / U / S 四个行内样式按钮的选中态（v2026-09-22）
      *
-     * ⚠️ 真值来源**随模式切换**，不能用单一判据：
-     * - **BlockNote 模式**（[boldSingleTier] 为真——本项目实际走的唯一路径）：
+     * ⚠️ 真值来源**随模式切换**，不能用单一判据（模式由 [useBlockNote] 明确表达）：
+     * - **BlockNote 模式**（[useBlockNote] 为真——本项目实际走的唯一路径）：
      *   正文在 WebView 里，行内样式只存在于 ProseMirror 文档树中，必须读 JS 经
      *   `blockState` 上行的 [BlockState.isBold] 等字段；工具栏手上这份
      *   [RichTextState] 只是「聚焦块 / 首块」的本地镜像，其 `currentSpanStyle`
      *   **恒为空**——沿用旧判据会让这四个按钮永远不高亮。
-     * - **Compose 模式**（[boldSingleTier] 为 false，旧路径保留）：
+     * - **Compose 模式**（[useBlockNote] 为 false，旧路径保留）：
      *   继续用 [RichTextState.currentSpanStyle]，行为零变化。
      */
-    val boldActive = if (boldSingleTier) blockState.isBold else currentTier != null
+    val boldActive = if (useBlockNote) blockState.isBold else currentTier != null
     val italicActive =
-        if (boldSingleTier) blockState.isItalic
+        if (useBlockNote) blockState.isItalic
         else state.currentSpanStyle.fontStyle == FontStyle.Italic
     val underlineActive =
-        if (boldSingleTier) blockState.isUnderline
+        if (useBlockNote) blockState.isUnderline
         else state.currentSpanStyle.textDecoration?.contains(TextDecoration.Underline) == true
     val strikethroughActive =
-        if (boldSingleTier) blockState.isStrikethrough
+        if (useBlockNote) blockState.isStrikethrough
         else state.currentSpanStyle.textDecoration?.contains(TextDecoration.LineThrough) == true
 
     /**
@@ -322,9 +349,9 @@ fun RichTextFormatToolbar(
      * [BlockState.textAlignment] 的默认值即 "left"（BlockNote 各 block spec 的
      * `textAlignment` 默认值同样是 "left"），因此「未显式设置对齐」与「旧产物未
      * 下发该字段」两种情况都会落到左对齐——正是用户要求的「文字默认为左对齐高亮」。
-     * Compose 模式无对齐能力，恒按左对齐回显。
+     * Compose 模式无对齐能力，恒按左对齐回显（[useBlockNote] 为 false）。
      */
-    val textAlignment = if (boldSingleTier) blockState.textAlignment else "left"
+    val textAlignment = if (useBlockNote) blockState.textAlignment else "left"
 
     /**
      * 禁用态拦截：在 `PointerEventPass.Initial` 阶段消费全部指针事件。
@@ -529,10 +556,16 @@ fun RichTextFormatToolbar(
             /**
              * Link（浮层 CreateLinkButton 同款 RiLink）：BlockNote 模式弹「URL + 显示文字」对话框
              * → downlink createLink 下发（由 JS 侧按有无选区分流，见 EditorApp.tsx）。
+             *
+             * ⚠️ 激活态（v2026-09-22 修复）：改取 [BlockState.linkUrl]（JS 上行），
+             * 不再用 `state.isLink`——后者是 Compose 时代遗留的 `RichTextState` 镜像，
+             * BlockNote 接管正文后 link mark 只存在于 ProseMirror 文档树，
+             * 该镜像恒为 false → 光标落在链接上时按钮**永远不高亮**。
+             * （同一根因已先后修过 B/I/U/S、对齐、Nest/Unnest，这是最后一处漏网的。）
              */
             RiFormatButton(
                 "RiLink",
-                isActive = state.isLink,
+                isActive = blockState.linkUrl.isNotEmpty(),
                 onClick = onInsertLink,
                 contentDescription = "插入链接"
             )

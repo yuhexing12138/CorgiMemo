@@ -10,7 +10,7 @@ import {
 import { BlockNoteEditor, blockHasType } from "@blocknote/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { editorSchema } from "./schema";
-import { bindDown, sendUp, BUILD_FINGERPRINT, type ThemePayload } from "./bridge";
+import { bindDown, sendUp, BUILD_FINGERPRINT, SRC_HASH, type ThemePayload } from "./bridge";
 import { mdToBlocks, blocksToMd, toWebImageUrl } from "./markdown/converter";
 import "../probe.css";
 import "./editor.css";
@@ -47,6 +47,58 @@ function normalizeLinkUrl(raw: string): string {
   if (trimmed.startsWith("//")) return `https:${trimmed}`;
   if (trimmed.startsWith("#") || trimmed.startsWith("/")) return trimmed;
   return `https://${trimmed}`;
+}
+
+/**
+ * 读某个位置上的链接信息（v2026-09-22）。
+ *
+ * 口径照抄官方：`@blocknote/core` 的 `StyleManager.getLinkMarkAtPos(pos)`，
+ * 内部 `doc.resolve(pos).marks()` 找 link mark，并回带命中的**完整范围与文字**
+ * （官方 LinkToolbar 的 `getLinkAtPos` 就是这么用的）。
+ *
+ * ⚠️ 必须包 try：`resolve(pos)` 在文档边界 / 文档刚被替换的瞬间会抛
+ * `RangeError: Position … outside of current document`；此处只用于**回显与分流**，
+ * 取不到就当"不在链接上"，绝不能让它把整条 blockState 推去 error 分支
+ * （那会让宿主工具栏停在旧状态）。
+ *
+ * @param pos 目标位置；undefined（取不到选区）时直接返回 undefined
+ */
+function linkDataAt(ed: any, pos: number | undefined): { href: string; text: string; from: number; to: number } | undefined {
+  if (typeof pos !== "number" || !Number.isFinite(pos)) return undefined;
+  try {
+    const data = ed.getLinkMarkAtPos(pos);
+    const href = data?.href;
+    if (typeof href !== "string" || href.length === 0) return undefined;
+    return {
+      href,
+      text: typeof data.text === "string" ? data.text : "",
+      from: typeof data.from === "number" ? data.from : pos,
+      to: typeof data.to === "number" ? data.to : pos,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** 只要 href（回显与激活态用） */
+function linkHrefAt(ed: any, pos: number | undefined): string | undefined {
+  return linkDataAt(ed, pos)?.href;
+}
+
+/**
+ * 当前光标 / 选区的「链接锚点位置」（v2026-09-22）
+ *
+ * - **光标态**（选区折叠）取 `anchor`——与官方 LinkToolbar 的 `getLinkAtSelection`
+ *   （`getLinkAtPos(tr.selection.anchor)`）同口径，这样"光标停在链接末尾"也能命中；
+ * - **有选区**取 `from`——与官方 `getSelectedLinkUrl()`（`getLinkMarkAtPos(selection.from)`）同口径。
+ *
+ * 两者不同源是有意为之：官方自己也用了两套（工具条按钮读 from、链接工具条读 anchor），
+ * 我们按"哪种形态更可能命中"来选。
+ */
+function linkAnchorPos(view: any): number | undefined {
+  const sel = view?.state?.selection;
+  if (!sel) return undefined;
+  return sel.empty ? sel.anchor : sel.from;
 }
 
 /** 光标块类型切换（已是目标类型则退回普通段落）——列表/任务按钮的 toggle 语义 */
@@ -260,6 +312,19 @@ export default function EditorApp() {
   const lastBlockStateRef = useRef<string | null>(null);
 
   /**
+   * 选区快照（v2026-09-22 新增；配合下行 `saveSelection` / `restoreSelection`）
+   *
+   * 链接对话框是 Compose 的 `AlertDialog`，弹出时 WebView 会失焦。若 Android WebView
+   * 在失焦时把内部选区折叠了，写链接时就会按「无选区」处理 —— 用户明明选了字，
+   * 却在光标处插了 URL。故宿主在开弹窗前下发 `saveSelection` 把此刻的选区快照留下，
+   * 确认时先 `restoreSelection` 再写链接。
+   *
+   * 同时存 **doc 引用**：ProseMirror 的 `Selection` 对象与文档强绑定，只要文档没变
+   * （弹窗期间宿主从不下发内容变更）就可以原样复用；文档变了才走"按位置重建"的兜底。
+   */
+  const savedSelectionRef = useRef<{ selection: any; doc: any } | null>(null);
+
+  /**
    * 上报当前光标块状态（v1.11）
    *
    * 背景：原 ⋮⋮ 手柄的点击菜单有 4 项，按用户决策全部移入宿主底部工具栏，
@@ -282,6 +347,8 @@ export default function EditorApp() {
    *   B / I / U / S 四个按钮的**高亮**回显；
    * - 对齐 → v2026-09-22 新增 `textAlignment`：读块级 prop `props.textAlignment`
    *   （对齐是**块级**属性，不是行内样式），供三个对齐按钮的高亮回显；
+   * - 复选框块 → v2026-09-22 新增 `isCheckboxBlock`：`block.type === "checkListItem"`，
+   *   供工具栏复选框按钮的激活态（原先读宿主本地镜像 `isFocusedBlockCheckbox`，恒 false）；
    *
    * ⚠️ **跨块多选**（v2026-09-22）：以上所有"当前块"口径一律取
    * `getSelection().blocks[0]`（选区折叠时回退 `getTextCursorPosition().block`），
@@ -381,6 +448,19 @@ export default function EditorApp() {
           : undefined;
       const payload = {
         blockType: block.type as string,
+        /**
+         * 当前块是否为「复选框块」（v2026-09-22 新增；工具栏复选框按钮的激活态）
+         *
+         * 判据就是块类型本身：BlockNote 的复选框（任务项）是独立块类型
+         * `checkListItem`（与 `toggleBlockType(ed, "checkListItem")` 同一口径，
+         * 本项目 schema 的 defaultBlockSpecs 里只有这一个勾选类块）。
+         *
+         * ⚠️ 必须随 blockState 上行：宿主此前读的是 Compose 时代遗留的
+         * `BodyBlocksController.isFocusedBlockCheckbox`——它读**宿主本地块对象**
+         * 的段落类型，而 BlockNote 模式下正文只在 ProseMirror 文档树里，
+         * 那份镜像与真实块类型无关 → 按钮**永远不高亮**（与 B/I/U/S 同一个坑）。
+         */
+        isCheckboxBlock: block.type === "checkListItem",
         headingLevel,
         headingToggleable,
         /**
@@ -458,6 +538,17 @@ export default function EditorApp() {
         canToggleHeader: isTable && !!ed.settings?.tables?.headers,
         isHeaderRow: isTable ? Boolean(content.headerRows) : false,
         isHeaderCol: isTable ? Boolean(content.headerCols) : false,
+        /**
+         * 光标 / 选区上的已有链接 URL（v2026-09-22 新增）
+         *
+         * 宿主两处消费：① 底部工具栏 🔗 的激活态（此前读 Compose 时代遗留的
+         * `RichTextState.isLink`，BlockNote 模式下恒 false → **永远不高亮**）；
+         * ② 链接对话框据此进入「编辑链接」模式（预填 URL + 「移除链接」按钮）。
+         *
+         * ⚠️ 与 B/I/U/S 同属"必须由 JS 上行"的一类：正文只在 ProseMirror 文档树里，
+         * 宿主那份镜像读不到 link mark。位置口径见 linkAnchorPos()。
+         */
+        linkUrl: linkHrefAt(ed, linkAnchorPos(ed.prosemirrorView)),
       };
       const key = JSON.stringify(payload);
       if (lastBlockStateRef.current === key) return;
@@ -629,6 +720,21 @@ export default function EditorApp() {
           });
           break;
         }
+        /**
+         * 主动上报一次块状态（v2026-09-22 新增）
+         *
+         * 用途：宿主在「T / H / A」面板**收起**时下发本命令，强制刷一次
+         * `blockState`，让工具栏的选中态在面板收起瞬间就是最新的。
+         *
+         * 为什么需要：面板展开期间正文处于 IME 抑制态，且宿主把注意力放在面板上，
+         * 期间发生的选区 / 样式变化若因为去重或时序原因没有上行，收起后工具栏
+         * 高亮会**滞后一拍**（显示面板操作之前的旧状态）。与其让宿主猜，不如
+         * 由它显式要一次——本命令无副作用、不产生文档变更，多调无害
+         * （`pushBlockState` 内部按 JSON 串去重，状态没变不会上行）。
+         */
+        case "requestBlockState":
+          pushBlockState();
+          break;
         case "requestSave":
           pushChanged();
           break;
@@ -784,10 +890,12 @@ export default function EditorApp() {
                * 而**空选区下 from == to** —— 给零长度区间加 mark 是**静默空操作**，
                * 既不报错也不产生任何文档变更，真机表现为"点了按钮、填了 URL、什么都没发生"。
                *
-               * 现按「有无选区」分流（是否为空由 ProseMirror state 判定，宿主不参与）：
+               * 现按四种情形分流（是否为空由 ProseMirror state 判定，宿主不参与）：
                * - **有选区 + 未填标题** → 只给选中文字挂 link mark（选中文字即显示文字）；
                * - **有选区 + 填了标题** → 用标题替换选中文字后再挂链接（createLink 自带语义）；
-               * - **无选区** → 以「标题 or URL 原文」为文字**插入**一段带链接的新文本
+               * - **无选区 + 光标正落在已有链接上** → 走 `editLink` **改**这条链接
+               *   （否则会在链接内部插出第二条链接，真机上表现为"链接里套链接"）；
+               * - **无选区 + 无链接** → 以「标题 or URL 原文」为文字**插入**一段带链接的新文本
                *   （这正是本次需求：未选择文字时直接把链接插进去）。
                *
                * 另：`value` 经 [normalizeLinkUrl] 补协议，避免 `example.com` 变成相对路径。
@@ -798,16 +906,23 @@ export default function EditorApp() {
               const url = normalizeLinkUrl(value || "");
               if (!url) break;
               try {
+                let mode: string;
                 if (hasSelection) {
                   if (linkText) ed.createLink(url, linkText);
                   else ed.createLink(url);
+                  mode = "mark-selection";
                 } else {
-                  ed.createLink(url, linkText || url);
+                  /** 光标停在已有链接上 → 改链（保留原显示文字，除非用户填了标题） */
+                  const existing = linkDataAt(ed, linkAnchorPos(pm));
+                  if (existing) {
+                    ed.editLink(url, linkText || existing.text);
+                    mode = "edit-existing";
+                  } else {
+                    ed.createLink(url, linkText || url);
+                    mode = "insert-text";
+                  }
                 }
-                sendUp({
-                  type: "diagnostic",
-                  message: `createLink: ${hasSelection ? "mark-selection" : "insert-text"}`,
-                });
+                sendUp({ type: "diagnostic", message: `createLink: ${mode}` });
               } catch (e) {
                 /**
                  * 光标落在无内联内容的块（图片/分割线等）上时 insertText 会抛异常。
@@ -817,6 +932,80 @@ export default function EditorApp() {
                   type: "diagnostic",
                   message: `createLink failed: ${String(e)}`,
                 });
+              }
+              break;
+            }
+            /**
+             * 选区快照 / 还原（v2026-09-22 新增；链接对话框跨弹窗保住选区）
+             *
+             * 宿主在开弹窗前 saveSelection、确认前 restoreSelection。桥命令按序下发与执行，
+             * 故 restore 一定先于随后的 createLink / deleteLink 生效。
+             */
+            case "saveSelection": {
+              const view = ed.prosemirrorView;
+              if (!view) break;
+              /**
+               * 存 Selection **对象** + doc 引用，而不是只存 from/to——
+               * 这样还原时无需 import 任何 ProseMirror 的 Selection 构造器
+               * （prosemirror-state 只是 @blocknote/core 的传递依赖，本项目未声明）。
+               */
+              savedSelectionRef.current = {
+                selection: view.state.selection,
+                doc: view.state.doc,
+              };
+              sendUp({
+                type: "diagnostic",
+                message: `saveSelection: ${view.state.selection.from}-${view.state.selection.to} empty=${view.state.selection.empty}`,
+              });
+              break;
+            }
+            case "restoreSelection": {
+              const view = ed.prosemirrorView;
+              const saved = savedSelectionRef.current;
+              savedSelectionRef.current = null;
+              if (!view || !saved) break;
+              /** 选区仍在原处（WebView 失焦并未折叠选区）→ 无需还原，静默跳过 */
+              const cur = view.state.selection;
+              if (
+                view.state.doc === saved.doc &&
+                cur.from === saved.selection.from &&
+                cur.to === saved.selection.to
+              ) {
+                sendUp({ type: "diagnostic", message: "restoreSelection: unchanged" });
+                break;
+              }
+              try {
+                const tr = view.state.tr;
+                if (view.state.doc === saved.doc) {
+                  /** 文档未变：原选区对象直接复用（Selection 与 doc 绑定，同一 doc 合法） */
+                  tr.setSelection(saved.selection);
+                } else {
+                  /**
+                   * 文档已变（理论上不会发生）：原选区对象不可复用，改用位置重建。
+                   * 构造器从被保存的选区实例上取，避免引入 prosemirror-state 依赖；
+                   * 重建失败（如位置越界）由外层 catch 兜住，绝不中断后续命令。
+                   */
+                  const ctor: any = (saved.selection as any)?.constructor;
+                  if (typeof ctor?.create !== "function") throw new Error("no selection ctor");
+                  tr.setSelection(ctor.create(tr.doc, saved.selection.from, saved.selection.to));
+                }
+                view.dispatch(tr);
+                sendUp({
+                  type: "diagnostic",
+                  message: `restoreSelection: -> ${view.state.selection.from}-${view.state.selection.to}`,
+                });
+              } catch (e) {
+                sendUp({ type: "diagnostic", message: `restoreSelection failed: ${String(e)}` });
+              }
+              break;
+            }
+            /** 移除链接（保留文字）：链接对话框「编辑链接」模式的「移除链接」按钮 */
+            case "deleteLink": {
+              try {
+                ed.deleteLink();
+                sendUp({ type: "diagnostic", message: "deleteLink: ok" });
+              } catch (e) {
+                sendUp({ type: "diagnostic", message: `deleteLink failed: ${String(e)}` });
               }
               break;
             }
@@ -1103,7 +1292,12 @@ export default function EditorApp() {
       }
     });
     // v1.8：ready 带上构建指纹，宿主打进 logcat，便于确认 WebView 加载的产物版本
-    sendUp({ type: "ready", build: BUILD_FINGERPRINT });
+    /**
+     * v2026-09-22：`ready` 除构建指纹外，再带一个**源码内容哈希**（`srcHash`）。
+     * 指纹只说明"哪一版"，哈希才能说明"是不是当前源码编出来的"——宿主打进 logcat，
+     * 与 `blocknote-probe/src/editor/` 现算的哈希一眼可比。
+     */
+    sendUp({ type: "ready", build: BUILD_FINGERPRINT, srcHash: SRC_HASH });
     return () => {
       window.BlockNoteEditorHost = undefined;
     };

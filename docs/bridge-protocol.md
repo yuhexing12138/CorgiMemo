@@ -29,17 +29,21 @@
 | `setEditorMinHeight` | `{ height }` | 设置编辑区最小高度（v1.11.6，单位 **dp**）。BlockNote 未给 `.bn-editor` 任何 `min-height`，高度完全由内容决定；宿主却给 WebView 设了 `heightIn(min = 屏高 × 62%)`。两者不一致会在 WebView 内留下一片**不属于 contenteditable 盒子**的"死区"（点击无法聚焦光标）。下发同一个高度值后 JS 写入 `--bn-editor-min-height`，由 `.bn-editor { min-height }` 消费，编辑区即铺满 WebView。**缺省 0 时与修复前一致**（向后兼容旧宿主）。⚠️ 不写 `62vh` 是因为本项目 WebView 高度会随内容增长、可能撑出屏幕（外层 Column 滚动），`vh` 语义不直观 |
 
 | `focusEditor` | `{}` | 让编辑器重新获得 DOM 焦点（v2026-09-22）。宿主收起「T / H / A」面板、要把键盘弹回来**之前**下发：Chromium 只在编辑元素持有焦点时才建立输入连接，宿主随后的 `InputMethodManager.showSoftInput` 才有效。JS 侧对 `.bn-editor` 调 `focus()`（已聚焦时为空操作，不打断现有选区），并回一条 `diagnostic` 说明是否命中节点。⚠️ 必须在 **IME 抑制解除之后**下发，否则页面还带着 `inputmode="none"`，聚焦后 Chromium 仍不会弹键盘 |
+| `requestBlockState` | `{}` | **主动要一次**块状态（v2026-09-22）。宿主在「T / H / A」面板**收起**时下发，让工具栏选中态在收起瞬间就是最新的——面板展开期间正文里的样式 / 选区变化若因 JS 侧 JSON 去重或时序没赶在收起前上行，收起后高亮会**滞后一拍**（显示面板操作之前的状态）。**无副作用**：不产生任何文档变更，只重新采集一次，且仍走 `pushBlockState` 的去重逻辑（状态没变则实际不上行），可放心多调。ready 前下发会进 `pendingCommands` 缓存，调用方无需判时机 |
 | `format` | `{ action, value?, text? }` | 底部格式工具栏的统一格式通道。`action` 见下表；`value` 随 action 而定（`fontSize="18px"`、`textColor="#RRGGBB"`、`transform` 的块类型名等）。⚠️ v2026-09-22：`text` 目前**只有 `createLink` 用**（可选显示文字），其余 action 一律不带该字段 |
-| └ `format.action = createLink` | `{ action: "createLink", value: url, text? }` | 插入/写入链接（v2026-09-22）。**宿主不判断有没有选区**——选区真值只在 WebView 的 ProseMirror state 里，Kotlin 侧无从取得（`View.hasFocus()` 会失真），故把 URL 与可选显示文字如实下发，由 JS 分流：① 有选区 + 未填标题 → 给选中文字挂 link mark；② 有选区 + 填了标题 → 标题替换选中文字再挂链接；③ **无选区 → 以标题（留空则用 URL 原文）为文字插入一段带链接的新文本**。缺协议的 URL 由 JS 侧 `normalizeLinkUrl()` 自动补 `https://`（对齐官方 LinkToolbar 的 `validateUrl`）。⚠️ 历史坑：只发 `createLink(url)` 时，空选区下走的是 `tr.addMark(from, to)` 且 `from == to` → **零长度区间加 mark 是静默空操作**，表现为"填了 URL 点确定毫无反应" |
+| └ `format.action = createLink` | `{ action: "createLink", value: url, text? }` | 插入/写入链接（v2026-09-22）。**宿主不判断有没有选区**——选区真值只在 WebView 的 ProseMirror state 里，Kotlin 侧无从取得（`View.hasFocus()` 会失真），故把 URL 与可选显示文字如实下发，由 JS 分流：① 有选区 + 未填标题 → 给选中文字挂 link mark；② 有选区 + 填了标题 → 标题替换选中文字再挂链接；③ **无选区且光标落在已有链接上 → 走 `editLink` 改这条链接**（不这么分流会插出「链接里套链接」）；④ **无选区且无链接 → 以标题（留空则用 URL 原文）为文字插入一段带链接的新文本**。缺协议的 URL 由 JS 侧 `normalizeLinkUrl()` 自动补 `https://`（对齐官方 LinkToolbar 的 `validateUrl`）。⚠️ 历史坑：只发 `createLink(url)` 时，空选区下走的是 `tr.addMark(from, to)` 且 `from == to` → **零长度区间加 mark 是静默空操作**，表现为"填了 URL 点确定毫无反应" |
+| `saveSelection` | `{}` | 保存当前选区快照（v2026-09-22）。宿主在**打开链接对话框之前**下发。存在理由：链接对话框是 Compose 的 `AlertDialog`，弹出时 WebView 会失焦；若 Android WebView 在失焦时折叠了内部选区，随后的 `createLink` 就会按「无选区」处理 —— 用户明明选了字，却在光标处插了 URL。**无副作用**（只读快照，存 Selection 对象 + doc 引用，故 JS 侧无需引入 prosemirror-state 依赖）。JS 回 `diagnostic`：`saveSelection: <from>-<to> empty=<bool>` |
+| `restoreSelection` | `{}` | 还原上一次 `saveSelection` 的选区（v2026-09-22）。宿主在对话框**确认 / 移除之后、写链接之前**下发；桥命令按序执行，故 restore 必定先于 `createLink` / `deleteLink` 生效。容错：文档未变则复用原选区对象；文档已变（理论不发生）则用保存的位置重建；两者都失败时**静默保持现状**并回 `diagnostic`，绝不抛错中断后续命令 |
+| `deleteLink` | `{}` | 移除光标 / 选区所在位置的**链接本身，保留文字**（v2026-09-22）。链接对话框「编辑链接」模式的「移除链接」按钮，JS 侧调 `editor.deleteLink()`：优先按光标位置定位链接范围去 mark，找不到时回落为「去掉当前选区上的 link mark」。与 `restoreSelection` 搭配使用 |
 
 ## 上行消息（JS → Kotlin）
 
 | type | 载荷 | 说明 |
 |---|---|---|
-| `ready` | `{}` | 编辑器脚本就绪并已绑定下行宿主（Kotlin 侧解除 loading、随后发 `init`） |
+| `ready` | `{ build?, srcHash? }` | 编辑器脚本就绪并已绑定下行宿主（Kotlin 侧解除 loading、随后发 `init`），并带上**构建指纹**（v1.8）与**源码内容哈希**（v2026-09-22，见「构建指纹与产物校验」章） |
 | `changed` | `{ markdown }` | 内容变更快照；**JS 侧防抖 800ms**；由 `blocksToMd` 生成（含分割线样式编码） |
 | `undoState` | `{ canUndo, canRedo }` | 撤销/重做可用态（v1.7）；历史栈变化后上报，宿主左上角按钮据此置灰 |
-| `blockState` | `{ blockType, headingLevel?, headingToggleable?, inlineTextColor?, inlineBackgroundColor?, fontSizePx?, canSetBlockColor, blockTextColor?, blockBackgroundColor?, canToggleHeader, isHeaderRow, isHeaderCol }` | 当前光标块状态（v1.11；`headingLevel`/`fontSizePx` 为 v2026-09-21 新增，`headingToggleable`/`inlineTextColor`/`inlineBackgroundColor` 为 v2026-09-22 新增）。驱动宿主工具栏「块操作」菜单的可用态与回显、以及「标题面板」「颜色面板」的选中态。`headingLevel`：`blockType === "heading"` → 1–6（**普通与可折叠标题共用**）；非标题块 → 0。`headingToggleable`：`heading` 块且 `props.isToggleable === true` → 折叠标题；两类级别数字重叠，**必须靠该字段分流**（v2026-09-22 勘误：折叠标题不是独立块类型 `toggleHeading*`）。`inlineTextColor` / `inlineBackgroundColor`：`getActiveStyles()` 的原始串（宿主下发的自由 hex，也可能是粘贴来的色名 / `rgb()`），供 A 面板两个「选中色」行反查色名回显；**缺失 = 该维度未设置**（宿主高亮第一个「/」清除块）。⚠️ 与 `blockTextColor` / `blockBackgroundColor`（**块级**色名，作用于整段）不是一回事。`fontSizePx`：当前选区字号（`getActiveStyles().fontSize` 的 `"18px"` 解析为整数；WebView 内 1px=1dp，数值与宿主 sp 档位对应）；0 = 无字号样式（宿主回落默认档 16）。**仅在状态变化时上报**（JS 侧按 JSON 串去重） |
+| `blockState` | `{ blockType, headingLevel?, headingToggleable?, inlineTextColor?, inlineBackgroundColor?, fontSizePx?, bold?, italic?, underline?, strike?, textAlignment?, canNestBlock?, canUnnestBlock?, canSetBlockColor, blockTextColor?, blockBackgroundColor?, canToggleHeader, isHeaderRow, isHeaderCol, linkUrl? }` | 当前光标块状态（v1.11；`headingLevel`/`fontSizePx` 为 v2026-09-21 新增，`headingToggleable`/`inlineTextColor`/`inlineBackgroundColor`/`linkUrl` 为 v2026-09-22 新增）。驱动宿主工具栏「块操作」菜单的可用态与回显、以及「标题面板」「颜色面板」的选中态。`headingLevel`：`blockType === "heading"` → 1–6（**普通与可折叠标题共用**）；非标题块 → 0。`headingToggleable`：`heading` 块且 `props.isToggleable === true` → 折叠标题；两类级别数字重叠，**必须靠该字段分流**（v2026-09-22 勘误：折叠标题不是独立块类型 `toggleHeading*`）。`inlineTextColor` / `inlineBackgroundColor`：`getActiveStyles()` 的原始串（宿主下发的自由 hex，也可能是粘贴来的色名 / `rgb()`），供 A 面板两个「选中色」行反查色名回显；**缺失 = 该维度未设置**（宿主高亮第一个「/」清除块）。⚠️ 与 `blockTextColor` / `blockBackgroundColor`（**块级**色名，作用于整段）不是一回事。`fontSizePx`：当前选区字号（`getActiveStyles().fontSize` 的 `"18px"` 解析为整数；WebView 内 1px=1dp，数值与宿主 sp 档位对应）；0 = 无字号样式（宿主回落默认档 16）。`linkUrl`：光标/选区上的**已有链接** URL（缺失 / 空串 = 不在链接上），供 🔗 按钮激活态与链接对话框的「编辑链接」模式。`canNestBlock` / `canUnnestBlock`：缩进 / 回退缩进的**可用态**（v2026-09-22 新增；口径照抄官方 `editor.canNestBlock()` / `canUnnestBlock()` —— 前者 = 当前块前面还有块、首块为 false；后者 = 嵌套深度 > 1、顶层块为 false），宿主两个缩进按钮据此置灰。`bold` / `italic` / `underline` / `strike`：当前选区的四个**行内布尔样式激活态**（v2026-09-22 新增；取自同一份 `getActiveStyles()` 快照并归一为布尔），供底部工具栏 B / I / U / S 四个按钮高亮。`textAlignment`：光标块的**对齐方式**（v2026-09-22 新增；`"left"` / `"center"` / `"right"` / `"justify"`，非字符串时回落 `"left"`），供三个对齐按钮**互斥**高亮。⚠️ 对齐是**块级 prop**（`props.textAlignment`）、与上面四个行内样式不是一个维度；各 block spec 的默认值即 `"left"`，故未设置 = 左对齐按钮亮。**仅在状态变化时上报**（JS 侧按 JSON 串去重） |
 | `editorFocus` | `{ focused }` | 编辑器 DOM 焦点态（v2026-09-22）。JS 侧在 `document` 上监听 `focusin`/`focusout`，判定 `document.activeElement` 是否落在 `.bn-editor` 内，**仅在翻转时上行**。宿主据此在面板收起后决定是否弹回键盘。⚠️ 该真值只能由 JS 提供：Android 的 `View.hasFocus()` 会失真（点底部栏按钮后视图焦点已转移到 Compose 根视图，而 WebView 内的 contenteditable 仍持有 DOM 焦点、光标仍在闪） |
 | `error` | `{ message }` | JS 异常上报（Kotlin 侧打 logcat / 展示错误态） |
 
@@ -82,9 +86,17 @@ Kotlin 收 changed → 落库（P0 内存态，P1 接 Repository）
               → 工具栏「块操作」菜单据此决定表头项显隐、色板高亮
 点工具栏「块操作」某项 → Kotlin sendDown(deleteBlock|setBlockColor|setTableHeader)
               → JS 执行 → onChange/onSelectionChange → sendUp(blockState) 回传新状态
+点工具栏 🔗（链接）→ Kotlin sendDown(saveSelection) 快照选区 → 弹 Compose 对话框
+                 （高亮态与「编辑链接」模式取自上一条 blockState.linkUrl）
+              → 确认/移除 → Kotlin sendDown(restoreSelection) → sendDown(createLink|deleteLink)
+              （桥命令按序执行，restore 必定先于写入命令生效）
+              → JS 执行 → onChange/onSelectionChange → sendUp(blockState)（linkUrl 随之更新）
+点面板收起（T / H / A）→ Kotlin sendDown(requestBlockState) → JS 重采一次 → sendUp(blockState)
+              → 随后按焦点态恢复软键盘（见 focusEditor / editorFocus）
+              （先刷状态再弹键盘：状态在收起瞬间即最新，不会"滞后一拍"）
 ```
 
-## 构建指纹（v1.8）
+## 构建指纹与产物校验（v1.8 / v2026-09-22）
 
 `assets/blocknote-web/editor/editor.html` 是 vite 打出的**单文件内联产物**，源码在 `blocknote-probe/`。
 
@@ -114,10 +126,65 @@ Kotlin 侧在 `handleUpMessage` 的 `ready` 分支打出：
 
 ```
 adb logcat -s BlockNoteEditor:V | grep "ready received"
-# D BlockNoteEditor: ready received | build=2026-09-17 18:20:31 a1b2c3d
+# D BlockNoteEditor: ready received | build=2026-09-17 18:20:31 a1b2c3d | src=bn-src:201c3b34583f
 ```
 
 比对这里的 build 与 `git log -1 -- blocknote-probe/src` 的 commit 是否一致，即可判定产物新鲜度。
+
+### 源码内容哈希与产物校验（v2026-09-22）
+
+**动机**：构建指纹只能回答"这是什么时候、用哪个 commit 构建的"，**答不了**"这版
+产物装进去的源码内容是否等于工作区现在这份"。而本项目已两次出现
+**「改了 `src/editor/` 并提交、但产物没重建」**——提交里只有源码，真机继续跑旧
+bundle，表现为"改了没生效"，且从提交记录上完全看不出来。
+
+**做法**：`vite.editor.config.ts` 的 `collectSrcHash()` 把
+`editor.html + src/editor/` 全量内容算成 sha256 前 12 位，注入全局常量
+`__SRC_HASH__`（带 `bn-src:` 前缀，便于从 1.9MB 的压缩产物里稳定定位）。
+`bridge.ts` 导出 `SRC_HASH`，随 `ready` 上行；Kotlin 侧打进 logcat（上面的 `src=`）。
+
+**校验脚本**：`scripts/check-blocknote-artifact.ps1` 用**同一口径**现算一次并与
+产物内嵌值比对。
+
+```powershell
+.\scripts\check-blocknote-artifact.ps1              # 校验；不一致 exit 1
+.\scripts\check-blocknote-artifact.ps1 -WarnOnly   # 只告警
+.\scripts\check-blocknote-artifact.ps1 -StagedOnly # 仅当暂存区含 src 改动时才校验
+.\scripts\check-blocknote-artifact.ps1 -PrintOnly  # 只打印当前源码哈希
+```
+
+**pre-commit 校验**：钩子文件为 **`.githooks/pre-commit`**（随仓库入库）。
+
+本仓库已配置 `core.hooksPath = .githooks`，故 Git 读的是仓库内的这个目录
+（**不是** `.git/hooks`，后者在本机是空的）。新 clone 的机器需执行一次：
+
+```sh
+git config core.hooksPath .githooks
+```
+
+生效后，凡本次提交涉及 `blocknote-probe/src/` 的，钩子会用 `-StagedOnly`
+自动校验：产物滞后则**阻断提交**并提示重建命令；顺带提醒"产物重建了但没 `git add`"。
+不碰编辑器源码的提交一律跳过（零误伤）。临时跳过用 `git commit --no-verify`。
+
+> 钩子在"缺脚本 / 缺 powershell"时**放行并提示**，不阻断——那属于本机环境没装好，
+> 不是产物过期；真正的校验失败由脚本自己 `exit 1` 表达。避免提交被无关原因卡住。
+
+> ⚠️ **哈希口径三处必须逐条对齐**（vite `collectSrcHash()` / 校验脚本 / 任何新的
+> 重算实现）：① 只算**文件原始字节**（与换行符、编码无关）；② 范围 =
+> `editor.html` + `src/editor/` 全量，路径相对 `blocknote-probe`；
+> ③ 路径分隔符统一 `/`、无前导斜杠、按 **UTF-16 码元序（Ordinal）** 升序；
+> ④ 每条记录按「相对路径(UTF-8) + 文件字节」顺序喂进同一个 sha256。
+>
+> ⚠️ PowerShell 侧**不能用** `[Array]::Sort($names, [StringComparer]::Ordinal)`：
+> `Get-ChildItem | Select -ExpandProperty Name` 得到 `PSObject[]`，重载解析会挑中
+> 不带比较器的 `Sort(Array)`，comparer **静默失效**、实际按文化敏感规则排序
+> （`bridge.ts < editor.css < EditorApp.tsx`），而 Node 是
+> `EditorApp.tsx < bridge.ts < editor.css` → 顺序不同 → **哈希恒不相等**，
+> 脚本会一直误报"产物过期"。改用 `List[string].Sort(IComparer<string>)` 才可靠。
+>
+> ⚠️ 脚本文件本身必须是 **UTF-8 with BOM**：Windows PowerShell 5.1 对无 BOM 的
+> `.ps1` 按系统 ANSI 代码页读取，中文注释（尤其 emoji）会乱码并吞掉引号 →
+> 直接抛一堆 `ParserError`。
 
 ## 版本
 
@@ -437,4 +504,46 @@ adb logcat -s BlockNoteEditor:V | grep "ready received"
     不受 WebView 对用户手势的策略约束），JS `focus()` 只是保证"有输入连接可建"。
   - 判据优先级：正文 `editorFocused` → `restoreIme()`；否则标题 `isTitleFocused`
     → `SoftwareKeyboardController.show()`；都没有则不弹（无光标就不抢键盘）。
+
+- v2026-09-22：**`blockState` 新增可选字段 `bold` / `italic` / `underline` / `strike` /
+  `textAlignment`**（底部工具栏 B / I / U / S 与三个对齐按钮的选中态高亮）。
+
+  **根因**（与 Nest/Unnest 同一类"宿主本地镜像不可信"）：
+  - I / U / S 原读 `richTextState.currentSpanStyle`，B（单档模式）与三个对齐按钮
+    **根本没接 `isActive`**。BlockNote 接管正文后内容只存在于 ProseMirror 文档树，
+    宿主那份 `RichTextState` 只是"聚焦块 / 首块"的本地镜像、`currentSpanStyle` **恒空**
+    → 四个按钮永不点亮，三个对齐按钮更是永远不高亮。
+  - 现改由 JS 侧 `pushBlockState` 上行。⚠️ **维度不同，不能一起取**：
+    `bold` / `italic` / `underline` / `strike` 是**行内样式**（`getActiveStyles()`，
+    归一为布尔）；`textAlignment` 是**块级 prop**（`props.textAlignment`），
+    非字符串时回落 `"left"`——各 block spec 的默认值就是 `"left"`，
+    故"未设置"与"旧产物未下发"都表现为**左对齐按钮亮**（用户要求：默认左对齐高亮）。
+  - Kotlin 侧 `BlockState` 增加对应字段（`isBold` / `isItalic` / `isUnderline` /
+    `isStrikethrough` / `textAlignment = "left"`）；**空串必须归一回 `"left"`**
+    （`optString` 对缺失字段返回 `""`，而 `""` 不等于任何合法值 → 三个按钮会全灭）。
+
+  ⚠️ **`toggleStyles` 在光标态（无选区）不产生文档变更**：它只改 ProseMirror 的
+  **stored marks**，`onChange` 不触发 → 上行不刷新 → 表现为「点了加粗但 B 不高亮」。
+  故 JS 侧在这四个 `case` 后**主动 `pushBlockState()`**（有选区时本就触发，
+  重复调用被 `lastBlockStateRef` 去重吸收）。同一手法 `fontSize` 分支早已在用。
+
+  ⚠️ 宿主侧判据走**显式的 `useBlockNote: Boolean`**（v2026-09-22 从 `boldSingleTier`
+  拆出）：后者只描述"B 按钮是单档还是字重菜单"，不兼作模式判据。
+
+- v2026-09-22（同上）：**新增下行 `requestBlockState`**（面板收起时主动刷一次块状态）。
+
+  宿主在「T / H / A」面板**收起**的副作用里下发（与"恢复软键盘"同一时机，**先刷状态**），
+  避免面板期间的状态变化因去重 / 时序没上行而让工具栏高亮"滞后一拍"。
+  Kotlin 侧方法为 `BlockNoteBridgeController.refreshBlockState()`。
+  无副作用、可重复调用（JS 侧仍按内容去重）。
+
+- v2026-09-22（同上）：**`ready` 新增可选字段 `srcHash`**（源码内容哈希）
+  + 产物校验脚本 + pre-commit 钩子（详见「构建指纹与产物校验」章）。
+
+  哈希由 `vite.editor.config.ts` 的 `collectSrcHash()` 计算并注入 `__SRC_HASH__`
+  （`bn-src:` + sha256 前 12 位），`bridge.ts` 导出 `SRC_HASH` 随 `ready` 上行，
+  Kotlin 侧打进 logcat（`ready received | build=… | src=bn-src:…`）。
+  校验脚本 `scripts/check-blocknote-artifact.ps1` 同口径现算比对，
+  钩子模板 `scripts/git-hooks/pre-commit` 在提交涉及 `blocknote-probe/src/` 时自动拦截
+  「源码改了但产物没重建」。
 

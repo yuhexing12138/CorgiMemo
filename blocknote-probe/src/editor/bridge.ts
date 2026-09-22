@@ -91,7 +91,18 @@ export type DownMessage =
    * - `toggleList` → 实为 `toggleListItem`
    * 把动作名直接当 `type` 传给 `updateBlock` 会因 schema 查不到类型而抛 TypeError。
    */
-  | { type: "format"; action: string; value?: string }
+  | {
+      type: "format";
+      action: string;
+      value?: string;
+      /**
+       * 可选的**显示文字**（v2026-09-22 新增，目前仅 `action = "createLink"` 使用）。
+       *
+       * 空标题时宿主**不下发**本字段（靠"字段缺失"而非空串判定未填写），
+       * 故 JS 侧取到 `undefined` 即"用户没填标题"。
+       */
+      text?: string;
+    }
   /**
    * 删除块（v1.11：原 ⋮⋮ 手柄点击菜单的「删除」项，桥接到宿主工具栏）。
    *
@@ -161,7 +172,47 @@ export type DownMessage =
    *
    * 幂等：编辑器已聚焦时 `focus()` 为空操作，不会打断现有选区。
    */
-  | { type: "focusEditor" };
+  | { type: "focusEditor" }
+  /**
+   * 主动要一次块状态（v2026-09-22 新增）
+   *
+   * 宿主在「T / H / A」面板**收起**时下发，让工具栏选中态在收起瞬间就是最新的
+   * （面板期间的变化若因去重 / 时序未上行，收起后高亮会滞后一拍）。
+   *
+   * 无副作用：**不产生任何文档变更**，只重新采集并上行一次 `blockState`
+   * （仍在 `pushBlockState` 的去重逻辑内，状态未变则实际不上行）。
+   */
+  | { type: "requestBlockState" }
+  /**
+   * 保存当前选区（v2026-09-22 新增）
+   *
+   * 宿主在**打开链接对话框之前**下发，把此刻 ProseMirror 的选区快照留在 JS 侧。
+   *
+   * 存在理由：链接对话框是 Compose 的 `AlertDialog`，弹出时 WebView 会失焦；
+   * 若 Android WebView 在失焦时折叠了内部选区，后续 `createLink` 就会按
+   * 「无选区」处理 —— 用户明明选了字，结果却在光标处插了 URL。有了快照，
+   * `restoreSelection` 就能在写链接前把选区还原回去。
+   *
+   * 无副作用：只读快照，不改变任何文档或选区状态。
+   */
+  | { type: "saveSelection" }
+  /**
+   * 还原上一次 `saveSelection` 的选区（v2026-09-22 新增）
+   *
+   * 宿主在链接对话框**确认/移除之后、写链接之前**下发（桥命令按序执行，
+   * 故 restore 一定先于 createLink / deleteLink 生效）。
+   *
+   * 容错：若文档在快照之后发生了变化（无法安全复用原选区对象），则用位置信息
+   * 重建；两者都失败时**静默保持现状**并回一条 `diagnostic`，绝不抛错中断后续命令。
+   */
+  | { type: "restoreSelection" }
+  /**
+   * 移除光标（或选区）所在位置的链接，**保留文字**（v2026-09-22 新增）
+   *
+   * 链接对话框在「编辑链接」模式下的「移除链接」按钮。JS 侧调 `editor.deleteLink()`：
+   * 优先按光标位置找链接范围并去 mark；找不到时回落为「去掉当前选区上的 link mark」。
+   */
+  | { type: "deleteLink" };
 
 /** 上行消息（JS → Kotlin） */
 export type UpMessage =
@@ -174,6 +225,12 @@ export type UpMessage =
        * ——即 assets 里的产物是否被重新构建过。
        */
       build?: string;
+      /**
+       * 源码内容哈希（v2026-09-22）：由 vite define 注入，形如 `bn-src:a1b2c3d4e5f6`。
+       * 与 `build` 互补——`build` 说明"哪一版"，本字段说明"是不是当前源码编的"，
+       * 另有 `scripts/check-blocknote-artifact.ps1` 用它拦截「改了源码忘重建产物就提交」。
+       */
+      srcHash?: string;
     }
   /** 内容变更快照（JS 侧防抖 800ms） */
   | { type: "changed"; markdown: string }
@@ -196,6 +253,31 @@ export type UpMessage =
       type: "blockState";
       /** 光标块类型（BlockNote 的 block.type，如 paragraph / heading / table / image） */
       blockType: string;
+      /**
+       * 当前块是否为「复选框块」（v2026-09-22 新增；工具栏复选框按钮的激活态）
+       *
+       * 判据 = `blockType === "checkListItem"`（BlockNote 的复选框是独立块类型）。
+       *
+       * ⚠️ 为什么要单独上行：宿主原先读 Compose 时代遗留的
+       * `BodyBlocksController.isFocusedBlockCheckbox`（读**宿主本地块对象**的段落类型），
+       * 而 BlockNote 模式下正文只在 ProseMirror 文档树里 → 那份镜像恒为 false
+       * → 复选框按钮**永远不高亮**。与 B / I / U / S 是同一个坑。
+       * 缺省（undefined / 旧产物未下发）时宿主按 false 处理。
+       */
+      isCheckboxBlock?: boolean;
+      /**
+       * 光标位置（或选区起点）上的**已有链接 URL**（v2026-09-22 新增）
+       *
+       * 供宿主做两件事：
+       * ① 底部工具栏 🔗 按钮的**激活态**（有链接即高亮）——此前取的是 Compose 时代
+       *    遗留的 `RichTextState.isLink`，BlockNote 模式下恒为 false，永远不高亮；
+       * ② 链接对话框据此进入「**编辑链接**」模式：预填 URL、按钮改为「更新」、
+       *    并额外提供「移除链接」。
+       *
+       * 口径与官方 `CreateLinkButton` 一致：`editor.getSelectedLinkUrl()`
+       * （内部 = `getLinkMarkAtPos(selection.from)`）。**缺省 / 空串 = 当前不在链接上**。
+       */
+      linkUrl?: string;
       /**
        * 光标块的标题级别（v2026-09-21 新增，供宿主「标题面板」回显选中态）：
        * - `blockType === "heading"` → 1–6（普通标题**与**可折叠标题同级，级别取 `props.level`）
@@ -357,3 +439,19 @@ export const BUILD_FINGERPRINT: string =
 
 /** vite define 注入的全局常量声明（构建期被替换为字符串字面量） */
 declare const __BUILD_FINGERPRINT__: string;
+
+/**
+ * 源码内容哈希（v2026-09-22 新增，形如 `bn-src:a1b2c3d4e5f6`）
+ *
+ * 与 [BUILD_FINGERPRINT] 互补：指纹回答"这版是什么时候、用哪个 commit 构建的"，
+ * 本哈希回答"这版**装进去的源码内容**是不是当前工作区这份"。
+ * 宿主把它随 `ready` 上行打进 logcat，另有校验脚本拿它与"此刻 `src/editor/` +
+ * `editor.html` 现算的哈希"比对，用来拦截「改了源码却忘了重建产物就提交」。
+ *
+ * 兜底同 [BUILD_FINGERPRINT]：dev server 下未注入，回落 "dev"（校验脚本见此值直接放行）。
+ */
+export const SRC_HASH: string =
+  typeof __SRC_HASH__ === "string" ? __SRC_HASH__ : "dev";
+
+/** vite define 注入的全局常量声明（构建期被替换为字符串字面量） */
+declare const __SRC_HASH__: string;
