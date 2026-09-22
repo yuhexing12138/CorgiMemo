@@ -502,24 +502,95 @@ object MarkdownParser {
         text = text.replace(Regex("""(?m)^\s{0,3}#{1,6}\s+"""), "")
         // 6) 分割线 --- / *** / ___（stripMarkdown 不处理，单独去除）
         text = text.replace(Regex("""(?m)^\s*([-*_])(\s*\1){2,}\s*$"""), " ")
-        // 7) 可折叠标题的 HTML 编码标记行（v2026-09-22 新增）：整行移除
-        //    折叠标题（heading + isToggleable）在 markdown 里没有原生语法，正文以
-        //    `<details><summary>…</summary></details>` 三段标记包裹持久化
-        //    （见 WebView 侧 converter.ts）。这三行是纯结构、不承载任何可见文字。
-        //    ⚠️ 只删**独占一行的标记**（`[^>\n]*` 限定不跨行），标题文本与子块行必须保留。
-        text = text.replace(Regex("""(?m)^[ \t]*</?(?:details|summary)[^>\n]*>[ \t]*\r?$"""), " ")
+        // 7) 可折叠标题的 HTML 编码标记行 + 项目内部占位 token（v2026-09-22 新增）
+        //    —— 两类"纯结构"标记的识别收敛在这里，供 Compose 侧其它消费方共用，避免口径漂移。
+        text = stripInternalTokens(text)
+        text = stripDetailsMarkers(text)
         // 8) 行内色 span（v2026-09-22 新增）：标签本体移除、**文字保留**
         //    行内色以原生 HTML 持久化（`<span style="color:#FF9A5C">文字</span>`），
         //    标签不承载可见文字必须去掉，但**不能整行删**——文字就在标签之间。
+        //    ⚠️ 本步只属于"纯文本"口径：Compose 侧渲染要**保留** span（库的 markdown
+        //    解析器会读 style 里的 font-size/color/background-color 还原排版）。
         text = text.replace(Regex("""</?span[^>\n]*>"""), "")
-        // 9) 项目内部占位 token（v2026-09-22 新增）：整段移除
-        //    块级色等自编码标记是**纯文本**形态（如 `@@@CORGI_BC_TC_red@@@`），
-        //    会留在库里的 markdown 原文中，只在 WebView 载入时被消费。
-        //    ⚠️ 用统一前缀通配，后续新增同类 token 无需再改这里。
-        text = text.replace(Regex("""@@@CORGI_[A-Za-z0-9_#]*@@@"""), " ")
-        // 10) 其余 Markdown 标记（粗斜体 / 删除线 / 列表 / 待办）
+        // 9) 其余 Markdown 标记（粗斜体 / 删除线 / 列表 / 待办）
         text = stripMarkdown(text)
         return text
+    }
+
+    /* ===== 项目内部标记的识别（单点真相，v2026-09-22 新增）===== */
+
+    /**
+     * 项目自编码的占位 token（由 WebView 侧 `converter.ts` 写入正文 markdown）
+     *
+     * 形态如 `@@@CORGI_BC_TC_red@@@`（块级色）/ `@@@CORGI_DIVIDER_dashed@@@`（分割线）。
+     * ⚠️ 用统一前缀通配，后续新增同类 token 无需再改这里。
+     */
+    private val INTERNAL_TOKEN_REGEX = Regex("""@@@CORGI_[A-Za-z0-9_#]*@@@""")
+
+    /**
+     * 可折叠标题的**独占行**结构标记
+     *
+     * 折叠标题（`heading` + `isToggleable`）在 markdown 里没有原生语法，正文以
+     * `<details><summary>…</summary></details>` 三段标记包裹持久化（见 converter.ts）。
+     * ⚠️ 只匹配**独占一行的标记**（`[^>\n]*` 限定不跨行），标题文本与子块行必须保留。
+     */
+    private val DETAILS_MARKER_LINE_REGEX =
+        Regex("""(?m)^[ \t]*</?(?:details|summary)[^>\n]*>[ \t]*\r?$""")
+
+    /**
+     * 剥离"项目内部占位 token"（**保留**一切渲染型 HTML 与结构标记）
+     *
+     * 与 [toPlainText] 的区别：本方法只清掉 `@@@CORGI_…@@@` 这类**纯文本**标记，
+     * 其余内容（颜色 / 字号 span、`<details>` 折叠标记、markdown 语法）**原样保留**。
+     *
+     * 适用场景：**Compose 侧只读渲染**（`InspirationViewCard`）——那里需要保留
+     * `<span style>`（库会读 style 还原排版）与 `<details>` 标记（由渲染层解析成
+     * 可折叠标题），但**不认识** `@@@CORGI_…@@@`，会原样当文字渲染出来
+     * （真机已复现：详情卡正文出现 `@@@CORGI_BC_TC_red@@@`）。
+     *
+     * @param markdown 正文 markdown（整篇或切分后的单段均可）
+     * @return 去掉内部占位 token 后的 markdown
+     */
+    fun stripInternalTokens(markdown: String): String {
+        if (markdown.isEmpty()) return markdown
+        return markdown.replace(INTERNAL_TOKEN_REGEX, "")
+    }
+
+    /**
+     * 剥离**独占一行**的可折叠标题结构标记（`<details>` / `<summary>` / 闭合标签）
+     *
+     * 这类标记对"只取文字"或"按行摊平渲染"的场景没有意义，应整行删除；
+     * 而**支持折叠渲染**的场景（详情卡）应保留它们、另行做结构解析，不要调用本方法。
+     *
+     * @param markdown 正文 markdown
+     * @return 去掉折叠标记行后的 markdown
+     */
+    fun stripDetailsMarkers(markdown: String): String {
+        if (markdown.isEmpty()) return markdown
+        return markdown.replace(DETAILS_MARKER_LINE_REGEX, "")
+    }
+
+    /**
+     * 取文本**开头连续**的项目内部 token（[stripInternalTokens] 的逆操作，用于回写保色）
+     *
+     * **为什么需要**：详情卡的复选框勾选会把该段的 markdown 交给库重新编码后回写整篇
+     * （`paragraphs[pIdx] = newPara` → join）。库重新编码出的段落**不含**我们插入的
+     * 行首 token，若不补回，一次勾选就会把该段的块级色标记从库里抹掉。
+     *
+     * @param markdown 原始（未剥离的）段落 markdown
+     * @return 段首连续 token 的拼接串；没有则返回空串
+     */
+    fun leadingInternalTokens(markdown: String): String {
+        if (markdown.isEmpty()) return ""
+        var rest = markdown
+        val tokens = StringBuilder()
+        while (true) {
+            val matched = INTERNAL_TOKEN_REGEX.find(rest, 0)
+            if (matched == null || matched.range.first != 0) break
+            tokens.append(matched.value)
+            rest = rest.substring(matched.range.last + 1)
+        }
+        return tokens.toString()
     }
 
     // ==================== 校验与安全解析方法 ====================

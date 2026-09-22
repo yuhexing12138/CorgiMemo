@@ -52,6 +52,8 @@
 - ⚠️ **行内样式渲染走 markView 的 `render()`，不是 renderHTML**；官方 textColor/backgroundColor 的 render() 只造裸 span，颜色靠 CSS 预设色名规则 → 自由 hex 不渲染。修法：schema.ts 同名覆盖 spec，render 内联 `span.style.color`。
 - ⚠️ 官方 markdown 导出剥颜色 span / 丢折叠标记 → converter.ts 用 token 往返：行内色 `@@@CORGI_IC_TC_<值>@@@`…`@@@CORGI_IC_END@@@`；块级色用**块内容行首**纯文本 token `@@@CORGI_BC_TC_red@@@`（外包 div 会被 ProseMirror 下钻丢弃）；折叠标题用 `<details><summary>` 三段。纯文本转换必须剥离这些标记（Kotlin markdownToPlainText 已加）。
 - ⚠️ `element.style.color` 读出是 `rgb(r,g,b)` 而非 hex → 必须归一成大写 `#RRGGBB`，否则二次保存被"值形态不安全"跳过。
+- ⚠️ **正文 markdown（`contentFormat`）有三个消费方，新增内部标记必须三处全覆盖**（同日连踩两次：先漏列表摘要、再漏详情卡）：① **WebView 编辑器**（converter.ts 编解码，token 载入即消费）；② **Compose 详情卡正文**（`InspirationViewCard` 的只读 `RichText` **直接解析原始 markdown** → 逐段 `MarkdownParser.stripInternalTokens()`；⚠️ 只剥 token、**保留 `style` span 与 `<details>` 标记**——span 是排版来源，`<details>` 由 `buildBodyToggleLayout` 解析成**可折叠标题**（箭头 Canvas 自绘，别用 `▸` 字形）；勾选回写须用 `leadingInternalTokens()` 补回段首 token，否则一次勾选抹掉块级色）；③ **纯文本抽取**（摘要/字数/搜索/分享 → `toPlainText`，连 details 标记行一起剥）。
+- ⚠️ **「markdown → 纯文本」唯一入口 = `MarkdownParser.toPlainText()`**：`stripMarkdown` 只处理 markdown 语法，不剥 HTML 标签与 `@@@CORGI_…@@@`。灵感保存路径（InspirationEditViewModel）与启动回填曾各自误用 stripMarkdown → 摘要出现字面量。`InspirationTextUtils.markdownToPlainText` 现为薄委托。⚠️ 待办有独立口径（`#标签` 要保留），勿混用。
 - 样式：padding-inline `var(--bn-editor-gutter,20px)!important`；sideMenu 已删（HTML5 DnD 触摸不触发）。
 
 ## 工具/验证教训
@@ -59,3 +61,6 @@
 - 删文件/裁 import 前按 `by ` 反查委托依赖；删后全项目 grep 顶层声明名。
 - 产物关键字计数只证字符串在文件里；样式生效必须真机/computed style；逐像素分析截图（pillow）是定位渲染问题的可靠手段。
 - 提交：中文提交信息，Write 临时文件 → 提交 → 删除。
+- 编译检查（经用户同意后）：**不用 bash 跑 `./gradlew`**（本机 shim 缺 coreutils，`dirname` 都报 not found）→ 用 **PowerShell 调 `.\gradlew.bat`**；输出重定向 `*> 文件` 后是 **UTF-16**，读时须 `-Encoding Unicode`。单模块校验用 `:app:compileDebugKotlin`（不出包、不安装，约 1.5 分钟）。
+- ⚠️ **修数据清洗规则必须同时修历史数据**：卡片摘要优先读 `Inspiration.content`（非空即不走兜底），所以"代码修好"对已污染行无效。做法：启动时幂等清洗（`InspirationRepository.repairInspirationPlainText`：content 空 或 含 `@@@CORGI_`/`<span` → 以 toPlainText 重算）。
+- ⚠️ 同一份数据的**多个渲染出口**要用「共享的识别函数」，不要各写正则：内部标记的识别现收敛在 `MarkdownParser.stripInternalTokens` / `toPlainText`，新增标记只需改一处（本轮两次泄漏都源于"另一处消费方自己拼正则")。
