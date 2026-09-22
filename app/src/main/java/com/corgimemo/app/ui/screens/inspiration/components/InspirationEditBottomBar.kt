@@ -384,9 +384,15 @@ fun InspirationEditBottomBar(
             ) {
                 ColorStylePanel(
                     panelHeight = keyboardHeight,
-                    /* 段落色回显来自 JS 上行的当前光标块状态（行内色无状态上行，不回显） */
+                    /* 段落色回显来自 JS 上行的当前光标块状态 */
                     currentBlockTextColor = blockState.blockTextColor,
                     currentBlockBackgroundColor = blockState.blockBackgroundColor,
+                    /**
+                     * 行内色回显（v2026-09-22 新增）：JS 上行选区行内色的原始 hex，
+                     * 面板内反查色名点亮色点；空串 = 未设置 → 高亮第一个「/」清除块。
+                     */
+                    currentInlineTextColor = blockState.inlineTextColor,
+                    currentInlineBackgroundColor = blockState.inlineBackgroundColor,
                     onPickInlineTextColor = onInlineTextColorSelect,
                     onPickInlineBackgroundColor = onInlineBackgroundColorSelect,
                     onPickBlockTextColor = onBlockTextColorSelect,

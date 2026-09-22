@@ -1109,9 +1109,15 @@ class InspirationEditViewModel @Inject constructor(
              * 必须转纯文本写入 content —— 首页摘要、搜索、字数统计都依赖该字段。
              * 旧写法 liveText = _content.value 会保留空串/旧值，导致首页正文不显示
              * （详情页能显示是因为它直接渲染 contentFormat）。
-             * 复用与 Todo 模块一致的 MarkdownParser.stripMarkdown()。
+             *
+             * ⚠️ v2026-09-22 修正：原用 `MarkdownParser.stripMarkdown()`——它只处理 markdown 语法，
+             * **不剥 HTML 标签、也不剥项目自编码的 `@@@CORGI_…@@@` 占位 token**，
+             * 于是行内色 `<span style="…">`、块级色 token 会被原样写进 content，
+             * 真机表现为列表页/详情卡摘要里出现 `@@@CORGI_BC_TC_red@@@` 字面量。
+             * 现统一改用 [com.corgimemo.app.util.MarkdownParser.toPlainText]
+             * （= [InspirationTextUtils.markdownToPlainText]，与编辑页 2059 行、卡片回退分支同一口径）。
              */
-            liveText = com.corgimemo.app.util.MarkdownParser.stripMarkdown(liveMarkdown)
+            liveText = com.corgimemo.app.util.MarkdownParser.toPlainText(liveMarkdown)
             _contentFormat.value = liveMarkdown
             _content.value = liveText
         }

@@ -128,6 +128,34 @@ internal fun blockColorHexOf(name: String, isDark: Boolean, background: Boolean)
         }
     )
 
+/**
+ * 行内色 hex → 色名（[blockColorHexOf] 的**反函数**，v2026-09-22 新增）
+ *
+ * **用途**：A 面板两个「选中色」行的选中回显。行内色的状态上行是 **hex**（因为下发就是 hex），
+ * 而 [BlockColorRow] 判定选中靠**色名**（`current == name`），故必须反查。
+ *
+ * **三种取值语义**（返回串直接喂给 `BlockColorRow.current`）：
+ * - `hex` 为空 → 返回 `""` → 调用方判定为「默认」→ **高亮第一个「/」清除块**
+ *   （这正是"未设置行内色"的期望表现）；
+ * - `hex` 命中当前主题色板 → 返回对应**色名** → 该色点高亮；
+ * - `hex` 不在色板里（如从外部粘贴的自定义色，或切换主题后色板值已变）→ **原样返回 hex**：
+ *   此时既非空串也非 `"default"`，`BlockColorRow` 不会去点亮「默认」块，也不会误点亮任何
+ *   色点 —— 即"无高亮"，比谎报成"默认"更诚实。
+ *
+ * ⚠️ 需传入**当前主题**的 `isDark`：色板明暗两套色值不同，用错主题会反查失败。
+ *
+ * @param hex 行内色值（JS 侧 `getActiveStyles()` 的原始串）
+ * @param isDark 是否暗色主题（决定用哪套色值反查）
+ * @param background true = 背景色维度；false = 文字色维度
+ */
+internal fun blockColorNameOf(hex: String, isDark: Boolean, background: Boolean): String {
+    val value = hex.trim()
+    if (value.isEmpty()) return ""
+    return BlockColorPalette.names.firstOrNull { name ->
+        blockColorHexOf(name, isDark, background).equals(value, ignoreCase = true)
+    } ?: value
+}
+
 /** Compose Color → "#RRGGBB"（忽略 alpha；与宿主其余 hex 工具语义一致） */
 private fun composeColorToHex(c: Color): String = String.format(
     java.util.Locale.US,

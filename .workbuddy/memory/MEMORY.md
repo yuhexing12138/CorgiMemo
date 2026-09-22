@@ -60,6 +60,9 @@
 - ⚠️ **块级色（段落色）不能用 HTML 包裹承载**：块级属性必须贴在块自己的标签上（`<p data-text-color=…>`），而块导出成 p/h2/li/blockquote 不可预知；外包 `<div data-…>` 会在 ProseMirror 解析时被当不匹配元素**下钻丢弃**。改用**块内容行首纯文本 token**（`@@@CORGI_BC_TC_red@@@`）→ 导出插入 + 剥 props，载入（装载编辑器前）剥离并写回 props。不需 CSS、语义无损（含背景铺满）。⚠️ 纯文本转换必须整段移除 `@@@CORGI_…@@@`（Kotlin markdownToPlainText 已按统一前缀通配剥离）。
 
 ## 工具/验证教训
+- ⚠️ **「markdown → 纯文本」唯一入口 = `MarkdownParser.toPlainText()`**（v2026-09-22 收敛）：`stripMarkdown` **只处理 markdown 语法**，不剥 HTML 标签、不剥 `@@@CORGI_…@@@` 占位 token。此前灵感保存路径（InspirationEditViewModel）与启动回填（InspirationRepository）各自调 stripMarkdown，导致行内色 span 与块级色 token 被写进 `Inspiration.content`，真机表现为列表页/详情卡摘要出现字面量。`InspirationTextUtils.markdownToPlainText` 现为薄委托。⚠️ 待办有独立口径（`#标签` 文字要保留），勿混用；待办的两处 stripMarkdown（HomeViewModel/HomeScreen 搜索）保持原样。
+- ⚠️ **改数据清洗规则必须同时修历史数据**：卡片摘要优先读 `content`（非空即不再走 markdownToPlainText 兜底），所以"代码修好"对已污染行无效。`InspirationRepository.repairInspirationPlainText()`（原 backfillEmpty…，扩权改名）在启动时幂等清洗：content 空 或 含 `@@@CORGI_` / `<span` 即以 toPlainText 重算。
+- ⚠️ **A 面板行内色回显**：`blockState` 新增 `inlineTextColor`/`inlineBackgroundColor`（JS 直接给 `getActiveStyles()` 原始串 = hex）；宿主 `blockColorNameOf`（blockColorHexOf 的反函数）按当前主题色板反查色名点亮色点；空→高亮第一个「/」默认块、不在色板→**无高亮**（不谎报默认）。⚠️ 与块级 `blockTextColor`/`blockBackgroundColor`（色名、整段）是两回事。
 - 新增 layout/Modifier API 必须逐项核对 import（漏 import 只编译期暴露；本项目不主动编译）。「API 应该有但没反应」先 grep 确认存在。catch{return} 静默失败至少上行诊断。连续 2 次猜测失败→停猜加埋点。同一文件多次 Edit 串行。
 - 删文件/裁 import 前按 `by ` 反查依赖（by 委托隐式 getValue/setValue）；删后反向全项目 grep 顶层声明名；最终以编译为准。
 - 产物关键字计数只证字符串在文件里；样式是否生效必须真机/computed style。逐像素分析截图（pillow 扫描）是定位渲染问题的可靠手段。

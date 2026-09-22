@@ -202,6 +202,20 @@ export type UpMessage =
        * 普通标题、非标题块一律为 false。
        */
       headingToggleable?: boolean;
+      /**
+       * 当前**选区**的行内文字色 / 行内背景色（v2026-09-22 新增）
+       *
+       * 取 `getActiveStyles().textColor` / `.backgroundColor` 的原始字符串值——
+       * 宿主 A 面板下发的自由 hex（如 `#FF9A5C`），也可能是粘贴内容里的色名 / `rgb()`。
+       * 宿主据此在当前主题的色板里反查色名以点亮对应色点；**缺省（undefined）表示该维度
+       * 未设置**，宿主按「默认」处理并高亮第一个「/」清除块。
+       *
+       * ⚠️ 与下面的 `blockTextColor` / `blockBackgroundColor` **不是一回事**：
+       * 那两项是**块级**颜色（色名，作用于整段，走块 props）；
+       * 本两项是**行内**颜色（作用于选区文字，走 mark 样式）。
+       */
+      inlineTextColor?: string;
+      inlineBackgroundColor?: string;
       /** 当前块是否支持块级颜色（块 spec 声明了 textColor 或 backgroundColor） */
       canSetBlockColor: boolean;
       /** 当前块的文本色（预设色名；"default" 或 undefined = 默认色） */

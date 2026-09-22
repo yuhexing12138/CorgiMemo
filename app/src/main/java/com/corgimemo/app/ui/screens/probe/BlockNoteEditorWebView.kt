@@ -96,6 +96,18 @@ data class BlockState(
      */
     val headingToggleable: Boolean = false,
     /**
+     * 当前**选区**的行内文字色 / 行内背景色（v2026-09-22 新增；A 面板两个「选中色」行回显）
+     *
+     * 值为 JS 侧 `getActiveStyles()` 的原始字符串：宿主下发的自由 hex（`#FF9A5C`），
+     * 也可能是粘贴内容带来的色名 / `rgb()`。宿主按当前主题色板反查色名后点亮对应色点；
+     * 空串 = 该维度未设置 → 宿主高亮第一个「/」清除块。
+     *
+     * ⚠️ 与 [blockTextColor] / [blockBackgroundColor]（**块级**色，色名、作用于整段）不同：
+     * 本两项是**行内**色，只作用于选区文字。
+     */
+    val inlineTextColor: String = "",
+    val inlineBackgroundColor: String = "",
+    /**
      * 当前选区字号档位（v2026-09-21 新增；H 面板「正文字号」高亮回显）：
      * JS 侧 `getActiveStyles().fontSize`（"18px" 形式）解析的整数——
      * WebView 内 1px=1dp，数值与宿主的 sp 档位直接对应；0 = 无字号样式（默认档 16）。
@@ -452,6 +464,11 @@ class BlockNoteBridgeController {
                          * 与"老产物不下发该字段"的情况向后兼容）
                          */
                         headingToggleable = msg.optBoolean("headingToggleable", false),
+                        /**
+                         * v2026-09-22：选区的行内色（缺失时空串 = 未设置 → 面板高亮「默认」块）
+                         */
+                        inlineTextColor = msg.optString("inlineTextColor"),
+                        inlineBackgroundColor = msg.optString("inlineBackgroundColor"),
                         /** v2026-09-21：选区字号（0 = 无样式 → 宿主回落默认档） */
                         fontSizeSp = msg.optInt("fontSizePx", 0),
                         canSetBlockColor = msg.optBoolean("canSetBlockColor", false),

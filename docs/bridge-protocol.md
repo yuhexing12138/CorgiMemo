@@ -35,7 +35,7 @@
 | `ready` | `{}` | 编辑器脚本就绪并已绑定下行宿主（Kotlin 侧解除 loading、随后发 `init`） |
 | `changed` | `{ markdown }` | 内容变更快照；**JS 侧防抖 800ms**；由 `blocksToMd` 生成（含分割线样式编码） |
 | `undoState` | `{ canUndo, canRedo }` | 撤销/重做可用态（v1.7）；历史栈变化后上报，宿主左上角按钮据此置灰 |
-| `blockState` | `{ blockType, headingLevel?, headingToggleable?, fontSizePx?, canSetBlockColor, blockTextColor?, blockBackgroundColor?, canToggleHeader, isHeaderRow, isHeaderCol }` | 当前光标块状态（v1.11；`headingLevel`/`fontSizePx` 为 v2026-09-21 新增，`headingToggleable` 为 v2026-09-22 新增）。驱动宿主工具栏「块操作」菜单的可用态与回显、以及「标题面板」的选中态。`headingLevel`：`blockType === "heading"` → 1–6（**普通与可折叠标题共用**）；非标题块 → 0。`headingToggleable`：`heading` 块且 `props.isToggleable === true` → 折叠标题；两类级别数字重叠，**必须靠该字段分流**（v2026-09-22 勘误：折叠标题不是独立块类型 `toggleHeading*`）。`fontSizePx`：当前选区字号（`getActiveStyles().fontSize` 的 `"18px"` 解析为整数；WebView 内 1px=1dp，数值与宿主 sp 档位对应）；0 = 无字号样式（宿主回落默认档 16）。**仅在状态变化时上报**（JS 侧按 JSON 串去重） |
+| `blockState` | `{ blockType, headingLevel?, headingToggleable?, inlineTextColor?, inlineBackgroundColor?, fontSizePx?, canSetBlockColor, blockTextColor?, blockBackgroundColor?, canToggleHeader, isHeaderRow, isHeaderCol }` | 当前光标块状态（v1.11；`headingLevel`/`fontSizePx` 为 v2026-09-21 新增，`headingToggleable`/`inlineTextColor`/`inlineBackgroundColor` 为 v2026-09-22 新增）。驱动宿主工具栏「块操作」菜单的可用态与回显、以及「标题面板」「颜色面板」的选中态。`headingLevel`：`blockType === "heading"` → 1–6（**普通与可折叠标题共用**）；非标题块 → 0。`headingToggleable`：`heading` 块且 `props.isToggleable === true` → 折叠标题；两类级别数字重叠，**必须靠该字段分流**（v2026-09-22 勘误：折叠标题不是独立块类型 `toggleHeading*`）。`inlineTextColor` / `inlineBackgroundColor`：`getActiveStyles()` 的原始串（宿主下发的自由 hex，也可能是粘贴来的色名 / `rgb()`），供 A 面板两个「选中色」行反查色名回显；**缺失 = 该维度未设置**（宿主高亮第一个「/」清除块）。⚠️ 与 `blockTextColor` / `blockBackgroundColor`（**块级**色名，作用于整段）不是一回事。`fontSizePx`：当前选区字号（`getActiveStyles().fontSize` 的 `"18px"` 解析为整数；WebView 内 1px=1dp，数值与宿主 sp 档位对应）；0 = 无字号样式（宿主回落默认档 16）。**仅在状态变化时上报**（JS 侧按 JSON 串去重） |
 | `error` | `{ message }` | JS 异常上报（Kotlin 侧打 logcat / 展示错误态） |
 
 > `ready` 载荷自 v1.8 起带可选 `build` 字段（构建指纹，见下），故其类型为 `{ build?: string }`。
@@ -311,6 +311,50 @@ adb logcat -s BlockNoteEditor:V | grep "ready received"
   ⚠️ 消费方注意：这类 token 是**纯文本**、会留在库里的 markdown 原文中，
   纯文本转换必须整段移除 `@@@CORGI_…@@@`（Kotlin 侧 `markdownToPlainText`
   已按统一前缀通配剥离），否则会污染摘要与正文字数。
+
+- v2026-09-22（同上）：**`blockState` 新增可选字段 `inlineTextColor` / `inlineBackgroundColor`**
+  （A 面板两个「选中色」行的选中回显）。
+
+  **动机**：这两行此前传 `showSelection = false`——因为当时没有行内色的状态上行，
+  宿主拿不到"选区已有的行内色"，若强行回显会让「默认」项恒定高亮造成误导。
+  用户要求"色块按钮应该有选中高亮，默认第一个「/」块高亮"，故补上行并按需回显。
+
+  **口径**：JS 侧直接取 `getActiveStyles().textColor` / `.backgroundColor` 的**原始字符串**
+  （即宿主下发的自由 hex，也可能是粘贴内容带来的色名 / `rgb()`）。
+  宿主在面板内按**当前主题**色板反查色名以点亮色点：
+
+  | 上行值 | 宿主表现 |
+  |---|---|
+  | 空 / 缺失 | 视为「默认」→ 高亮第一个「/」清除块 |
+  | 命中色板 | 高亮对应色点 |
+  | 不在色板（外部粘贴的自定义色、或切主题后色板值已变） | **无高亮**（不谎报成「默认」） |
+
+  Kotlin 侧 `BlockState` 增加 `inlineTextColor` / `inlineBackgroundColor: String = ""`，
+  反查函数为 `blockColorNameOf`（`blockColorHexOf` 的反函数）。回显时机沿用 `blockState`
+  既有的上行契机（选区变化 / 内容变化），无需新增通道。
+
+- v2026-09-22（同上）：**修复摘要漏出内部标记，并统一"markdown → 纯文本"入口**。
+
+  **症状**：列表页 / 详情卡摘要出现 `@@@CORGI_BC_TC_red@@@` 字面量。
+
+  **根因**（两处口径并存 + 历史脏数据）：
+  - 灵感正文的纯文本字段 `Inspiration.content` 由**保存流程**写入，而该处调的是
+    `MarkdownParser.stripMarkdown`——它**只处理 markdown 语法**，既不剥 HTML 标签、
+    也不剥本项目自编码的 `@@@CORGI_…@@@` 占位 token；
+  - 卡片摘要优先读 `content`（非空时不再走 `markdownToPlainText` 兜底），
+    于是污染值直接上了卡面；
+  - **代码修好也不会自动清洗历史数据**，用户必须逐条重存才能消除。
+
+  **修法**：
+  - 完整口径下沉为 `MarkdownParser.toPlainText(markdown)`（**单点真相**），
+    `InspirationTextUtils.markdownToPlainText` 改为薄委托；
+  - 保存路径（`InspirationEditViewModel`）与启动回填路径
+    （`InspirationRepository.repairInspirationPlainText`）统一改调 `toPlainText`；
+  - 回填函数顺势扩权：除"content 为空"外，**同时清洗已污染的 content**
+    （判定线索 `@@@CORGI_` / `<span`，保守起见只看本项目独有的串），幂等可重复执行。
+
+  ⚠️ 待办正文有独立口径（`#标签` 文字必须保留），**不要**把待办的 `stripMarkdown`
+  调用一并换成本方法。
 
 - v2026-09-21（同日续）：**`blockState` 新增可选字段 `fontSizePx`**（供 H 面板「正文字号」档位回显）。
 

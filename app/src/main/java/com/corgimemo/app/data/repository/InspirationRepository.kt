@@ -12,6 +12,17 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
+ * 判定 `Inspiration.content` 是否被"未剥净的标记"污染的线索串（v2026-09-22）
+ *
+ * - `@@@CORGI_`：本项目自编码的占位 token 前缀（块级色 / 分割线等），
+ *   WebView 侧载入时才消费，**不可能**是用户真实输入；
+ * - `<span`：行内色持久化产生的标签残留。
+ *
+ * 刻意保守——只有命中这两类本项目独有的串才判为污染，避免误清用户内容。
+ */
+private val POLLUTED_PLAIN_TEXT_HINTS = listOf("@@@CORGI_", "<span")
+
+/**
  * 灵感数据仓库
  * 封装对灵感数据和关联关系的所有操作
  * 提供统一的数据访问接口给 ViewModel 使用
@@ -130,30 +141,40 @@ class InspirationRepository @Inject constructor(
     // ========== 数据迁移（v2026-09-18 BlockNote 迁移兼容） ==========
 
     /**
-     * 一次性回填灵感正文纯文本。
+     * 一次性修复灵感正文纯文本（原名 `backfillEmptyInspirationContent`，v2026-09-22 扩权改名）。
      *
-     * 迁移间隙/之前保存的灵感，其 content（纯文本摘要）字段可能为空，
-     * 导致首页列表不显示正文。本方法遍历所有 content 为空、但 contentFormat 非空的灵感，
-     * 用 [MarkdownParser.stripMarkdown] 将富文本 markdown 转为纯文本回填到 content。
+     * 覆盖两类脏数据，都用 [MarkdownParser.toPlainText] 从 `contentFormat` 重新生成：
      *
-     * **幂等**：content 已非空（含本次已回填）的灵感会被跳过，可安全在每次启动时调用，
-     * 无需额外标记位。回填后 Room Flow 会自动推送新列表，首页即时刷新。
+     * 1. **content 为空**：迁移间隙/之前保存的灵感，纯文本摘要字段可能为空，
+     *    导致首页列表不显示正文（v2026-09-18 的原始需求）；
+     * 2. **content 被未剥净的标记污染**（v2026-09-22 新增）：早前调用方误用
+     *    `MarkdownParser.stripMarkdown`（只处理 markdown 语法），导致本项目自编码的
+     *    `@@@CORGI_…@@@` 占位 token 与行内色 `<span style="…">` 原样写进了 content，
+     *    真机表现为列表页/详情卡摘要里出现这类字面量。**代码修好不会自动清洗历史数据**，
+     *    故在此一并处理，否则用户必须把每条旧灵感重新保存一次才能消除。
      *
-     * @return 实际回填的灵感条数
+     * **幂等**：content 非空且不含上述标记的灵感会被跳过，可安全在每次启动时调用，
+     * 无需额外标记位。修复后 Room Flow 会自动推送新列表，首页即时刷新。
+     *
+     * ⚠️ 判定保守：只有命中本项目独有的标记前缀才判为污染，避免把用户真实输入的内容误清。
+     *
+     * @return 实际修复（回填或清洗）的灵感条数
      */
-    suspend fun backfillEmptyInspirationContent(): Int {
+    suspend fun repairInspirationPlainText(): Int {
         val all = inspirationDao.getAllInspirationsBlocking()
-        var backfilled = 0
+        var repaired = 0
         for (insp in all) {
-            if (insp.content.isBlank() && insp.contentFormat.isNotBlank()) {
-                val plain = MarkdownParser.stripMarkdown(insp.contentFormat)
-                if (plain.isNotBlank()) {
-                    inspirationDao.update(insp.copy(content = plain))
-                    backfilled++
-                }
+            if (insp.contentFormat.isBlank()) continue
+            val needsRepair =
+                insp.content.isBlank() || POLLUTED_PLAIN_TEXT_HINTS.any { insp.content.contains(it) }
+            if (!needsRepair) continue
+            val plain = MarkdownParser.toPlainText(insp.contentFormat)
+            if (plain.isNotBlank() && plain != insp.content) {
+                inspirationDao.update(insp.copy(content = plain))
+                repaired++
             }
         }
-        return backfilled
+        return repaired
     }
 
     // ========== 关联关系操作 ==========

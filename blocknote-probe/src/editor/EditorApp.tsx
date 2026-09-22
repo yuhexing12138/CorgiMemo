@@ -297,6 +297,23 @@ export default function EditorApp() {
       /** 是否为「可折叠标题」（v2026-09-22 新增；普通标题恒为 false） */
       const headingToggleable = isHeading && props.isToggleable === true;
       const headingLevel = isHeading ? safeLevel : 0;
+      /**
+       * 当前选区的行内样式（v2026-09-22 新增：A 面板两个「选中色」行的回显）
+       *
+       * 只取一次 `getActiveStyles()`，供 fontSizePx 与两个颜色字段共用——
+       * 该方法内部要读 ProseMirror 选区与 mark 集合，避免在同一 payload 里重复调用。
+       *
+       * 颜色字段取出的是 mark 的 `stringValue`（宿主下发的自由 hex，或粘贴来的色名/rgb），
+       * 宿主拿到后按当前主题色板反查色名，点亮对应色点；无该维度样式时为 undefined
+       * （宿主视为「默认」，高亮第一个「/」清除块——与面板语义一致）。
+       */
+      const activeStyles = ed.getActiveStyles() ?? {};
+      const inlineTextColor =
+        typeof activeStyles.textColor === "string" ? activeStyles.textColor : undefined;
+      const inlineBackgroundColor =
+        typeof activeStyles.backgroundColor === "string"
+          ? activeStyles.backgroundColor
+          : undefined;
       const payload = {
         blockType: block.type as string,
         headingLevel,
@@ -310,10 +327,13 @@ export default function EditorApp() {
          * （选区变化 / 内容变化，含 addStyles 引起的 mark 变化）。
          */
         fontSizePx: (() => {
-          const fs = ed.getActiveStyles()?.fontSize as string | undefined;
+          const fs = activeStyles.fontSize as string | undefined;
           const m = typeof fs === "string" ? /^(\d+(?:\.\d+)?)px$/.exec(fs) : null;
           return m ? Math.round(parseFloat(m[1])) : baseFontSizeRef.current;
         })(),
+        /** 行内文字色 / 背景色（v2026-09-22 新增；缺失 = 该维度未设置） */
+        inlineTextColor,
+        inlineBackgroundColor,
         canSetBlockColor: supportsTextColor || supportsBgColor,
         blockTextColor: supportsTextColor
           ? (props.textColor as string | undefined)

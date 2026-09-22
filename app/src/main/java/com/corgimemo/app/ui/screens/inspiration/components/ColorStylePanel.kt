@@ -54,13 +54,20 @@ import com.corgimemo.app.ui.theme.ThemeManager
  * 收起由面板头「完成」或再点一次工具栏「A」按钮触发。故本面板只负责展示与回调，
  * 真正的 SpanStyle / 块 props 写入由调用方（InspirationEditScreen）完成。
  *
- * **选中回显**：段落两组读 `blockState` 的当前块色名回显；行内两组无状态上行
- * （宿主拿不到"光标处已有的行内色"），传 `showSelection = false` 关闭回显，
- * 否则「默认」项会恒定高亮造成误导。
+ * **选中回显**：四组色板全部回显（v2026-09-22 起）——
+ * - 段落两组读 `blockState` 的当前**块色名**；
+ * - 行内两组读 `blockState` 的 `inlineTextColor` / `inlineBackgroundColor`（hex），
+ *   按当前主题色板反查色名后点亮对应色点；**未设置该维度时高亮第一个「/」清除块**
+ *   （与"默认"语义一致，也是用户要的默认态）。
+ *
+ * v2026-09-22 之前行内两组传 `showSelection = false`（当时没有行内色的状态上行），
+ * 表现为"点了没有任何选中标记"；上行补齐后已改为正常回显。
  *
  * @param panelHeight 面板总高度（= 键盘高度；内容超出纵向滚动）
  * @param currentBlockTextColor 当前段落的文字色名（空串 / "default" = 未设置，用于回显）
  * @param currentBlockBackgroundColor 当前段落的背景色名（语义同上）
+ * @param currentInlineTextColor 当前**选区**的行内文字色（hex；空串 = 未设置 → 高亮「默认」块）
+ * @param currentInlineBackgroundColor 当前**选区**的行内背景色（语义同上）
  * @param onPickInlineTextColor 选中文字色点选回调；参数为 "#RRGGBB"，null = 恢复默认
  * @param onPickInlineBackgroundColor 选中背景色点选回调；参数为 "#RRGGBB"，null = 恢复默认
  * @param onPickBlockTextColor 段落文字色点选回调；参数为 BlockNote 色名，null = 清除
@@ -76,6 +83,8 @@ internal fun ColorStylePanel(
     panelHeight: Dp,
     currentBlockTextColor: String,
     currentBlockBackgroundColor: String,
+    currentInlineTextColor: String = "",
+    currentInlineBackgroundColor: String = "",
     onPickInlineTextColor: (String?) -> Unit,
     onPickInlineBackgroundColor: (String?) -> Unit,
     onPickBlockTextColor: (String?) -> Unit,
@@ -179,31 +188,29 @@ internal fun ColorStylePanel(
                     .alpha(if (enabled) 1f else 0.38f)
                     .then(contentBlocker)
             ) {
-                /** 第一组：选中文字色（行内）——无状态上行，关闭选中回显 */
+                /** 第一组：选中文字色（行内）——回显当前选区行内色（v2026-09-22 起） */
                 BlockColorRow(
                     label = "选中文字色",
-                    current = "",
+                    current = blockColorNameOf(currentInlineTextColor, isDark, background = false),
                     isDark = isDark,
                     picker = { name, dark -> BlockColorPalette.text(name, dark) },
                     onPick = { name ->
                         onPickInlineTextColor(
                             if (name == "default") null else blockColorHexOf(name, isDark, false)
                         )
-                    },
-                    showSelection = false
+                    }
                 )
                 /** 第二组：选中背景色（行内）——同上 */
                 BlockColorRow(
                     label = "选中背景色",
-                    current = "",
+                    current = blockColorNameOf(currentInlineBackgroundColor, isDark, background = true),
                     isDark = isDark,
                     picker = { name, dark -> BlockColorPalette.background(name, dark) },
                     onPick = { name ->
                         onPickInlineBackgroundColor(
                             if (name == "default") null else blockColorHexOf(name, isDark, true)
                         )
-                    },
-                    showSelection = false
+                    }
                 )
 
                 /** 分组分隔：以上为"选中（行内）"，以下为"段落（块级）" */

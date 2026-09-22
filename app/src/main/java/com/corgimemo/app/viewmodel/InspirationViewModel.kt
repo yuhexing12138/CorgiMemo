@@ -490,13 +490,16 @@ class InspirationViewModel @Inject constructor(
         loadInspirations()
         loadUserDefinedTags()
         // v2026-09-18 修复：BlockNote 迁移后部分已存灵感的 content（纯文本摘要）字段为空，
-        // 导致首页列表不显示正文。启动时幂等回填（content 已非空则跳过，可重复调用）。
+        // 导致首页列表不显示正文。启动时幂等修复（可重复调用）。
+        // v2026-09-22 扩权：同一个修复流程现在还负责清洗"被未剥净标记污染"的 content
+        // （早前调用方误用 StripMarkdown 导致 `@@@CORGI_…@@@` / `<span style="…">`
+        // 写进了摘要）。代码修好不会自动清历史数据，故在此一并处理。
         viewModelScope.launch {
             try {
-                val n = inspirationRepository.backfillEmptyInspirationContent()
-                if (n > 0) android.util.Log.d("InspirationViewModel", "backfillEmptyInspirationContent: 回填 $n 条灵感正文")
+                val n = inspirationRepository.repairInspirationPlainText()
+                if (n > 0) android.util.Log.d("InspirationViewModel", "repairInspirationPlainText: 修复 $n 条灵感正文")
             } catch (e: Exception) {
-                android.util.Log.w("InspirationViewModel", "backfillEmptyInspirationContent 失败", e)
+                android.util.Log.w("InspirationViewModel", "repairInspirationPlainText 失败", e)
             }
         }
     }

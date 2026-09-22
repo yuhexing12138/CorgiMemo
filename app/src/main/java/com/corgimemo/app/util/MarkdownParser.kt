@@ -454,6 +454,74 @@ object MarkdownParser {
         return result.trim()
     }
 
+    /**
+     * Markdown → 纯文本（**灵感正文的标准转换入口**，v2026-09-22 新增）
+     *
+     * **为什么要有它**：BlockNote 迁到 WebView 后，灵感正文本体是 markdown
+     * （`contentFormat`），而首页摘要、搜索、字数统计都依赖纯文本字段
+     * （`Inspiration.content`）。此前这些地方各自调 [stripMarkdown]，但
+     * `stripMarkdown` **只处理 markdown 语法**，既不剥 HTML 标签、也不剥本项目
+     * 自编码的内部占位 token——于是 `<span style="color:…">`、
+     * `@@@CORGI_BC_TC_red@@@` 这类标记会原样漏进摘要（真机已复现）。
+     * 本方法把完整口径收敛到一处，避免调用方各写一份、漏一处就漏一处。
+     *
+     * **剥离规则**（去除语法与结构标记、只留可见文字）：
+     * - 图片 `![alt](path)` → 移除（图片不计入字数）
+     * - 内联媒体 / 标签 token：`#标签` / `@提及` / `🎤语音` / 旧图（`trigger:xxx`）→ 整段移除
+     * - 普通链接 `[文字](url)` → 保留「文字」
+     * - 引用符 `>`、ATX 标题 `#`、分割线 `---`（`stripMarkdown` 不处理的这几类）→ 移除
+     * - 可折叠标题的独占行标记 `<details>` / `<summary>` → 整行移除
+     * - 行内色 `<span style="…">` / `</span>` → **只删标签本体、保留标签之间的文字**
+     * - 项目内部占位 token `@@@CORGI_…@@@`（块级色、分割线等自编码）→ 整段移除
+     * - 其余行内 / 块级标记交给 [stripMarkdown]
+     *
+     * 各移除处统一用空格占位，避免相邻词被拼成一团。
+     *
+     * ⚠️ 适用范围：面向**灵感**正文（含"标签 token 不计入正文"的口径）。
+     * 待办正文若直接复用本方法，会连 `#标签` 文字一起丢掉——待办有独立口径，勿混用。
+     *
+     * @param markdown 正文 Markdown 字符串
+     * @return 去除所有标记后的纯文本（空白由调用方自行去除）
+     */
+    fun toPlainText(markdown: String): String {
+        // 空文本直接返回，避免无谓的正则开销
+        if (markdown.isBlank()) return ""
+        var text = markdown
+        // 1) 图片（不计入字数）
+        text = text.replace(Regex("""!\[[^\]]*\]\([^)]*\)"""), " ")
+        // 2) 内联媒体 / 标签 token：整段移除
+        text = text.replace(Regex("""\[#[^]]*\]\(trigger:hashtag:[^)]*\)"""), " ")
+        text = text.replace(Regex("""\[@[^]]*\]\(trigger:mention:[^)]*\)"""), " ")
+        text = text.replace(Regex("""\[[^\]]*\]\(trigger:voice:[^)]*\)"""), " ")
+        text = text.replace(Regex("""\[[^\]]*\]\(trigger:image:[^)]*\)"""), " ")
+        // 3) 普通链接 [文字](url) → 保留「文字」
+        text = text.replace(Regex("""\[([^\]]*)\]\([^)]*\)"""), "$1")
+        // 4) 引用符（stripMarkdown 不处理，单独去除）
+        text = text.replace(Regex("""(?m)^\s*>\s?"""), "")
+        // 5) 标题（覆盖 stripMarkdown 仅支持 1~4 级的限制，深标题 5~6 级也去除）
+        text = text.replace(Regex("""(?m)^\s{0,3}#{1,6}\s+"""), "")
+        // 6) 分割线 --- / *** / ___（stripMarkdown 不处理，单独去除）
+        text = text.replace(Regex("""(?m)^\s*([-*_])(\s*\1){2,}\s*$"""), " ")
+        // 7) 可折叠标题的 HTML 编码标记行（v2026-09-22 新增）：整行移除
+        //    折叠标题（heading + isToggleable）在 markdown 里没有原生语法，正文以
+        //    `<details><summary>…</summary></details>` 三段标记包裹持久化
+        //    （见 WebView 侧 converter.ts）。这三行是纯结构、不承载任何可见文字。
+        //    ⚠️ 只删**独占一行的标记**（`[^>\n]*` 限定不跨行），标题文本与子块行必须保留。
+        text = text.replace(Regex("""(?m)^[ \t]*</?(?:details|summary)[^>\n]*>[ \t]*\r?$"""), " ")
+        // 8) 行内色 span（v2026-09-22 新增）：标签本体移除、**文字保留**
+        //    行内色以原生 HTML 持久化（`<span style="color:#FF9A5C">文字</span>`），
+        //    标签不承载可见文字必须去掉，但**不能整行删**——文字就在标签之间。
+        text = text.replace(Regex("""</?span[^>\n]*>"""), "")
+        // 9) 项目内部占位 token（v2026-09-22 新增）：整段移除
+        //    块级色等自编码标记是**纯文本**形态（如 `@@@CORGI_BC_TC_red@@@`），
+        //    会留在库里的 markdown 原文中，只在 WebView 载入时被消费。
+        //    ⚠️ 用统一前缀通配，后续新增同类 token 无需再改这里。
+        text = text.replace(Regex("""@@@CORGI_[A-Za-z0-9_#]*@@@"""), " ")
+        // 10) 其余 Markdown 标记（粗斜体 / 删除线 / 列表 / 待办）
+        text = stripMarkdown(text)
+        return text
+    }
+
     // ==================== 校验与安全解析方法 ====================
 
     /**
