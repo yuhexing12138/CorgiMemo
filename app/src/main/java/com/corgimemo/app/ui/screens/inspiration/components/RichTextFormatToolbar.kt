@@ -96,6 +96,11 @@ import compose.icons.lucideicons.Type
  * v2026-09-04 按用户要求去掉激活态的浅暖橙背景块，改为按钮图标本身变色），
  * 符合项目整体 UI 设计规范（暖橙色主题 #FF9A5C）。
  *
+ * v2026-09-22 补齐 **B / I / U / S / 对齐×3** 七个按钮的选中态高亮：
+ * - 真值来自 JS 侧 `blockState` 上行（BlockNote 模式下正文在 WebView 里，
+ *   本地 [RichTextState.currentSpanStyle] 恒空，照它判断会**永远不高亮**）；
+ * - 对齐是**块级**属性 → 三个键互斥点亮，缺省按**左对齐**点亮。
+ *
  * @param state 库的 RichTextState 实例
  * @param modifier Modifier
  * @param openPanel 当前展开的内联面板（null = 全部收起）；T / Aa / H / A 四个按钮的激活态
@@ -150,9 +155,21 @@ fun RichTextFormatToolbar(
     onInsertDivider: () -> Unit = {},
     /** 复选框回调（v2026-09-07）：聚焦块在 复选框块 ↔ 普通块 间切换（可撤销） */
     onToggleCheckbox: () -> Unit = {},
-    /** 是否可增加缩进（v2026-09-05 视觉降级）：列表到顶（6 级）时置灰禁用 */
+    /**
+     * 是否可增加缩进（Nest 按钮视觉降级）
+     *
+     * v2026-09-22 变更数据源：BlockNote 模式下由 JS 侧 `ed.canNestBlock()` 经
+     * `blockState` 上行（当前块**前面还有块**才可为 true，首块 false）；
+     * 早期 Compose 时代的含义是「列表到顶（6 级）时置灰」，已不适用。
+     */
     canIncreaseIndent: Boolean = true,
-    /** 是否可减少缩进（v2026-09-05 视觉降级）：非列表行置灰禁用（减缩进无效果） */
+    /**
+     * 是否可减少缩进（Unnest 按钮视觉降级）
+     *
+     * v2026-09-22 变更数据源：由 JS 侧 `ed.canUnnestBlock()` 上行
+     * （当前块**嵌套深度 > 1** 才可为 true，顶层块 false）。
+     * ⚠️ 早期走宿主本地 `indentLevel` 判定时恒为 false → 按钮永远置灰不可点。
+     */
     canDecreaseIndent: Boolean = true,
     /**
      * BlockNote 迁移（P1）：加粗单档模式——true 时 B 按钮点击直接 toggle 加粗
@@ -224,6 +241,9 @@ fun RichTextFormatToolbar(
     /**
      * 当前光标块状态（v1.11）：驱动「块操作」菜单的可用态与选中回显
      * （色板高亮当前色、表头项显隐与勾选）。由 JS 侧经 `blockState` 上行。
+     *
+     * v2026-09-22 起另承担 **B / I / U / S 与三个对齐按钮**的选中态真值
+     * （BlockNote 模式下本地 [RichTextState] 的 spanStyle 不可信，详见各按钮处说明）。
      */
     blockState: BlockState = BlockState(),
     /**
@@ -269,6 +289,42 @@ fun RichTextFormatToolbar(
             typefaceOf = { weight -> contentEntry.typefaceForWeight(context, weight) }
         )
     }
+
+    /**
+     * B / I / U / S 四个行内样式按钮的选中态（v2026-09-22）
+     *
+     * ⚠️ 真值来源**随模式切换**，不能用单一判据：
+     * - **BlockNote 模式**（[boldSingleTier] 为真——本项目实际走的唯一路径）：
+     *   正文在 WebView 里，行内样式只存在于 ProseMirror 文档树中，必须读 JS 经
+     *   `blockState` 上行的 [BlockState.isBold] 等字段；工具栏手上这份
+     *   [RichTextState] 只是「聚焦块 / 首块」的本地镜像，其 `currentSpanStyle`
+     *   **恒为空**——沿用旧判据会让这四个按钮永远不高亮。
+     * - **Compose 模式**（[boldSingleTier] 为 false，旧路径保留）：
+     *   继续用 [RichTextState.currentSpanStyle]，行为零变化。
+     */
+    val boldActive = if (boldSingleTier) blockState.isBold else currentTier != null
+    val italicActive =
+        if (boldSingleTier) blockState.isItalic
+        else state.currentSpanStyle.fontStyle == FontStyle.Italic
+    val underlineActive =
+        if (boldSingleTier) blockState.isUnderline
+        else state.currentSpanStyle.textDecoration?.contains(TextDecoration.Underline) == true
+    val strikethroughActive =
+        if (boldSingleTier) blockState.isStrikethrough
+        else state.currentSpanStyle.textDecoration?.contains(TextDecoration.LineThrough) == true
+
+    /**
+     * 三个对齐按钮的选中态依据：光标块的对齐方式（v2026-09-22）
+     *
+     * 对齐在 BlockNote 里是**块级 prop**（与 B / I / U / S 的行内样式不同维度），
+     * 故只能整块生效、也只有一个值——三个按钮按该值**互斥点亮**。
+     *
+     * [BlockState.textAlignment] 的默认值即 "left"（BlockNote 各 block spec 的
+     * `textAlignment` 默认值同样是 "left"），因此「未显式设置对齐」与「旧产物未
+     * 下发该字段」两种情况都会落到左对齐——正是用户要求的「文字默认为左对齐高亮」。
+     * Compose 模式无对齐能力，恒按左对齐回显。
+     */
+    val textAlignment = if (boldSingleTier) blockState.textAlignment else "left"
 
     /**
      * 禁用态拦截：在 `PointerEventPass.Initial` 阶段消费全部指针事件。
@@ -359,6 +415,8 @@ fun RichTextFormatToolbar(
             if (boldSingleTier) {
                 RiFormatButton(
                     "RiBold",
+                    /** v2026-09-22：选中态由 JS 上行（[boldActive]），不再依赖本地 currentSpanStyle */
+                    isActive = boldActive,
                     onClick = { onSetFontWeight(700) },
                     contentDescription = "加粗"
                 )
@@ -392,29 +450,49 @@ fun RichTextFormatToolbar(
                     }
                 }
             }
-            /** I / U / S（浮层 BasicTextStyleButton 同款图标） */
+            /** I / U / S（浮层 BasicTextStyleButton 同款图标；选中态 v2026-09-22 改由 JS 上行） */
             RiFormatButton(
                 "RiItalic",
-                isActive = state.currentSpanStyle.fontStyle == FontStyle.Italic,
+                isActive = italicActive,
                 onClick = onToggleItalic,
                 contentDescription = "斜体"
             )
             RiFormatButton(
                 "RiUnderline",
-                isActive = state.currentSpanStyle.textDecoration?.contains(TextDecoration.Underline) == true,
+                isActive = underlineActive,
                 onClick = onToggleUnderline,
                 contentDescription = "下划线"
             )
             RiFormatButton(
                 "RiStrikethrough",
-                isActive = state.currentSpanStyle.textDecoration?.contains(TextDecoration.LineThrough) == true,
+                isActive = strikethroughActive,
                 onClick = onToggleStrikethrough,
                 contentDescription = "删除线"
             )
-            /** 对齐×3（浮层 TextAlignButton 同款 RiAlignLeft / RiAlignCenter / RiAlignRight） */
-            RiFormatButton("RiAlignLeft", onClick = onAlignLeft, contentDescription = "左对齐")
-            RiFormatButton("RiAlignCenter", onClick = onAlignCenter, contentDescription = "居中对齐")
-            RiFormatButton("RiAlignRight", onClick = onAlignRight, contentDescription = "右对齐")
+            /**
+             * 对齐×3（浮层 TextAlignButton 同款 RiAlignLeft / RiAlignCenter / RiAlignRight）
+             *
+             * v2026-09-22 补上选中态：对齐是块级属性 → 三个值互斥，按 [textAlignment] 点亮其一；
+             * 缺省即 "left"（见 [textAlignment] 的说明）→ 未设置对齐时左对齐按钮恒亮。
+             */
+            RiFormatButton(
+                "RiAlignLeft",
+                isActive = textAlignment == "left",
+                onClick = onAlignLeft,
+                contentDescription = "左对齐"
+            )
+            RiFormatButton(
+                "RiAlignCenter",
+                isActive = textAlignment == "center",
+                onClick = onAlignCenter,
+                contentDescription = "居中对齐"
+            )
+            RiFormatButton(
+                "RiAlignRight",
+                isActive = textAlignment == "right",
+                onClick = onAlignRight,
+                contentDescription = "右对齐"
+            )
             /**
              * ⚠️ v2026-09-21：原「A」颜色按钮（浮层 ColorStyleButton 同款「A」字母样式）
              * 已从本分类区移出，改到 Aa 右侧（见第一分类区的 T → Aa → A 三连）——
@@ -429,6 +507,10 @@ fun RichTextFormatToolbar(
              * 逐次点击很累。速度对齐 BlockNote 浮层按钮（450ms 后每 150ms）。
              * canRepeat 复用既有的 canIncreaseIndent / canDecreaseIndent：
              * 到顶（6 级）/ 非列表行时不仅按钮置灰，连发也会立即停止，不发无效命令。
+             *
+             * v2026-09-22：这两个判据的来源已换成 JS 侧 `ed.canNestBlock()` /
+             * `ed.canUnnestBlock()`（首块不能 Nest、顶层块不能 Unnest），
+             * 语义見同名参数的注释；连发逻辑本身不变。
              */
             RiFormatButton(
                 "RiIndentIncrease",

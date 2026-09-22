@@ -255,6 +255,14 @@ export default function EditorApp() {
    * - 标题级别 → v2026-09-21 新增 `headingLevel`：普通/可折叠标题**同为 `heading` 块**，
    *   级别都取 `props.level`（1–6），非标题块为 0；另附 `headingToggleable`（v2026-09-22）
    *   区分"是否折叠"，宿主「标题面板」据此高亮对应格子；
+   * - Nest / Unnest → v2026-09-22 新增 `canNestBlock` / `canUnnestBlock`：
+   *   直接读 `ed.canNestBlock()` / `ed.canUnnestBlock()`（官方同款口径），
+   *   宿主工具栏两个缩进按钮据此置灰；
+   * - 行内四样式 → v2026-09-22 新增 `bold` / `italic` / `underline` / `strike`：
+   *   取自本函数已有的 `getActiveStyles()` 快照（布尔型样式），供底部工具栏
+   *   B / I / U / S 四个按钮的**高亮**回显；
+   * - 对齐 → v2026-09-22 新增 `textAlignment`：读块级 prop `props.textAlignment`
+   *   （对齐是**块级**属性，不是行内样式），供三个对齐按钮的高亮回显；
    *
    * 用 JSON 串做去重键：只有选区跨块移动、或有色/表头状态真的变了才上行，
    * 同一块内移动光标不产生流量。
@@ -334,6 +342,55 @@ export default function EditorApp() {
         /** 行内文字色 / 背景色（v2026-09-22 新增；缺失 = 该维度未设置） */
         inlineTextColor,
         inlineBackgroundColor,
+        /**
+         * 四个行内布尔样式的激活态（v2026-09-22 新增）
+         *
+         * 宿主底部工具栏 B / I / U / S 四个按钮的高亮判据。这四个样式在 BlockNote
+         * 里是**布尔型**（`getActiveStyles().bold` 等），取出为 `true` / `undefined`；
+         * 此处统一归一为布尔再上行，宿主直接用，不必再判真值。
+         *
+         * ⚠️ 必须随 blockState 上行：宿主原先读的是 Compose 时代的
+         * `state.currentSpanStyle`，而 BlockNote 模式下正文只存在于 ProseMirror 文档树，
+         * 宿主那份 RichTextState 的 spanStyle 恒为空 → 四个按钮**永远不高亮**。
+         *
+         * 用 `=== true` 而非 `!!`：值可能是 undefined / false / true 三态，
+         * 显式比较既完成归一，也避免把 `0` / `""` 之类边缘值误判为激活。
+         */
+        bold: activeStyles.bold === true,
+        italic: activeStyles.italic === true,
+        underline: activeStyles.underline === true,
+        strike: activeStyles.strike === true,
+        /**
+         * 光标块的对齐方式（v2026-09-22 新增）
+         *
+         * 宿主三个对齐按钮的高亮判据。⚠️ 对齐是**块级 prop**（`props.textAlignment`），
+         * 不是行内样式——与上面四个布尔样式不同维度，故读 `props` 而非 activeStyles。
+         * 非字符串（未设置 / 异常值）时回落 "left"：各 block spec 的 `textAlignment`
+         * 默认值就是 "left"，回落值与「未设置时的真实渲染结果」一致（左对齐高亮）。
+         */
+        textAlignment:
+          typeof props.textAlignment === "string" ? props.textAlignment : "left",
+        /**
+         * Nest / Unnest（缩进 / 回退缩进）可用态（v2026-09-22 新增）
+         *
+         * 宿主底部工具栏这两个按钮的**置灰判据**。口径**照抄官方**：
+         * @blocknote/react 的 `NestBlockButton` / `UnnestBlockButton` 就是直接读
+         * `editor.canNestBlock()` / `editor.canUnnestBlock()`；自己另写一套判定
+         * 必然出现"官方能点、宿主却置灰"的不一致。
+         *
+         * 语义（见 @blocknote/core 的 `commands/nestBlock/nestBlock.ts`）：
+         * - `canNestBlock`  = 当前块**前面还有块**（可挂到前一块之下）→ **首块为 false**；
+         * - `canUnnestBlock` = 当前块**嵌套深度 > 1**（已被缩进过）→ **顶层块为 false**。
+         * 两者正是用户要的两条规则：「无法再向右缩进 → Nest 降权」、
+         * 「无法再向左回退 → Unnest 降权」。
+         *
+         * ⚠️ 必须随 blockState 一起上行：宿主此前用的是 Compose 时代遗留的
+         * `canIncreaseIndent / canDecreaseIndent`（读本地块对象的 indentLevel），
+         * 而在 BlockNote 模式下真实层级只存在于 ProseMirror 文档树里，宿主那份
+         * 数据恒为 1 → Unnest **永远置灰不可点**（v2026-09-22 修复的 bug）。
+         */
+        canNestBlock: ed.canNestBlock(),
+        canUnnestBlock: ed.canUnnestBlock(),
         canSetBlockColor: supportsTextColor || supportsBgColor,
         blockTextColor: supportsTextColor
           ? (props.textColor as string | undefined)
@@ -587,17 +644,30 @@ export default function EditorApp() {
           const value = (msg as any).value as string | undefined;
           if (!ed || !action) break;
           switch (action) {
+            /**
+             * 四个基础行内样式（B / I / U / S）
+             *
+             * ⚠️ v2026-09-22：toggled 后**必须主动刷一次 blockState**。
+             * 光标态（无文字选区）下 `toggleStyles` 只改 ProseMirror 的 **stored marks**，
+             * **不产生文档变更** → `onChange` 不触发 → 上行不刷新 → 工具栏高亮纹丝不动
+             * （表现为"点了加粗但 B 不高亮"）。主动调用一次即可覆盖该路径；
+             * 有选区时本就会触发 onChange，此时重复调用被 `lastBlockStateRef` 去重吸收。
+             */
             case "bold":
               ed.toggleStyles({ bold: true });
+              pushBlockState();
               break;
             case "italic":
               ed.toggleStyles({ italic: true });
+              pushBlockState();
               break;
             case "underline":
               ed.toggleStyles({ underline: true });
+              pushBlockState();
               break;
             case "strike":
               ed.toggleStyles({ strike: true });
+              pushBlockState();
               break;
             case "fontSize": {
               /**

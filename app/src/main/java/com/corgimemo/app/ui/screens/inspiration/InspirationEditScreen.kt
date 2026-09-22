@@ -205,6 +205,14 @@ fun InspirationEditScreen(
     var showLinkDialog by remember { mutableStateOf(false) }
     var linkDialogUrl by remember { mutableStateOf("https://") }
     /**
+     * 链接对话框的「显示文字」输入（v2026-09-22，可留空）。
+     *
+     * 语义按用户决策：**未选中文字**时必填感最强——留空则直接用 URL 原文作为显示文字；
+     * 填了则用它。选中文字时该值优先级更高（会用标题替换选中文字），
+     * 故留空是常态（选中文字本身就是标题）。
+     */
+    var linkDialogText by remember { mutableStateOf("") }
+    /**
      * 当前展开的底部内联面板（v2026-09-21 收敛为单一状态，取代原先三个 boolean）
      *
      * T / H / A 三个按钮各自展开一个面板（[EditBottomPanel]），三者**互斥且共用同一槽位**。
@@ -1559,8 +1567,22 @@ fun InspirationEditScreen(
                     }
                 },
                 isCheckboxActive = bodyBlocks.isFocusedBlockCheckbox,
-                canIncreaseIndent = bodyBlocks.canIncreaseIndent,
-                canDecreaseIndent = bodyBlocks.canDecreaseIndent,
+                /**
+                 * Nest / Unnest 的置灰判据（v2026-09-22 修复）
+                 *
+                 * ⚠️ 原取 `bodyBlocks.canIncreaseIndent / canDecreaseIndent`——那两个是
+                 * **Compose 时代**的遗留判据，读的是宿主本地块对象的 `indentLevel`
+                 * （或本地列表层级）。BlockNote 模式下：
+                 * - 正文的真实缩进只存在于 JS 侧 ProseMirror 文档树，**从不上行给宿主**；
+                 * - 宿主 [BodyBlocksController] 仅作数据层，`indentLevel` 恒为 1
+                 *   → `canDecreaseIndent` 恒 false → **Unnest 永远置灰不可点**。
+                 *
+                 * 现改为读 JS 经 `blockState` 上行的 `canNestBlock` / `canUnnestBlock`
+                 * （官方 `ed.canNestBlock()` / `ed.canUnnestBlock()` 口径），
+                 * 与真实文档结构一致：首块 Nest 降权、顶层块 Unnest 降权。
+                 */
+                canIncreaseIndent = blockNoteController.blockState.canNestBlock,
+                canDecreaseIndent = blockNoteController.blockState.canUnnestBlock,
                 onTransform = { action ->
                     /** 块类型转换：经 Bridge 下发到 JS 编辑器 */
                     blockNoteController.format("transform", action)

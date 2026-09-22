@@ -1652,7 +1652,14 @@ class BodyBlocksController(
     }
 
     /**
-     * 聚焦块当前是否可「增加缩进」（工具栏按钮置灰用，视觉降级）：
+     * 聚焦块当前是否可「增加缩进」（工具栏按钮置灰用，视觉降级）
+     *
+     * ⚠️ v2026-09-22 起**不再是工具栏 Nest 按钮的判据**：BlockNote 模式下正文的
+     * 真实缩进只存在于 JS 侧文档树，宿主的 `indentLevel` 恒为 1，据此判定会与
+     * 真机表现不符（典型症状：Unnest 永远置灰）。现由 JS 侧 `ed.canNestBlock()`
+     * 经 `blockState` 上行提供，见 InspirationEditScreen 的接线。
+     * 本属性保留供非 BlockNote（Compose）路径使用。
+     *
      * - 纯文本行（v2026-09-07）：前导全角空格级数未到 [MAX_LIST_LEVEL] 才可（封顶置灰）；
      * - 列表行：层级未到 [MAX_LIST_LEVEL] 才可（到顶后按钮置灰）。
      *

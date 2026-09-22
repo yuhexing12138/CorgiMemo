@@ -228,6 +228,32 @@ export type UpMessage =
        */
       inlineTextColor?: string;
       inlineBackgroundColor?: string;
+      /**
+       * 当前选区的四个**行内布尔样式**激活态（v2026-09-22 新增）
+       *
+       * 供宿主底部工具栏 B / I / U / S 四个按钮的高亮回显。取自同一份
+       * `getActiveStyles()` 快照的 `bold` / `italic` / `underline` / `strike`
+       * （布尔型样式，已归一为布尔——`undefined` 一律转 false，宿主不必再做真值判断）。
+       *
+       * ⚠️ 为什么必须由 JS 上行：BlockNote 模式下正文只存在于 ProseMirror 文档树里，
+       * 宿主那份 `RichTextState` 只是「聚焦块 / 首块」的本地镜像，其 `currentSpanStyle`
+       * 恒为空 → 四个按钮永远不高亮（v2026-09-22 修复的问题）。
+       */
+      bold?: boolean;
+      italic?: boolean;
+      underline?: boolean;
+      strike?: boolean;
+      /**
+       * 光标块的对齐方式（v2026-09-22 新增）
+       *
+       * 供宿主底部工具栏「左 / 居中 / 右」三个对齐按钮的高亮回显。
+       *
+       * ⚠️ 对齐在 BlockNote 里是**块级 prop**（`props.textAlignment`），
+       * **不是**行内样式——与上面四个布尔样式不在同一维度，故读的是块 props 而非
+       * `getActiveStyles()`。合法值 "left" / "center" / "right" / "justify"，
+       * 各 block spec 的默认值为 "left"，故缺省（未显式设置）即等同左对齐。
+       */
+      textAlignment?: string;
       /** 当前块是否支持块级颜色（块 spec 声明了 textColor 或 backgroundColor） */
       canSetBlockColor: boolean;
       /** 当前块的文本色（预设色名；"default" 或 undefined = 默认色） */

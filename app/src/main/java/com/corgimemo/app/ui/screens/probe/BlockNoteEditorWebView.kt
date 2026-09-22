@@ -79,6 +79,15 @@ private const val EDITOR_URL = "file:///android_asset/blocknote-web/editor/edito
  *   = `heading` 块 + `props.isToggleable = true`，级别仍看 [headingLevel]。标题面板据此在
  *   「普通标题 / 可折叠标题」两个分区之间分流——两类都有 1/2/3 级，只靠级别无法区分。
  *   普通标题与非标题块恒为 false。
+ * @param canNestBlock 当前光标块是否可**向右缩进**（Nest；v2026-09-22 新增）
+ *   JS 侧 `ed.canNestBlock()`：当前块**前面还有块**才能挂到前一块之下 → **首块为 false**。
+ *   宿主底部工具栏 Nest 按钮据此视觉降权（规则 1：无法再向右缩进时降权）。
+ * @param canUnnestBlock 当前光标块是否可**向左回退缩进**（Unnest；v2026-09-22 新增）
+ *   JS 侧 `ed.canUnnestBlock()`：当前块**嵌套深度 > 1**（已被缩进过）才可退回 →
+ *   **顶层块为 false**。宿主底部工具栏 Unnest 按钮据此视觉降权（规则 2）。
+ *   ⚠️ 修复背景：此前该判定由宿主的 `canDecreaseIndent` 承担（读本地块对象
+ *   `indentLevel`），而 BlockNote 模式下真实缩进只存在于 JS 侧文档树、从不上行
+ *   → 宿主那份恒为 1 → Unnest **永远置灰不可点**。缩进可用态只能由 JS 判定。
  * @param canSetBlockColor 是否支持块级颜色（决定「块颜色」入口是否可点）
  * @param blockTextColor 当前块文本色（预设色名；空串 = 默认色，用于色板回显）
  * @param blockBackgroundColor 当前块背景色（预设色名；空串 = 无背景色）
@@ -108,11 +117,58 @@ data class BlockState(
     val inlineTextColor: String = "",
     val inlineBackgroundColor: String = "",
     /**
+     * 当前选区的四个**行内布尔样式**激活态（v2026-09-22 新增；底部工具栏 B / I / U / S 高亮回显）
+     *
+     * 由 JS 侧 `getActiveStyles().bold/italic/underline/strike` 归一后上行（已是纯布尔）。
+     *
+     * ⚠️ 为什么必须走 JS 上行：BlockNote 接管正文后，内容只存在于 ProseMirror 文档树，
+     * 工具栏手上那份 `RichTextState` 只是「聚焦块 / 首块」的本地镜像，其
+     * `currentSpanStyle` 恒为空 —— 沿用 Compose 时代的判据会让这四个按钮**永远不高亮**。
+     */
+    val isBold: Boolean = false,
+    val isItalic: Boolean = false,
+    val isUnderline: Boolean = false,
+    val isStrikethrough: Boolean = false,
+    /**
+     * 光标块的对齐方式（v2026-09-22 新增；底部工具栏三个对齐按钮高亮回显）
+     *
+     * 对齐在 BlockNote 里是**块级 prop**（`props.textAlignment`），不是行内样式，
+     * 合法值 "left" / "center" / "right" / "justify"。
+     *
+     * ⚠️ 默认值为 **"left"**：各 block spec 的 `textAlignment` 默认值即 "left"，
+     * 未显式设置时渲染结果就是左对齐——按用户要求「文字默认为左对齐高亮」，
+     * 故缺省（旧产物未下发该字段、或 prop 未设置）时左对齐按钮点亮。
+     */
+    val textAlignment: String = "left",
+    /**
      * 当前选区字号档位（v2026-09-21 新增；H 面板「正文字号」高亮回显）：
      * JS 侧 `getActiveStyles().fontSize`（"18px" 形式）解析的整数——
      * WebView 内 1px=1dp，数值与宿主的 sp 档位直接对应；0 = 无字号样式（默认档 16）。
      */
     val fontSizeSp: Int = 0,
+    /**
+     * 是否可「向右缩进」（Nest，v2026-09-22 新增；工具栏 Nest 按钮置灰判据）
+     *
+     * 语义由 JS 侧 `ed.canNestBlock()` 给出：当前块前**还有**块时可挂到其下 →
+     * 首块为 false。
+     *
+     * ⚠️ 初值 false（未收到 JS 上报 = 状态未知 → 保守置灰），随首次 `blockState`
+     * 上行即被真值覆盖。
+     */
+    val canNestBlock: Boolean = false,
+    /**
+     * 是否可「向左回退缩进」（Unnest，v2026-09-22 新增；工具栏 Unnest 按钮置灰判据）
+     *
+     * 语义由 JS 侧 `ed.canUnnestBlock()` 给出：当前块嵌套深度 > 1 时才可退回 →
+     * 顶层块为 false。
+     *
+     * ⚠️ 修复背景（v2026-09-22）：此前该按钮的置灰判据是宿主侧
+     * `BodyBlocksController.canDecreaseIndent`（读本地块对象 `indentLevel > 1`
+     * 或列表层级 > 1）。BlockNote 模式下正文的真实缩进**只存在于 JS 侧 ProseMirror
+     * 文档树**、从不上行给宿主 → 宿主那份恒为 1 → Unnest **永远置灰不可点**。
+     * 故缩进可用态必须由 JS 判定后经 `blockState` 上行，宿主不得自行推算。
+     */
+    val canUnnestBlock: Boolean = false,
     val canSetBlockColor: Boolean = false,
     val blockTextColor: String = "",
     val blockBackgroundColor: String = "",
@@ -498,6 +554,8 @@ class BlockNoteBridgeController {
                 "blockState" -> {
                     // v1.11：当前光标块状态上行 → 驱动宿主工具栏的
                     // 删除块 / 块颜色 / 表头行 / 表头列 四个入口的可用态与回显。
+                    // v2026-09-22 追加：Nest / Unnest 两个缩进按钮的可用态
+                    // （canNestBlock / canUnnestBlock，见 BlockState 字段注释）。
                     // 一次性构造后整体赋值，避免多次赋值造成中间态（如颜色已改而可用态未改）。
                     // 注意 optString 对缺失字段返回 ""，正好与 BlockState 的默认值语义一致。
                     blockState = BlockState(
@@ -514,8 +572,32 @@ class BlockNoteBridgeController {
                          */
                         inlineTextColor = msg.optString("inlineTextColor"),
                         inlineBackgroundColor = msg.optString("inlineBackgroundColor"),
+                        /**
+                         * v2026-09-22：四个行内布尔样式（缺失时 false = 未激活——
+                         * 与「旧产物不下发这些字段」向后兼容，最坏情况只是不高亮）
+                         */
+                        isBold = msg.optBoolean("bold", false),
+                        isItalic = msg.optBoolean("italic", false),
+                        isUnderline = msg.optBoolean("underline", false),
+                        isStrikethrough = msg.optBoolean("strike", false),
+                        /**
+                         * v2026-09-22：对齐方式。
+                         *
+                         * ⚠️ 空串必须回落 "left"：老产物不下发该字段，`optString` 返回 ""，
+                         * 而 "" 不等于任何合法值 → 三个按钮会**全部不高亮**，
+                         * 与「默认左对齐」的要求相悖。归一收在边界处，下游直接比较即可。
+                         */
+                        textAlignment = msg.optString("textAlignment").takeIf { it.isNotBlank() } ?: "left",
                         /** v2026-09-21：选区字号（0 = 无样式 → 宿主回落默认档） */
                         fontSizeSp = msg.optInt("fontSizePx", 0),
+                        /**
+                         * v2026-09-22：Nest / Unnest 可用态（由 JS 侧
+                         * `ed.canNestBlock()` / `ed.canUnnestBlock()` 判定后上行）。
+                         * 缺失字段（旧产物）时按 false 处理 → 两个按钮置灰，
+                         * 属"状态未知"的保守行为；重建产物后即为真值。
+                         */
+                        canNestBlock = msg.optBoolean("canNestBlock", false),
+                        canUnnestBlock = msg.optBoolean("canUnnestBlock", false),
                         canSetBlockColor = msg.optBoolean("canSetBlockColor", false),
                         blockTextColor = msg.optString("blockTextColor"),
                         blockBackgroundColor = msg.optString("blockBackgroundColor"),

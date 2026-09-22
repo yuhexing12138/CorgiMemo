@@ -222,9 +222,15 @@ fun InspirationEditBottomBar(
     onOpenEmojiPicker: () -> Unit = {},
     /** BlockNote 模式加粗单档（点击直接 toggle，不展开 B1/B2/B3 菜单） */
     boldSingleTier: Boolean = false,
-    /** 是否可增加缩进（v2026-09-05 视觉降级）：列表到顶时置灰，透传给 [RichTextFormatToolbar] */
+    /**
+     * 是否可增加缩进（Nest 按钮视觉降级）：透传给 [RichTextFormatToolbar]。
+     * v2026-09-22 起由 JS 侧 `ed.canNestBlock()` 提供（首块为 false）。
+     */
     canIncreaseIndent: Boolean = true,
-    /** 是否可减少缩进（v2026-09-05 视觉降级）：非列表行置灰，透传给 [RichTextFormatToolbar] */
+    /**
+     * 是否可减少缩进（Unnest 按钮视觉降级）：透传给 [RichTextFormatToolbar]。
+     * v2026-09-22 起由 JS 侧 `ed.canUnnestBlock()` 提供（顶层块为 false）。
+     */
     canDecreaseIndent: Boolean = true,
     /** 聚焦块是否为复选框块（v2026-09-07）：复选框按钮激活态，透传给 [RichTextFormatToolbar] */
     isCheckboxActive: Boolean = false,
