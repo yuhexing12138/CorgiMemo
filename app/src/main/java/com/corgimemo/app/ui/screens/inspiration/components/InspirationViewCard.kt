@@ -2,6 +2,7 @@
 package com.corgimemo.app.ui.screens.inspiration.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.background
@@ -32,6 +33,8 @@ import com.mohamedrejeb.richeditor.model.rememberRichTextState
 import com.mohamedrejeb.richeditor.ui.material3.RichText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +56,7 @@ import com.corgimemo.app.data.model.Inspiration
 import com.corgimemo.app.util.MarkdownParser
 import com.corgimemo.app.ui.components.LinkedCardsRow
 import com.corgimemo.app.ui.screens.inspiration.InspirationTextUtils
+import com.corgimemo.app.ui.theme.ThemeManager
 import com.corgimemo.app.ui.theme.UiColors
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -397,6 +401,12 @@ fun InspirationViewCard(
  * `<details>` / `<summary>` 标记行整行剥掉，标题行照常按 `### 文本` 渲染（库支持 ATX 标题），
  * 详情页**不做**折叠交互。
  *
+ * **v2026-09-22 追加：解析并应用段落（块级）文字色 / 背景色**。块级色是块 props，
+ * 官方 markdown 导出不写元素属性，颜色**只能**靠段首 token（`@@@CORGI_BC_TC_red@@@`）承载；
+ * 此前把 token 当结构标记一并剥掉 → 颜色信息被丢弃 → **段落文字色/背景色在详情页完全不显示**。
+ * 现改为逐段 `extractBlockColorMarkers` 解析后映射成 Compose 颜色，落到
+ * [InspirationBodyParagraph] 的 `textColor` / `backgroundColor` 上。
+ *
  * @param contentFormat 富文本 Markdown（由编辑页 `RichTextState.toMarkdown()` 导出）。
  * @param fallbackContent 旧记录 `contentFormat` 为空时的纯文本回退（按改造前的纯 Text
  *   渲染，不喂给 markdown 解析，避免旧文本里的 `*` 等字符被误当语法）。
@@ -462,6 +472,49 @@ private fun InspirationBodyRichText(
     }
 
     /**
+     * 当前主题是否暗色（v2026-09-22 新增）
+     *
+     * 与 [ColorStylePanel] **同款自洽订阅**（宿主无需再引 ThemeManager）：
+     * 块级色取值有明暗两套，必须与编辑页/A 面板用同一套，否则同一色名会显示成两种颜色。
+     */
+    val themeMode by ThemeManager.themeMode.collectAsState()
+    val isDark = when (themeMode) {
+        "dark" -> true
+        "light" -> false
+        else -> isSystemInDarkTheme()
+    }
+
+    /**
+     * 逐段的**块级色**（v2026-09-22 新增）：与 [paragraphs] 索引一一对应
+     *
+     * **为什么必须"解析"而不是像其它标记那样剥掉**：块级色是块 props，官方 markdown 导出
+     * 只把它写成块元素的 `data-text-color` / `data-background-color` 属性，而 markdown 的块
+     * 序列化器**不读元素属性**——颜色信息只能靠 converter.ts 写入的段首 token
+     * （`@@@CORGI_BC_TC_red@@@` / `@@@CORGI_BC_BG_blue@@@`）承载。
+     * WebView 编辑器载入时会消费这些 token 写回 props；而本组件（Compose 只读渲染）不走
+     * 那条路——此前把 token 当"结构标记"一并剥掉，于是**段落文字色/背景色在详情页完全不显示**
+     * （颜色信息随标记被丢弃）。
+     */
+    val paragraphColors = remember(paragraphs) {
+        paragraphs.map { MarkdownParser.extractBlockColorMarkers(it).first }
+    }
+
+    /**
+     * 色名 → 实际颜色（本段块级色用）
+     *
+     * 色名不在官方色板内（或未设置）时返回 null = 不覆盖：**不能**回落成 Transparent，
+     * 否则会把文字染成全透明（读起来就是"文字消失了"）。
+     */
+    fun blockColorOf(name: String?, background: Boolean): Color? {
+        if (name == null || name !in BlockColorPalette.names) return null
+        return if (background) {
+            BlockColorPalette.background(name, isDark)
+        } else {
+            BlockColorPalette.text(name, isDark)
+        }
+    }
+
+    /**
      * 应跳过渲染的"图片间空白段"索引集合（v2026-09-09）：
      * 编辑页保证任意两图之间都有一个空 Text 块（markdown 载体为 NBSP 占位段，
      * 见 BodyBlocksEditor 的 EMPTY_BLOCK_PLACEHOLDER），阅读态不需要这行空白——
@@ -507,6 +560,11 @@ private fun InspirationBodyRichText(
             /** 图片间载体空行：阅读态不渲染（v2026-09-09，集合计算见 skipRenderIndexes） */
             if (pIdx in skipRenderIndexes) return@forEachIndexed
             val para = rawPara.trim('\n')
+
+            /** 本段的块级色（v2026-09-22）：取自段首 token，映射见 [paragraphColors] */
+            val blockColors = paragraphColors.getOrNull(pIdx)
+            val blockTextColor = blockColorOf(blockColors?.textColor, background = false)
+            val blockBgColor = blockColorOf(blockColors?.backgroundColor, background = true)
             when {
                 /** 空段（含图片边界空段）：不渲染（与原过滤管线一致） */
                 para.isEmpty() -> Unit
@@ -568,6 +626,9 @@ private fun InspirationBodyRichText(
                         InspirationBodyParagraph(
                             markdown = normalizeTaskListMd(para),
                             fontFamily = fontFamily,
+                            /** 块级色（v2026-09-22）：任务列表段同样支持段落文字色/背景色 */
+                            textColor = blockTextColor,
+                            backgroundColor = blockBgColor,
                             onTaskListToggle = if (onCheckboxToggle != null) {
                                 { newPara ->
                                     val newParas = paragraphs.toMutableList()
@@ -600,6 +661,9 @@ private fun InspirationBodyRichText(
                         InspirationBodyParagraph(
                             markdown = content,
                             fontFamily = fontFamily,
+                            /** 块级色（v2026-09-22）：段落文字色 / 背景色在详情页的落点 */
+                            textColor = blockTextColor,
+                            backgroundColor = blockBgColor,
                             modifier = Modifier.padding(
                                 start = with(density) {
                                     ((indentLevel - 1) * LIST_LEVEL_INDENT_SP).sp.toDp()
@@ -653,6 +717,21 @@ private fun InspirationBodyParagraph(
     fontFamily: FontFamily,
     modifier: Modifier = Modifier,
     dimmed: Boolean = false,
+    /**
+     * 段落（块级）文字色（v2026-09-22 新增）
+     *
+     * 来源是段首 token 解析出的色名（见 [InspirationBodyRichText] 的 `paragraphColors`）。
+     * null = 用基础色。⚠️ 它只改**基色**，行内 `<span style="color:…">` 仍优先（与编辑页一致）；
+     * 与 [dimmed]（任务列表勾选态降级）同时存在时**以本项为准**（用户显式设色优先）。
+     */
+    textColor: Color? = null,
+    /**
+     * 段落（块级）背景色（v2026-09-22 新增）
+     *
+     * 绘制在本段文字之后；null = 无背景。编辑页里块背景铺满整块宽度，
+     * 这里受 Compose 文本布局所限，覆盖的是本段的绘制区域（视觉上紧贴文字行块）。
+     */
+    backgroundColor: Color? = null,
     onTaskListToggle: ((newMarkdown: String) -> Unit)? = null,
 ) {
     val richTextState = rememberRichTextState()
@@ -705,6 +784,16 @@ private fun InspirationBodyParagraph(
         state = richTextState,
         modifier = modifier
             /**
+             * 段落背景色（v2026-09-22）：画在本段文字之后；无背景时不加这一层（保持既有层级）
+             */
+            .then(
+                if (backgroundColor != null) {
+                    Modifier.background(backgroundColor)
+                } else {
+                    Modifier
+                }
+            )
+            /**
              * 任务列表勾选框点击（v2026-09-15）：勾选框由库绘制在段落 marker 左侧的
              * TextIndent 预留区里，那段空白会让 `getOffsetForPosition` clamp 到段落起点，
              * 因此把指针坐标交给库判定；**命中才消费**，未命中时不影响长按选择等手势。
@@ -730,7 +819,12 @@ private fun InspirationBodyParagraph(
         // 已设 fontSize/color 的字符以 span 内联值为准（覆盖基础样式）。
         fontFamily = fontFamily,
         fontSize = 15.sp,
-        color = if (dimmed) Color(0xFF666666).copy(alpha = 0.45f) else Color(0xFF666666),
+        /**
+         * 基础文字色：**块级色（v2026-09-22）> 任务勾选态降级 > 默认 #666666**。
+         * 已设行内 color span 的字符仍以 span 内联值为准（覆盖基础样式）。
+         */
+        color = textColor
+            ?: if (dimmed) Color(0xFF666666).copy(alpha = 0.45f) else Color(0xFF666666),
         lineHeight = 22.sp,
         letterSpacing = 0.5.sp,
     )

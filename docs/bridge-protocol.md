@@ -329,13 +329,21 @@ adb logcat -s BlockNoteEditor:V | grep "ready received"
   | # | 消费方 | 处理方式 |
   |---|---|---|
   | 1 | **WebView 编辑器**（`assets/blocknote-web/editor`） | `converter.ts` 负责编码与**解码**：`@@@CORGI_…@@@` 在载入时被消费（块级色写回 props、折叠标题还原为块），token 不进文档 |
-  | 2 | **Compose 详情卡正文**（`InspirationViewCard` → 只读 `RichText`） | 逐段 `MarkdownParser.stripStructuralMarkers()`（剥 token 与 `<details>` 标记行，**保留 `style` span**——span 是排版来源；折叠标题在详情页显示为普通标题）；勾选回写时用 `leadingInternalTokens()` 把段首 token 补回，避免动数据 |
-  | 3 | **纯文本抽取**（列表摘要 / 字数 / 搜索 / 分享） | `MarkdownParser.toPlainText()`（在结构标记之上再剥 HTML 标签与 markdown 语法） |
+  | 2 | **Compose 详情卡正文**（`InspirationViewCard` → 只读 `RichText`） | 逐段 `MarkdownParser.extractBlockColorMarkers()` **解析并消费**块级色 token（映射成 Compose 色 → 段的 `textColor` / `backgroundColor`），再 `stripStructuralMarkers()` 剥掉 `<details>` 标记行；**保留 `style` span**（排版来源）。勾选回写时用 `leadingInternalTokens()` 把段首 token 补回，避免动数据 |
+  | 3 | **纯文本抽取**（列表摘要 / 字数 / 搜索 / 分享） | `MarkdownParser.toPlainText()`（剥 markdown 语法 + HTML 标签 + 内部 token + 折叠标记行） |
 
-  ⚠️ 第 2 与第 3 的差别是**是否保留渲染型 HTML**：详情卡要留 `<span style>`（排版来源），
-  纯文本则连标签一起清（但行内色 span 只清标签、保留其间文字）。
-  **结构标记的剥离必须同源**（两处都走 `MarkdownParser.stripStructuralMarkers`），
-  否则新增一种标记时又会漏一处。
+  ⚠️ 第 2 与第 3 的差别：**块级色 token 在第 2 处是"载荷"（要被解析）、在第 3 处是"噪声"（要被丢弃）**；
+  行内 `<span style>` 在第 2 处必须保留（排版来源）、在第 3 处要剥标签留文字。
+  其余结构标记的剥离同源（都走 `MarkdownParser.stripStructuralMarkers`）。
+
+  **块级色为什么必须靠 token 过桥**：块级色是块 props，官方 markdown 导出只把它写成块元素的
+  `data-text-color` / `data-background-color` 属性，而 markdown 的块序列化器**不读元素属性**
+  —— 属性在导出瞬间即丢失，token 是唯一载体。故**任何"读 markdown 展示"的新出口，
+  都必须解析这两个 token**，只剥不解析就等于丢色（详情页曾经如此：段落文字色/背景色完全不显示）。
+
+  **色名 → 颜色的映射**：`BlockColorPalette`（宿主硬编码，明暗两套，与 `defaultColors.ts` 逐条对应）。
+  ⚠️ 必须传入**当前主题**的 `isDark`，且未知色名要返回 null（不覆盖）而不是 `Color.Transparent`
+  —— 否则会把文字染成全透明（表现为"文字消失"）。
 
 - v2026-09-22（同上）：**`blockState` 新增可选字段 `inlineTextColor` / `inlineBackgroundColor`**
   （A 面板两个「选中色」行的选中回显）。

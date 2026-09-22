@@ -585,6 +585,60 @@ object MarkdownParser {
         return tokens.toString()
     }
 
+    /**
+     * 段首**块级色**标记的解析结果（v2026-09-22 新增）
+     *
+     * 取值为 BlockNote 预设**色名**（A 面板「段落文字色 / 段落背景色」下行传的就是色名，
+     * 见 `BlockColorPicker`），交由宿主色板映射成实际颜色。
+     *
+     * @param textColor 段落文字色名；null = 该维度未设置
+     * @param backgroundColor 段落背景色名；null = 该维度未设置
+     */
+    data class BlockColorMarkers(
+        val textColor: String? = null,
+        val backgroundColor: String? = null,
+    )
+
+    /**
+     * 段首块级色 token 的逐个匹配：`@@@CORGI_BC_TC_<色名>@@@` / `@@@CORGI_BC_BG_<色名>@@@`
+     *
+     * 值字符集与写入侧一致（`[0-9A-Za-z#]+`），`@` 不在集内故不会吞掉结尾的 `@@@`。
+     */
+    private val BLOCK_COLOR_TOKEN_REGEX = Regex("""@@@CORGI_BC_(TC|BG)_([0-9A-Za-z#]+)@@@""")
+
+    /**
+     * 解析并剥离段首的**块级色**标记
+     *
+     * **为什么需要**：块级色是块的 props，官方 markdown 导出会把它写成块元素上的
+     * `data-text-color` / `data-background-color` 属性，而 markdown 的块序列化器**不读元素属性**
+     * —— 于是它只能靠 converter.ts 写入的段首 token 承载。
+     * WebView 编辑器载入时会消费这些 token 写回 props，而 **Compose 详情页**不走那条路，
+     * 需要自己解析：不解析就会把颜色信息连同 token 一起丢掉（表现为"段落文字色/背景色在
+     * 详情页不显示"）；只剥不解析更是必丢。
+     *
+     * @param markdown 段落 markdown（整篇亦可，但语义上是"段首"）
+     * @return Pair(解析出的色值, 剥离 token 后的 markdown)；无 token 时色值为 null
+     */
+    fun extractBlockColorMarkers(markdown: String): Pair<BlockColorMarkers?, String> {
+        if (markdown.isEmpty()) return null to markdown
+        var rest = markdown
+        var textColor: String? = null
+        var backgroundColor: String? = null
+        while (true) {
+            val matched = BLOCK_COLOR_TOKEN_REGEX.find(rest, 0)
+            if (matched == null || matched.range.first != 0) break
+            if (matched.groupValues[1] == "TC") textColor = matched.groupValues[2]
+            else backgroundColor = matched.groupValues[2]
+            rest = rest.substring(matched.range.last + 1)
+        }
+        val markers = if (textColor == null && backgroundColor == null) {
+            null
+        } else {
+            BlockColorMarkers(textColor = textColor, backgroundColor = backgroundColor)
+        }
+        return markers to rest
+    }
+
     // ==================== 校验与安全解析方法 ====================
 
     /**
