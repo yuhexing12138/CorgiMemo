@@ -80,9 +80,12 @@ private const val EMPTY_BLOCK_PLACEHOLDER = "\u00A0"
  */
 internal const val LIST_LEVEL_INDENT_SP = 30
 
-/** 列表层级上限：一级贴左缘（0 缩进）+ 最多 5 次连续「增加缩进」（第 2~6 级），
- *  每级 [LIST_LEVEL_INDENT_SP]（30sp ≈ 两字符）逐级累加；到顶后再点无效。 */
-private const val MAX_LIST_LEVEL = 6
+/**
+ * ⚠️ v2026-09-22 删除 `private const val MAX_LIST_LEVEL = 6`：它是 Compose 时代
+ * 「增加/减少缩进」（[BodyBlock.Text.indentLevel] 档位）的封顶常量，随该能力
+ * （`indentFocusedBlock` 与 `canIncreaseIndent` / `canDecreaseIndent`）一并移除——
+ * BlockNote 模式下缩进由 JS 侧文档树承载、无层级上限，宿主任何本地封顶都是错的。
+ */
 
 /**
  * 纯文本整段缩进（v2026-09-07 第二版，取代首版 EM 文本前缀方案）：
@@ -290,7 +293,7 @@ sealed class BodyBlock {
         val state: RichTextState,
         val focusRequester: FocusRequester = FocusRequester(),
         /**
-         * 缩进档位（v2026-09-08 新增，1 = 无缩进，上限 [MAX_LIST_LEVEL]）。
+         * 缩进档位（v2026-09-08 新增，1 = 无缩进，上限 6 级）。
          *
          * **为什么不走库的段落缩进（TextIndent）**：真机实测库对纯文本段的
          * TextIndent 渲染量与理论公式不符（约为公式 2 倍），故**普通段落**缩进改用
@@ -1566,150 +1569,6 @@ class BodyBlocksController(
         }
         return (blocks.firstOrNull { it is BodyBlock.Text } as BodyBlock.Text).state
     }
-
-    /**
-     * 工具栏「增加/减少缩进」（v2026-09-05）：对聚焦块做列表层级缩进。
-     *
-     * 层级变更**直接走库 API**（[RichTextState.setListMarker] / add/removeXxxList，
-     * 均为 recordHistory Structural——块内 history 可撤销；updateParagraphType 自动换
-     * marker 文本/缩进样式并校正光标），**不经 markdown 前缀往返**：独立块的 ≥4 空格
-     * 前缀会被 CommonMark 解析成缩进代码块导致层级丢失（真机表现：连续缩进在
-     * "i."/"1." 间循环、「3.测试3」被错误改写为「1.测试3」）。
-     *
-     * 规则：
-     * - 列表行：加缩进 = 层级 +1（[MAX_LIST_LEVEL] 封顶 = 一级贴左缘 + 最多 5 次缩进，
-     *   每级 [LIST_LEVEL_INDENT_SP] ≈ 两字符；到顶后点击无效果）；减缩进 = 层级 -1，
-     *   一级 = 「未缩进」底线，再减无效果（不退出列表）——列表归属由有序/无序按钮管理，
-     *   缩进按钮只调层级（按有序按钮产生的一级 1./2. 不会被减少缩进退掉）。
-     * - 普通文本行 / 复选框块（v2026-09-08 统一为 App 布局级缩进）：就地换块对象的
-     *   [BodyBlock.Text.indentLevel]（[SetBlockIndentCommand]，不进库排版）；渲染由
-     *   App 侧 start padding 承载（每级 [LIST_LEVEL_INDENT_SP]），跨段左缘精确同列；
-     *   层级封顶 [MAX_LIST_LEVEL]（与列表一致）。
-     *
-     * 变更后调 [renumberOrderedBlocks]（层级感知位置语义）收敛编号；重编号对其他块的
-     * 改写会使 markdown 变化 → observer 自动清全局 redo 栈（与本操作是真实编辑一致）。
-     * 撤销：块内 history 撤销后由 [undo] 尾部的重编号收敛回位置语义。
-     */
-    fun indentFocusedBlock(delta: Int) {
-        /** 解析焦点 Text 块（与 [focusedOrFirstTextState] 同源：聚焦优先，回退首块） */
-        val block = focusedBlockId?.let { id -> blocks.firstOrNull { it.id == id } }
-            ?.let { it as? BodyBlock.Text }
-            ?: (blocks.firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text)
-            ?: return
-
-        /**
-         * **复选框块（v2026-09-08 扩展到组合态）：App 布局级缩进**——不调库
-         * setParagraphIndent / setListMarker（其 TextIndent 渲染量与 Row 外复选框
-         * 图标无法对齐，真机实测约 2 倍），改就地换块对象的
-         * [BodyBlock.Text.indentLevel]（[SetBlockIndentCommand]，state / 块内 history /
-         * 光标无损）；渲染由 App 侧 start padding 承载，跨段左缘精确同列。
-         *
-         * **组合态（复选框 + 列表段落）迁移**：复选框块上叠加列表（isList=true）时，
-         * 库列表自身的 TextIndent 会与 App padding 双源叠加——缩进操作时把库层级
-         * 归 1（marker 变一级形态，commitHistory=false 不产生块内撤销步），缩进量
-         * 由 App 档位全权承载。加载侧在 [createTextBlock] 做同样归位。
-         *
-         * v2026-09-15：块级 `checked` 已移除，条件改用库的段落类型判定。
-         */
-        if (block.state.isTaskList) {
-            if (block.state.isList && listLevelOfMd(blockMarkdown(block.state)) > 1) {
-                block.state.setListMarker(
-                    level = 1,
-                    number = orderedNumberOfMd(blockMarkdown(block.state)) ?: 1,
-                    commitHistory = false,
-                )
-            }
-            val newLevel = (block.indentLevel + delta).coerceIn(1, MAX_LIST_LEVEL)
-            if (newLevel != block.indentLevel) {
-                executeAndPush(SetBlockIndentCommand(block.id, block.indentLevel, newLevel))
-            }
-            return
-        }
-
-        val state = block.state
-        val md = blockMarkdown(state)
-
-        val level = listLevelOfMd(md)
-        val newLevel = level + delta
-        if (delta > 0 && newLevel > MAX_LIST_LEVEL) return
-        /** 一级 = 「未缩进」底线（用户 18:05 修正）：再减无效果、**不退出列表**——
-         *  列表归属由有序/无序按钮管理，按有序按钮产生的一级 1./2. 不会被减少缩进退掉 */
-        if (newLevel < 1) return
-        /**
-         * 空列表项（如回车产生的 "2. ␣"）同样正确缩进（用户 17:39 明确）：
-         * 层级变化会同时改变 marker 形态（2. → (2) → ① …）与段落缩进，视觉效果明确，
-         * 不可忽略。ZWSP 退格锚点在 raw 内容里，setListMarker 只换段落类型不碰内容，
-         * 锚点保持有效。
-         *
-         * **无序列表例外（v2026-09-08）**：库默认符号表已改为单元素 `•`，层级变化
-         * 只改段落缩进、marker 恒为黑色圆点（用户明确要求「缩进不换标识」）。
-         */
-        state.setListMarker(
-            level = newLevel,
-            number = orderedNumberOfMd(md) ?: 1,
-        )
-        renumberOrderedBlocks()
-    }
-
-    /**
-     * 聚焦块当前是否可「增加缩进」（工具栏按钮置灰用，视觉降级）
-     *
-     * ⚠️ v2026-09-22 起**不再是工具栏 Nest 按钮的判据**：BlockNote 模式下正文的
-     * 真实缩进只存在于 JS 侧文档树，宿主的 `indentLevel` 恒为 1，据此判定会与
-     * 真机表现不符（典型症状：Unnest 永远置灰）。现由 JS 侧 `ed.canNestBlock()`
-     * 经 `blockState` 上行提供，见 InspirationEditScreen 的接线。
-     * 本属性保留供非 BlockNote（Compose）路径使用。
-     *
-     * - 纯文本行（v2026-09-07）：前导全角空格级数未到 [MAX_LIST_LEVEL] 才可（封顶置灰）；
-     * - 列表行：层级未到 [MAX_LIST_LEVEL] 才可（到顶后按钮置灰）。
-     *
-     * 快照响应式：`focusedBlockId` / `annotatedString` / `toMarkdown()`（读段落树）均为
-     * 快照读取，组合中注册依赖后可在焦点切换、内容/层级变化时自动触发重组刷新。
-     * **必须显式读 [RichTextState.annotatedString]**：段落 `type` 是普通 var（非快照状态），
-     * setListMarker 换层级只写 annotatedString/textFieldValue——不读它，到顶置灰不会刷新
-     * （真机表现：缩进按钮到顶不置灰而减少按钮正常）。
-     */
-    val canIncreaseIndent: Boolean
-        get() {
-            val block = focusedBlockId?.let { id -> blocks.firstOrNull { it.id == id } }
-                as? BodyBlock.Text
-                ?: (blocks.firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text)
-                ?: return false
-            /** 复选框块（**含列表组合态**，v2026-09-08）与非列表块：缩进走 App 布局级
-             *  档位（读块对象 indentLevel；组合块的库层级已归 1，不能读它——
-             *  否则增加键永不置灰、减少键恒灰）。就地换块对象 = blocks 结构性写入，
-             *  读它会随缩进重组刷新 */
-            if (!block.state.isList) {
-                return block.indentLevel < MAX_LIST_LEVEL
-            }
-            /** 纯列表块：setListMarker 只写 annotatedString（段落 type 非快照），
-             *  必须显式读它，到顶置灰才会刷新（v2026-09-07 同款坑） */
-            block.state.annotatedString
-            return listLevelOfMd(blockMarkdown(block.state)) < MAX_LIST_LEVEL
-        }
-
-    /**
-     * 聚焦块当前是否可「减少缩进」（工具栏按钮置灰用，视觉降级）：
-     * - 纯文本行（v2026-09-07）：有前导全角空格即可减，否则置灰；
-     * - 列表行：仅**层级 ≥ 2** 可减（一级 = 「未缩进」底线，再减无效果、不退出列表——
-     *   列表归属由有序/无序按钮管理）。
-     * 依赖注册同 [canIncreaseIndent]（显式读 annotatedString）。
-     */
-    val canDecreaseIndent: Boolean
-        get() {
-            val block = focusedBlockId?.let { id -> blocks.firstOrNull { it.id == id } }
-                as? BodyBlock.Text
-                ?: (blocks.firstOrNull { it is BodyBlock.Text } as? BodyBlock.Text)
-                ?: return false
-            /** 复选框块（**含列表组合态**，v2026-09-08）与非列表块：缩进走 App 布局级
-             *  档位（读块对象 indentLevel；组合块的库层级已归 1，不能读它） */
-            if (!block.state.isList) {
-                return block.indentLevel > 1
-            }
-            /** 纯列表块：同上，显式读 annotatedString 保证刷新 */
-            block.state.annotatedString
-            return listLevelOfMd(blockMarkdown(block.state)) > 1
-        }
 
     /**
      * 聚焦块当前是否为复选框块（v2026-09-07，工具栏复选框按钮激活态高亮用）。
