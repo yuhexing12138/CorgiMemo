@@ -231,7 +231,24 @@ export type DownMessage =
    * @param from 快照选区的位置（可选，来自 `selectionRange`）。传了就按它定位，
    *             免去"依赖当前选区恰好还在链接上"的隐患；缺省则按当前选区锚点。
    */
-  | { type: "deleteLink"; from?: number };
+  | { type: "deleteLink"; from?: number }
+  /**
+   * 打开 / 关闭「链接面板」（v2026-09-24 新增）
+   *
+   * 底部工具栏 🔗 按钮不再走宿主自绘的 `AlertDialog`，改为复用官方
+   * `CreateLinkButton` 那套**受控** popover——面板内容直接用官方
+   * `EditLinkMenuItems`（URL 输入框 + 显示文字输入框），外观、`https://` 补全
+   * 校验、提交行为与 WebView 内官方按钮**逐字一致**。
+   *
+   * 为什么必须由宿主主动开关：面板渲染在 WebView 内部的 React 树上，宿主（Compose）
+   * 碰不到它。官方 `CreateLinkButton` 恰好把 popover 写成受控
+   * （`open={showPopover}`），本命令就是接到那个开关上。
+   *
+   * 另有一条反向的上行 {@link UpMessage} `linkPanelClosed`：用户点面板外部关掉时
+   * 宿主无从得知，需 JS 主动通报，否则宿主会以为面板还开着。
+   */
+  | { type: "openLinkPanel" }
+  | { type: "closeLinkPanel" };
 
 /** 上行消息（JS → Kotlin） */
 export type UpMessage =
@@ -433,7 +450,20 @@ export type UpMessage =
    *
    * @param url 完整 URL（JS 侧已过滤 `javascript:` 等伪协议与解析失败的相对路径）
    */
-  | { type: "openLink"; url: string };
+  | { type: "openLink"; url: string }
+  /**
+   * 链接面板已关闭（v2026-09-24 新增）：对 `openLinkPanel` 的**反向通报**
+   *
+   * 面板有两条关闭路径，而宿主只用显式命令控制其中一条：
+   * ① **用户提交表单**（Enter / 提交按钮）→ 面板自己关，宿主按约定也会收到一次
+   *    `closeLinkPanel` 收尾（幂等，重复关不报错）；
+   * ② **用户点面板外部 / 按 Esc** → 由官方 popover 的 dismiss 行为关闭，
+   *    宿主**完全无从得知**。没有这条上行，宿主会一直以为面板还开着，
+   *    进而影响「面板收起后是否把软键盘弹回来」的判定。
+   *
+   * 故 JS 在 `onOpenChange(false)` 时无条件上行一次，宿主据此把本地状态对齐。
+   */
+  | { type: "linkPanelClosed" };
 
 declare global {
   interface Window {

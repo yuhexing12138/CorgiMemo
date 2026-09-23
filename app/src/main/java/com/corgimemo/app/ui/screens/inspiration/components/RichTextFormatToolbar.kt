@@ -125,6 +125,7 @@ import compose.icons.lucideicons.Type
  * @param onAlignCenter 居中回调
  * @param onAlignRight 右对齐回调
  * @param onInsertLink 插入链接回调
+ * @param isLinkPanelActive 链接面板是否打开（链接按钮高亮条件之一；与 linkUrl 语义取或）
  * @param onToggleCodeSpan 代码块回调
  */
 @Composable
@@ -213,6 +214,14 @@ fun RichTextFormatToolbar(
     onAlignCenter: () -> Unit = {},
     onAlignRight: () -> Unit = {},
     onInsertLink: () -> Unit = {},
+    /**
+     * 链接面板是否打开（v2026-09-24 新增）：链接按钮高亮条件之一。
+     * 真值来自 [BlockNoteBridgeController.linkPanelOpen]（JS 上行 `linkPanelClosed`
+     * 复位点外关闭/提交关闭），与「光标在链接上」（[blockState] 的 linkUrl）
+     * 两种亮起语义并存——面板打开时光标未必在链接上（新建链接场景），
+     * 仅靠 linkUrl 判定会让按钮在面板打开期间不亮。
+     */
+    isLinkPanelActive: Boolean = false,
     onToggleCodeSpan: () -> Unit = {},
     /**
      * 块类型转换/插入（BlockNote 迁移 P1-S10 补充）：
@@ -575,10 +584,15 @@ fun RichTextFormatToolbar(
              * BlockNote 接管正文后 link mark 只存在于 ProseMirror 文档树，
              * 该镜像恒为 false → 光标落在链接上时按钮**永远不高亮**。
              * （同一根因已先后修过 B/I/U/S、对齐、Nest/Unnest，这是最后一处漏网的。）
+             *
+             * 激活态第二语义（v2026-09-24 新增）：**链接面板打开期间保持高亮**
+             * （[isLinkPanelActive]，真值 = 宿主 linkPanelOpen）——面板可能因
+             * 新建链接（光标不在链接上，linkUrl 为空）而打开，仅靠 linkUrl
+             * 会让按钮此时不亮；再点按钮即关闭面板（toggle，见 onInsertLink）。
              */
             RiFormatButton(
                 "RiLink",
-                isActive = blockState.linkUrl.isNotEmpty(),
+                isActive = blockState.linkUrl.isNotEmpty() || isLinkPanelActive,
                 onClick = onInsertLink,
                 contentDescription = "插入链接"
             )

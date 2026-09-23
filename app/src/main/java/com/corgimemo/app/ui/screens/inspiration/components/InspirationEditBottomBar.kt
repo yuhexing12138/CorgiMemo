@@ -137,6 +137,7 @@ enum class EditBottomPanel { FONT, COLOR, HEADING }
  * @param onAlignCenter 居中回调
  * @param onAlignRight 右对齐回调
  * @param onInsertLink 插入链接回调
+ * @param isLinkPanelActive 链接面板是否打开（链接按钮高亮条件之一，透传格式工具栏）
  * @param onToggleCodeSpan 代码块回调
  * @param modifier Modifier
  * @param backgroundColor 工具栏背景色
@@ -251,6 +252,12 @@ fun InspirationEditBottomBar(
     onAlignCenter: () -> Unit = {},
     onAlignRight: () -> Unit = {},
     onInsertLink: () -> Unit = {},
+    /**
+     * 链接面板是否打开（v2026-09-24 新增）：链接按钮高亮用。
+     * 真值来自 [BlockNoteBridgeController.linkPanelOpen]，透传给
+     * [RichTextFormatToolbar] 与「光标在链接上」语义取或。
+     */
+    isLinkPanelActive: Boolean = false,
     onToggleCodeSpan: () -> Unit = {},
     /**
      * 删除当前块（v1.11）：原 BlockNote 侧边菜单（⋮⋮ 手柄）点击菜单的「删除」项，
@@ -344,6 +351,7 @@ fun InspirationEditBottomBar(
                     onAlignCenter = onAlignCenter,
                     onAlignRight = onAlignRight,
                     onInsertLink = onInsertLink,
+                    isLinkPanelActive = isLinkPanelActive,
                     onToggleCodeSpan = onToggleCodeSpan,
                     onDeleteBlock = onDeleteBlock,
                     onSetTableHeader = onSetTableHeader,

@@ -2631,6 +2631,38 @@ function LinkEditPanel(props: {
   });
 
   /**
+   * 「只填 URL、显示文字留空」→ 直接以 URL 作为显示文字插入（v2026-09-24 新增）。
+   *
+   * **官方为什么插不进去**：`EditLinkMenuItems` 的「完成」→ extension.editLink →
+   * `StyleManager.editLink`（core `StyleManager.ts:219-239`）。光标无选区
+   * （新建链接，from=to）且 `text=""` 时：
+   * - `existingText = textBetween(from, to) = ""`，
+   *   `text !== existingText` 为 **false** → `insertText` 被跳过（不插文字）；
+   * - `tr.addMark(from, from + 0, mark)` —— **0 长度区间加 mark 等于什么都没做**。
+   * 即「无选区 + 空文字」是官方提交逻辑的真空档，点击完成后静默无效。
+   *
+   * **修法（面板期包装 `editor.editLink`，官方组件零改动）**：
+   * 提交链路为 `EditLinkMenuItems → extension.editLink → editor.editLink`，
+   * 在链路末端包装：`text` 为空且目标位置不在已有链接上（= 新建链接）时，
+   * 以 URL 兜底为显示文字。光标在已有链接上（编辑模式）时保持官方行为不动，
+   * 影响面最小。面板关闭时还原原方法。
+   */
+  useEffect(() => {
+    if (!props.open) return;
+    const original = editor.editLink;
+    editor.editLink = (url: string, text: string, position?: number) => {
+      const at = position ?? editor.transact((tr) => tr.selection.anchor);
+      /** 目标位置已在链接内 = 编辑已有链接，text 留空走官方语义（不兜底） */
+      const inExistingLink = !!editor.getLinkMarkAtPos(at + 1);
+      const resolvedText = !text && !inExistingLink ? url : text;
+      return original.call(editor, url, resolvedText, position);
+    };
+    return () => {
+      editor.editLink = original;
+    };
+  }, [props.open, editor]);
+
+  /**
    * 面板打开瞬间的 props 快照。
    *
    * ⚠️ 必须**冻结**：面板开着时编辑器仍会因用户操作上行新的选区 / `linkUrl`，
@@ -2668,68 +2700,6 @@ function LinkEditPanel(props: {
     if (!editor?.prosemirrorView) return undefined;
     return { from: snap.range.from, to: snap.range.from };
   }, [props.open, snap.range.from, editor]);
-
-  /**
-   * 锚点诊断 + **浮层实测矩形**（v2026-09-24 增补，口径当日二次修正）。
-   *
-   * 面板「宽度塌陷/被裁剪」这类问题无法从 React 侧推断——`GenericPopover` 的
-   * 实际几何完全由 floating-ui 写进内联 style。故这里在面板打开后
-   * **去 DOM 里回捞真实 rect**。⚠️ 浮层**不是** `panelHost` 的直接子元素——
-   * FloatingPortal 会先包一层无样式包装 div（见下方测量处的说明），
-   * 必须穿透 static 包装层定位到第一个非 static 元素；直接测首子元素
-   * 会拿到包装层（static、h=0）的无效数据。
-   * 把 `left/top/width/height` 与视口尺寸一并上行，供宿主日志判读：
-   * - `x` 恰好等于锚点 x → 说明宽度被「从锚点到容器右缘」约束（含块问题）；
-   * - `width` 远小于内容应有宽度 → 说明宽度塌陷；
-   * - `y` 为负数或越出 `innerHeight` → 说明垂直定位/夹取异常。
-   */
-  useEffect(() => {
-    sendUp({
-      type: "diagnostic",
-      message: `linkPanel anchor: open=${props.open} from=${snap.range.from} to=${snap.range.to} hasView=${!!editor?.prosemirrorView} anchor=${anchorPosition ? "yes" : "no"}`,
-    });
-    if (!props.open || !panelHost) return;
-    /**
-     * `requestAnimationFrame` 等一帧：floating-ui 在 mount 后的 effect 里才写入
-     * `left/top`，同步读会拿到初始 0。双 rAF 确保测量发生在首次定位之后。
-     */
-    const raf = requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        /**
-         * ★ **实测口径：必须穿透 FloatingPortal 的包装层**（v2026-09-24 实证修正）。
-         * floating-ui 的 `useFloatingPortalNode` 即使收到 root 也会先
-         * `document.createElement('div')` 建一层**无样式包装 div**（subRoot）
-         * 再把浮层挂进去——上一轮测 `panelHost.firstElementChild` 测到的是
-         * 包装层（pos=static、h=0——因真浮层 absolute 脱流），全部无效数据，
-         * 还误导出「宽度塌陷」的错误判读（contentW=306 其实一直是浮层宽度，
-         * 即定位与宽度早就正常）。
-         * 正确口径：从 panelHost 向下找**第一个 `position !== "static"` 的元素**，
-         * 那才是带 floating-ui 定位样式的浮层本体。
-         */
-        let el = panelHost.firstElementChild as HTMLElement | null;
-        while (el && getComputedStyle(el).position === "static") {
-          el = el.firstElementChild as HTMLElement | null;
-        }
-        if (!el) {
-          sendUp({ type: "diagnostic", message: "linkPanel rect: <no panel element>" });
-          return;
-        }
-        const r = el.getBoundingClientRect();
-        const cs = getComputedStyle(el);
-        sendUp({
-          type: "diagnostic",
-          message:
-            `linkPanel rect: x=${Math.round(r.x)} y=${Math.round(r.y)} w=${Math.round(r.width)} h=${Math.round(r.height)}` +
-            ` vw=${window.innerWidth} vh=${window.innerHeight}` +
-            ` pos=${cs.position} disp=${cs.display} minW=${cs.minWidth} maxW=${cs.maxWidth}` +
-            ` inlineLeft=${el.style.left} inlineTop=${el.style.top} tf=${el.style.transform}` +
-            ` hostW=${panelHost.getBoundingClientRect().width}` +
-            ` contentW=${(el.firstElementChild as HTMLElement | null)?.getBoundingClientRect().width}`,
-        });
-      });
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [props.open, snap.range.from, snap.range.to, anchorPosition, editor, panelHost]);
 
   return (
     <PositionPopover
@@ -2783,12 +2753,6 @@ function LinkEditPanel(props: {
            *   故由这里上行 `linkPanelClosed`（见 `onClose` 的实现）。
            * 只处理「关」不处理「开」——开只能由宿主命令驱动，避免误开。
            */
-          sendUp({
-            type: "diagnostic",
-            message: `linkPanel onOpenChange: open=${open} active=${String(
-              document.activeElement?.tagName,
-            )}`,
-          });
           if (!open) props.onClose();
         },
         placement: "top-start",
