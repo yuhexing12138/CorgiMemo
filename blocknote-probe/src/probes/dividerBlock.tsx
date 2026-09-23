@@ -1,5 +1,5 @@
 import { createReactBlockSpec } from "@blocknote/react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 
 /**
  * 三样式分割线（迁移 P1-S10 定稿）：
@@ -10,6 +10,34 @@ import { useEffect, useState } from "react";
  */
 
 type DividerStyle = "solid" | "dashed" | "wavy";
+
+/**
+ * 分割线「行容器」样式（v2026-09-23 修复：插入分割线后编辑区看不见）。
+ *
+ * **原现象**：点底部工具栏 Divider 插入成功（文档里确实多了该块、占一行垂直空白），
+ * 但三种样式都看不到任何线。
+ *
+ * **根因**：BlockNote 官方样式里块内容容器是 **flex 容器**
+ * （`@blocknote/mantine` 的 `.bn-block-content { width:100%; padding:3px 0; display:flex }`），
+ * 官方内置 divider 渲染的是 `<hr>`，并配套
+ * `[data-content-type=divider] hr { flex: 1; … }` 把线**撑满主轴宽度**；
+ * 本组件自定义 render 后这层 div 成了 flex item，`flex-grow:0` 且宽度按 max-content
+ * 收缩，内部又是一个**空** div ⇒ 两层 div 宽度同时坍缩为 **0**。
+ * 于是 `border-top`（solid/dashed）与 `svg`（wavy）的样式全都命中，
+ * 但**线长为 0**，肉眼完全不可见——这正是"有空白、没有线"的成因。
+ *
+ * **修法**：外层行 div 显式撑满（`flex: 1 1 auto`），另带 `width:100%` 兼容
+ * 非 flex 父容器（如探针页把该块渲染在普通 block 流中）的场景；
+ * `min-width:0` 防止未来放入 flex 行时被内容撑破。CSS 侧另有一条同类兜底规则，
+ * 见 `probe.css` 的 `.bn-block-content[data-content-type="divider"] > div`。
+ */
+const DIVIDER_ROW_STYLE: CSSProperties = {
+  cursor: "pointer",
+  padding: "2px 0",
+  flex: "1 1 auto",
+  width: "100%",
+  minWidth: 0,
+};
 
 /** 分割线浮动工具条（样式三选 + 删除；点击分割线弹出，点外部关闭） */
 function DividerToolbar(props: {
@@ -116,7 +144,7 @@ function DividerRender(props: {
   if (props.style === "wavy") {
     return (
       <div
-        style={{ cursor: "pointer", padding: "2px 0" }}
+        style={DIVIDER_ROW_STYLE}
         onClick={(e) => setToolbar({ x: e.clientX, y: e.clientY })}
       >
         <svg
@@ -148,7 +176,7 @@ function DividerRender(props: {
 
   return (
     <div
-      style={{ cursor: "pointer", padding: "2px 0" }}
+      style={DIVIDER_ROW_STYLE}
       onClick={(e) => setToolbar({ x: e.clientX, y: e.clientY })}
     >
       <div className="probe-divider" data-style={props.style} />

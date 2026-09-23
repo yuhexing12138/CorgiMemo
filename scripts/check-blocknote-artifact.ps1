@@ -9,12 +9,18 @@
 
    原理：
        构建时 vite.editor.config.ts 会把 blocknote-probe 的
-       「editor.html + src/editor/ 全量内容」算成 sha256 前 12 位，
-       以字面量 `bn-src:xxxxxxxxxxxx` 注入产物（见 bridge.ts 的 SRC_HASH）。
+       「editor.html + src/editor/ 全量 + editor 入口的 3 个外部依赖
+       （src/probe.css、src/probes/dividerBlock.tsx、src/probes/fontSizeStyle.tsx）」
+       算成 sha256 前 12 位，以字面量 `bn-src:xxxxxxxxxxxx` 注入产物（见 bridge.ts 的 SRC_HASH）。
        本脚本用**完全相同**的口径现算一次，与产物里的值比对：
          一致   → 产物是最新的
          不一致 → 产物落后于源码，需要重新执行构建
          未找到 → 产物是加哈希之前构建的（或构建失败），同样视为需要重建
+
+       ⚠️ v2026-09-23：原范围只有 `editor.html + src/editor`，而 schema.ts / EditorApp.tsx
+       实际还 import 了 src/probes/ 下两个文件与 src/probe.css —— 它们会被打进产物却不在
+       哈希里，于是「改了这些文件忘记重建」会被本脚本与 pre-commit 一起静默放过（实测确认）。
+       现已补齐；`src/probes/` 下其余文件（checks.ts / schema.ts）是探针页专用，刻意不纳入。
 
    用法（PowerShell）：
        .\scripts\check-blocknote-artifact.ps1              # 校验，不一致时 exit 1
@@ -28,9 +34,12 @@
    哈希口径必须与 vite.editor.config.ts 的 collectSrcHash() 逐条对齐，任何一处
       改动都要两边同步，否则会出现"恒等不一致"的假警报：
         ① 只算文件原始字节（与换行符 / 编码无关）；
-        ② 范围 = editor.html + src/editor/ 全量，相对 blocknote-probe 的路径；
+        ② 范围 = editor.html + src/editor/ 全量 + editor 入口的 3 个外部依赖，相对 blocknote-probe 的路径；
         ③ 路径分隔符统一为 `/`、无前导斜杠、按 **码元序（Ordinal）** 升序排列；
         ④ 每条记录按「相对路径(UTF-8) + 文件字节」顺序喂进同一个 sha256。
+
+       清单顺序（entry 之间的先后）同样参与哈希，两侧必须一字不差：
+         editor.html → src/editor → src/probe.css → src/probes/dividerBlock.tsx → src/probes/fontSizeStyle.tsx
 #>
 [CmdletBinding()]
 param(
@@ -149,7 +158,7 @@ function Collect-Files([string]$AbsPath) {
     $fileList.Add([pscustomobject]@{ Rel = $rel; Full = $AbsPath })
 }
 
-foreach ($entry in @('editor.html', 'src\editor')) { Collect-Files (Join-Path $ProbeDir $entry) }
+foreach ($entry in @('editor.html', 'src\editor', 'src\probe.css', 'src\probes\dividerBlock.tsx', 'src\probes\fontSizeStyle.tsx')) { Collect-Files (Join-Path $ProbeDir $entry) }
 
 # 把所有「相对路径 + 内容」拼成一个字节流后一次性摘要（Node 侧是流式 update，结果等价）
 $stream = New-Object System.Collections.Generic.List[byte]

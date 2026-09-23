@@ -51,8 +51,19 @@ function collectBuildFingerprint(): string {
  * （人读的时间戳），本哈希 = "构建进去的内容是什么"（可机检的内容摘要）。
  * 前者能回答"我加载的是哪一版"，只有后者能回答"这版是不是最新的源码"。
  *
- * 采集范围 = **真正会被打进产物的文件**：入口 `editor.html` + `src/editor/` 全量
- * （探针应用 `src/` 下其余部分不参与本次打包，纳入只会造成"改了无关文件却要重建"的误报）。
+ * 采集范围 = **真正会被打进产物的文件**（v2026-09-23 修正，原范围有漏检盲区）：
+ * - `editor.html` + `src/editor/` 全量；
+ * - **外加 editor 入口的 3 个外部依赖**：`src/probe.css`（EditorApp.tsx import）、
+ *   `src/probes/dividerBlock.tsx` 与 `src/probes/fontSizeStyle.tsx`（schema.ts import）——
+ *   它们会被打包进产物，但原范围只按目录取 `src/editor`，导致「改了这些文件也不会
+ *   被判定为产物过期」（实测：改完 dividerBlock.tsx + probe.css 后校验仍报 OK，
+ *   pre-commit 静默放过——与之前踩过的两次同类，只是换了目录）。
+ *   注意 `src/probes/` 下另有 `checks.ts` / `schema.ts` 是**探针页专用**（只被 `src/App.tsx`
+ *   import），刻意不纳入，以免"改了探针自检面板却要求重建编辑产物"的误报。
+ *
+ * ⚠️ 新增 editor 侧依赖时必须同步本清单（判断方法：从 `editor.html` → `src/editor/`
+ * 逐层 grep import 闭包）。顺序即喂哈希顺序，必须与
+ * `scripts/check-blocknote-artifact.ps1` 完全一致，否则恒等失配。
  *
  * 稳定性约定（校验侧脚本必须**逐条对齐**，否则会恒等失败）：
  * - 只算文件**原始字节**，与换行符 / 编码无关；
@@ -79,7 +90,15 @@ function collectSrcHash(): string {
     hash.update(readFileSync(abs));
   };
 
-  for (const entry of ["editor.html", "src/editor"]) walk(resolve(root, entry));
+  /** 采集清单：顺序必须与 PS1 校验脚本一致 */
+  const ENTRIES = [
+    "editor.html",
+    "src/editor",
+    "src/probe.css",
+    "src/probes/dividerBlock.tsx",
+    "src/probes/fontSizeStyle.tsx",
+  ];
+  for (const entry of ENTRIES) walk(resolve(root, entry));
   return hash.digest("hex").slice(0, 12);
 }
 

@@ -65,6 +65,24 @@ svg.probe-divider {
   display: block;
 }
 
+/**
+ * 分割线撑满宽度（v2026-09-23 修复「插入分割线后编辑区看不见」）。
+ *
+ * BlockNote 官方的块内容容器是 **flex 容器**
+ * （`.bn-block-content { width:100%; padding:3px 0; display:flex }`），
+ * 官方内置 divider 渲染 `<hr>` 时靠 `[data-content-type=divider] hr { flex:1 }`
+ * 把线撑满主轴；本项目的自定义 render（dividerBlock.tsx）没有这一步，
+ * 该行 div 作为 flex item 会按 max-content 收缩，内部又是空 div
+ * ⇒ 宽度坍缩为 0，`border-top` 样式在但线长为 0，肉眼不可见。
+ *
+ * 组件内联样式（DIVIDER_ROW_STYLE）已带 `flex: 1 1 auto` 作为主修；
+ * 这里保留一条同类 CSS 兜底，防止将来内联样式被改动/遗漏时问题复发。
+ */
+.bn-block-content[data-content-type="divider"] > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /* 自检面板 */
 .probe-checks {
   background: #fff;
