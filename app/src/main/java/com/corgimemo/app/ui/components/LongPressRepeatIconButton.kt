@@ -1,8 +1,8 @@
 package com.corgimemo.app.ui.components
 
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -29,43 +29,40 @@ const val DEFAULT_REPEAT_INITIAL_DELAY_MS = 450L
 const val DEFAULT_REPEAT_INTERVAL_MS = 150L
 
 /**
- * 「长按连发」手势 Modifier（v2026-09-17，v1.8 抽出复用）
+ * 「长按连发」手势 Modifier（v2026-09-17 抽出复用，v2026-09-22 重写手势底层）
  *
  * 手感对齐原 BlockNote JS 按钮 `AutoRepeatButton`——
- * **按下立即执行一次 → 450ms 后每 150ms 重复一次 → 抬起/移出/取消即停**。
+ * **短按抬起即一次 → 按住 450ms 后每 150ms 重复一次 → 抬起/移出/取消即停**。
  *
  * 抽成 Modifier 的目的是让视觉各异的按钮（图标 / 文字 / 带降级的 Ri 图标）都能复用同一套
  * 手势与节拍逻辑，而不必各自重写 pointerInput。
  *
- * ## 三个必须遵守的约束（均已核对 Compose 源码）
+ * ## 实现要点（均已核对 Compose 源码，v2026-09-22）
  *
- * 1. **`awaitPointerEventScope` / `awaitEachGesture` 是 `@RestrictsSuspension` 受限作用域**
- *    （`SuspendingPointerInputFilter.kt` 第 63 行），块内**只能**挂起于 `awaitPointerEvent`，
- *    禁止 `delay` / `launch` / `coroutineScope` 等其它挂起调用。
- *    所以连发定时器**不能**写在 `awaitEachGesture {}` 里。
+ * 1. **底层用 `detectTapGestures(onPress)` 而非裸 `awaitEachGesture`**：
+ *    `PressGestureScope.tryAwaitRelease()` 能区分「点击/长按」与「拖动」——
+ *    父级 `horizontalScroll` 消费了滑动时，`onPress` 被取消、`tryAwaitRelease` 返回
+ *    `false`，此时**不触发任何动作**，从根上消除「左右滑动工具栏误触 Nest/Unnest」。
  *
- * 2. **`PointerInputScope` 与 `AwaitPointerEventScope` 都不实现 `CoroutineScope`**
- *    （同文件第 121-128 行的设计说明：刻意如此，避免破坏结构化并发），直接 `launch` 不可用。
- *    因此用 `rememberCoroutineScope()` 拿到 Composable 作用域承载连发协程——
- *    **手势检测（受限域）与连发定时器（普通域）彻底分离**：
- *    受限域只负责「何时开始/停止」，普通域负责「按节拍重复」。
+ * 2. **动作不在 `down` 即执行**：短按在抬起时补一次（与其他普通按钮一致）；
+ *    长按由连发定时器覆盖。这样「down 即动作 → 同帧 enabled 翻转 orphan 原生 ripple」
+ *    的时序缝隙也不存在（详见 [RiFormatButton] 内注释）。
  *
- * 3. **`IconButton` 的 `clickable` 会在 down 时立即 `consume()` 事件**
- *    （参见本项目 `PressFeedback.kt` 第 180-196 行的同款踩坑记录）。
- *    故使用本 Modifier 时**不要**再让 onClick 承载动作（传空实现），
- *    动作完全由 `awaitFirstDown(requireUnconsumed = false)` + `waitForUpOrCancellation()`
- *    驱动，避免「点击」与「连发」各触发一次造成双执行。
+ * 3. **连发定时器用 `rememberCoroutineScope()` 的普通作用域承载**：`onPress` 是受限挂起域，
+ *    内部不能直接 `launch`/`delay`；受限域只负责「何时开始/停止」，普通域负责「按节拍重复」，
+ *    两者彻底分离（与旧实现一致）。
  *
- * @param onAction 单次动作；按下时调用一次，长按时被连续调用
+ * 4. **原生 ripple 由调用方持有交互源、手势全权 emit**：传入 [interactionSource] 时，
+ *    `down` 即 `tryEmit(Press)`、`finally` 必 `tryEmit(Release)`——不手绘、视觉与官方
+ *    `IconButton` 完全一致，且任何退出路径都有 finally 兜底，圆圈永不残留。
+ *
+ * @param onAction 单次动作；短按抬起时调用一次，长按时被连续调用
  * @param enabled 是否可交互；false 时完全不响应手势
  * @param canRepeat 是否允许继续连发；连发期间实时读取，变 false 即停
- * @param initialDelayMs 按下到开始连发的等待时长
+ * @param initialDelayMs 按住到开始连发的等待时长
  * @param repeatIntervalMs 连发间隔
- * @param onPressChanged 按压态回调（v2026-09-22 新增）：按下置 true，**任何**退出路径
- *   （抬起 / 滑出 / 被上层消费 / pointerInput 因参数变化重启）都置 false。供调用方
- *   自绘按压视觉——不要依赖 IconButton 的 ripple：连发按钮的动作在 down 即执行，
- *   动作引发的重组/置灰与 ripple 的交互源收尾存在时序缝隙（真机表现：松手后
- *   水波纹圆圈一直留在按钮上），自绘按压态并由手势生命周期直接驱动才是确定的。
+ * @param interactionSource 可选：传入后由本手势驱动其 Press/Release，供 `.indication(ripple)`
+ *   渲染原生水波纹（不传则不改变任何交互源，适用于自带 clickable 的 `IconButton`）
  */
 @Composable
 fun Modifier.longPressRepeat(
@@ -74,7 +71,7 @@ fun Modifier.longPressRepeat(
     canRepeat: Boolean,
     initialDelayMs: Long = DEFAULT_REPEAT_INITIAL_DELAY_MS,
     repeatIntervalMs: Long = DEFAULT_REPEAT_INTERVAL_MS,
-    onPressChanged: ((Boolean) -> Unit)? = null,
+    interactionSource: MutableInteractionSource? = null,
 ): Modifier {
     /**
      * `pointerInput` 的 lambda 只在 key 变化时重启；直接捕获 onAction / canRepeat
@@ -100,44 +97,53 @@ fun Modifier.longPressRepeat(
 
     return this.pointerInput(enabled, initialDelayMs, repeatIntervalMs) {
         if (!enabled) return@pointerInput
-        awaitEachGesture {
-            try {
+        detectTapGestures(
+            onPress = { offset ->
                 /**
-                 * requireUnconsumed = false：IconButton 的水波纹（clickable 内部
-                 * detectTapGestures）可能已消费 down，这里仍要拿到以确保响应。
+                 * 用 detectTapGestures 的 onPress + tryAwaitRelease 区分「点击/长按」与
+                 * 「拖动」：工具栏 Row 处于 horizontalScroll，左右滑动会被父级消费 →
+                 * onPress 被取消、tryAwaitRelease 返回 false，此时不触发任何动作，
+                 * 也不会误触 Nest / Unnest（v2026-09-22 滑动误触根因修复）。
                  */
-                awaitFirstDown(requireUnconsumed = false)
-                // 先标记按压态（自绘按压视觉用），再执行动作，视觉与行为同拍
-                onPressChanged?.invoke(true)
-                // 按下即刻执行一次（对齐原 JS onPointerDown 语义；轻点即一次）
-                currentAction()
-                // 交给普通作用域按节拍重复；受限域内不挂起于 delay，合规
+                // down 即向交互源下发 Press —— 由 .indication(ripple) 渲染原生水波纹，
+                // 视觉/色值与其他 IconButton 完全一致（v2026-09-22 不手绘修复）。
+                val press = PressInteraction.Press(offset)
+                interactionSource?.tryEmit(press)
+                var repeated = false
+                // 连发定时器：普通 Composable 作用域承载，不写在受限的 onPress 挂起域内
                 repeatJobRef[0]?.cancel()
                 repeatJobRef[0] = timerScope.launch {
                     delay(initialDelayMs)
                     while (isActive) {
                         // 见底立即停发，不产生无效点击
                         if (!currentCanRepeat) break
+                        repeated = true
                         currentAction()
                         delay(repeatIntervalMs)
                     }
                 }
-                // 挂起点：抬起 / 滑出边界 / 被上层拦截都会返回，随后停发
-                waitForUpOrCancellation()
-            } finally {
-                /**
-                 * ⚠️ 任何退出路径都必须收尾（v2026-09-22 补强）：
-                 * 1) 正常路径——waitForUpOrCancellation 返回（抬起/滑出/被消费）；
-                 * 2) pointerInput 因 key（enabled 等）变化**重启**——协程在上面的挂起点
-                 *    被取消，若不加 finally，连发 Job 将无人取消（停不下来）、
-                 *    按压态永远为 true（自绘按压圈不消失）。
-                 * finally 块内只做非挂起操作（写 State / cancel Job），取消环境下安全。
-                 */
-                onPressChanged?.invoke(false)
-                repeatJobRef[0]?.cancel()
-                repeatJobRef[0] = null
+                try {
+                    /**
+                     * 短按：用户在 initialDelayMs 内抬起（连发未触发）→ 补一次单击动作，
+                     * 行为与其他普通按钮一致（动作在抬起时执行，而非按下时）。
+                     * 长按：连发已覆盖动作，此处不再重复。
+                     * 滑动/被消费：tryAwaitRelease 返回 false → 不触发动作（修复误触）。
+                     */
+                    if (tryAwaitRelease() && !repeated) {
+                        currentAction()
+                    }
+                } finally {
+                    /**
+                     * 任何退出（抬起 / 滑动取消 / 参数变化重启 pointerInput / 组合离开）
+                     * 都向交互源下发 Release —— 原生 ripple 由手势全权持有、finally 必复位，
+                     * 彻底消除「水波纹圆圈永久残留」（v2026-09-22 根因修复）。
+                     */
+                    repeatJobRef[0]?.cancel()
+                    repeatJobRef[0] = null
+                    interactionSource?.tryEmit(PressInteraction.Release(press))
+                }
             }
-        }
+        )
     }
 }
 
