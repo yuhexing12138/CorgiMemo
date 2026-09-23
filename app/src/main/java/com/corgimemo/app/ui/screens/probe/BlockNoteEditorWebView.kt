@@ -39,6 +39,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.viewinterop.AndroidView
 import com.corgimemo.app.ui.theme.FontCatalog
 import com.corgimemo.app.ui.theme.ThemeManager
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.roundToInt
@@ -260,6 +262,18 @@ class BlockNoteBridgeController {
     var editorFocused by mutableStateOf(false)
         private set
 
+    /**
+     * 链接面板是否打开（v2026-09-24 新增）
+     *
+     * 由 [openLinkPanel] / [closeLinkPanel] 置位，并由 JS 上行 `linkPanelClosed` 复位——
+     * 后者是必需的：用户点面板外部 / 按 Esc 时面板由官方 popover 的 dismiss 行为关闭，
+     * 宿主完全无从得知，没有这条上行就会一直以为面板还开着。
+     *
+     * 用途与 [editorFocused] 同类：面板收起后据此决定是否把软键盘弹回来。
+     */
+    var linkPanelOpen by mutableStateOf(false)
+        private set
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pendingInit: JSONObject? = null
     private var pendingCommands = mutableListOf<JSONObject>()
@@ -326,6 +340,44 @@ class BlockNoteBridgeController {
 
     /** 主动要一次 markdown 快照（返回键/切后台前） */
     fun requestSave() = enqueueCommand(JSONObject().put("type", "requestSave"))
+
+    /**
+     * requestSave 的即时快照等待信号（v2026-09-23 保存竞态修复）。
+     *
+     * 背景：正常编辑经 JS 防抖 800ms 上行 changed；用户停手不足 800ms 点「完成」，
+     * 宿主 `_contentFormat` 还是旧快照，最后一批编辑（敲的空行/文字）不落库
+     * （真机复现：连敲 3 次回车立刻点完成，重进只剩 1 个空行）。
+     * JS 侧 `requestSave` 已改为**立即导出上行**，本信号由 [awaitSaveSnapshot] 挂起等待、
+     * 收到 changed 时置位（见 handleUpMessage 的 changed 分支）。
+     */
+    private var saveSnapshotSignal: CompletableDeferred<Unit>? = null
+
+    /**
+     * 要一次即时快照并挂起等待上行（v2026-09-23 保存竞态修复）。
+     *
+     * 与 [requestSave] 的区别：创建等待信号后再发命令，调用方（「完成」按钮）拿到
+     * `true` 即保证 `latestMarkdown` / `_contentFormat` 已是**当前文档**的最新导出。
+     *
+     * @param timeoutMs 超时兜底。WebView 往返 + JS 导出一般 <100ms，超时说明
+     *   WebView 未就绪/异常——返回 false，调用方按现有内存值保存（与旧行为一致，不会更糟）。
+     * @return true=已收到新快照；false=超时或信号缺失
+     */
+    suspend fun requestSaveAndAwait(timeoutMs: Long = 800L): Boolean {
+        saveSnapshotSignal = CompletableDeferred()
+        requestSave()
+        val signal = saveSnapshotSignal ?: return false
+        return try {
+            withTimeout(timeoutMs) {
+                signal.await()
+            }
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "requestSaveAndAwait 超时/失败，按现有内存值保存: ${e.message}")
+            false
+        } finally {
+            saveSnapshotSignal = null
+        }
+    }
 
     /** 插入图片到光标处（S11：path 为本地绝对路径，JS 侧转 file:// URL） */
     fun insertImage(path: String) =
@@ -412,6 +464,42 @@ class BlockNoteBridgeController {
             msg.put("to", savedSelectionTo)
         }
         enqueueCommand(msg)
+    }
+
+    /**
+     * 打开「链接面板」（v2026-09-24 新增）—— 底部工具栏 🔗 按钮的新入口。
+     *
+     * **取代了什么**：此前该按钮弹的是宿主自绘的 Compose `AlertDialog`（`InspirationEditScreen`
+     * 内约 80 行），与 WebView 内官方 FormattingToolbar 的「链接」按钮构成**两套并行实现**：
+     * 外观不同、校验不同（自绘版判 `!= "https://"`，官方用 `VALID_LINK_PROTOCOLS` 补全协议）、
+     * 提交路径不同。现统一收敛到官方那套表单（`EditLinkMenuItems`）。
+     *
+     * **为什么必须由宿主下发命令**：面板渲染在 WebView 内部的 React 树上，Compose 侧碰不到它。
+     * 官方 `CreateLinkButton` 恰好把 popover 写成**受控**（`open={showPopover}`），
+     * 本命令就是接到那个开关上（JS 侧见 `EditorApp.tsx` 的 `openLinkPanel` case）。
+     *
+     * **锚点与预填由 JS 现取，宿主无需传参**：选区真值只在 WebView 里，
+     * 当前选区的 `from`/`to` 与光标所在链接的 URL 都由 JS 直读。
+     *
+     * 仍建议在本命令**之前**调一次 [saveSelection]：
+     * 面板打开后 WebView 会失焦，若 Android 在失焦时折叠了内部选区，
+     * 用户提交时官方 `editLink` 依赖的 `range` 仍是 JS 侧快照过的那个区间，位置不受影响。
+     */
+    fun openLinkPanel() {
+        linkPanelOpen = true
+        enqueueCommand(JSONObject().put("type", "openLinkPanel"))
+    }
+
+    /**
+     * 关闭「链接面板」（v2026-09-24 新增）。
+     *
+     * 幂等：面板未打开时调用无副作用。两条关闭路径里宿主只需要管自己发起的那条——
+     * 用户点面板外部 / 按 Esc 关闭时由 JS 主动上行 `linkPanelClosed` 通知宿主
+     * （见 [linkPanelOpen] 的说明），此处无需轮询或对账。
+     */
+    fun closeLinkPanel() {
+        linkPanelOpen = false
+        enqueueCommand(JSONObject().put("type", "closeLinkPanel"))
     }
 
     /**
@@ -705,6 +793,11 @@ class BlockNoteBridgeController {
                     val md = msg.optString("markdown")
                     latestMarkdown = md
                     onMarkdownChanged?.invoke(md)
+                    // v2026-09-23 保存竞态修复：requestSaveAndAwait 挂起等待期间，
+                    // 第一条 changed（JS 收到 requestSave 后立即导出的最新快照）即放行
+                    saveSnapshotSignal?.let { sig ->
+                        if (sig.isActive) sig.complete(Unit)
+                    }
                 }
                 "undoState" -> {
                     // v1.7：撤销/重做可用态上行 → 驱动宿主按钮 enabled（Compose 快照态，主线程安全）
@@ -833,6 +926,17 @@ class BlockNoteBridgeController {
                     } else {
                         openInBrowser(ctx, url)
                     }
+                }
+                /**
+                 * 链接面板已关闭（v2026-09-24 新增）：对 [openLinkPanel] 的反向通报。
+                 *
+                 * 面板渲染在 WebView 内部的 React 树上，用户点面板外部 / 按 Esc 关闭时
+                 * 宿主完全无从得知——没有这条上行，[linkPanelOpen] 会一直停在 true。
+                 * 故 JS 在 `onOpenChange(false)` 时无条件上行一次，此处直接对齐。
+                 */
+                "linkPanelClosed" -> {
+                    linkPanelOpen = false
+                    Log.d(TAG, "diag | linkPanelClosed")
                 }
             }
         } catch (e: Exception) {

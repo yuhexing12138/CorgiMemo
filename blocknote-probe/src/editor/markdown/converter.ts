@@ -49,6 +49,31 @@ export const EMPTY_BLOCK_PLACEHOLDER = "\u00A0";
 const DIVIDER_TOKEN_PREFIX = "@@@CORGI_DIVIDER_";
 const DIVIDER_TOKEN_SUFFIX = "@@@";
 
+/**
+ * 空行（空段落块）的往返 token（v2026-09-23 新增）
+ *
+ * **为什么需要**：CommonMark 里"空段落"**不可表示**——空段经官方导出后只是
+ * **连续空行**（实测：[甲, 空段, 乙] → `甲\n\n\n\n乙`），而任何 markdown 解析器
+ * （编辑页 `tryParseMarkdownToBlocks` / 详情页 compose-rich-editor / CommonMark
+ * 语义本身）都把连续空行**折叠成单个段落分隔** ⇒ 空行在"载入"方向必然丢失。
+ * 真机症状：编辑页手动敲的空行，保存后详情页没有、重进编辑页也消失；
+ * 且只要内容重新经过一次"解析→导出"循环（编辑页改任意内容触发保存），
+ * markdown 里的多余空行就被压缩，数据层面彻底丢失。
+ *
+ * **修法**：与分割线/折叠标题同一套"token + 前后处理"思路——
+ * 导出前把空段落块替换为 token 占位段落（[encodeBlankParagraphs]），
+ * 载入后还原为空段落块（[mdToBlocks] ③）。
+ *
+ * **家族兼容性**：token 属 `@@@CORGI_` 前缀家族，Compose 侧
+ * `MarkdownParser.INTERNAL_TOKEN_REGEX`（`@@@CORGI_[A-Za-z0-9_#]*@@@`）**通配剥掉**：
+ * - 详情卡（`InspirationViewCard`）：按 `\n\n` split 后 token 段被剥成空段 →
+ *   **渲染为一行空行占位**（v2026-09-23 口径更新：详情页还原用户留白；此前的口径是
+ *   "空段跳过=不显示空行"，同日改为渲染。分割线 token 载体段仍整体跳过，不占空行）；
+ * - 摘要纯文本（`toPlainText`）：token 被剥 → 残留空行 → `collapseBlankLines` 删除；
+ * - 字数统计：`content` 是纯文本字段，token 只存在于 `contentFormat`（markdown）⇒ 不涉及。
+ */
+export const BLANK_LINE_TOKEN = "@@@CORGI_BLANK@@@";
+
 /** 带样式的分割线行：`--- dashed` / `*** wavy` 等（裸 `---` 不匹配，交官方 parser） */
 const DIVIDER_STYLED_LINE = /^(-{3,}|\*{3,}|_{3,})[ \t]+(dashed|wavy)[ \t]*$/;
 
@@ -141,6 +166,45 @@ const TOGGLE_MARKER_HTML = new Map<string, string>([
 /** 构造"只含 token 文本"的占位段落（与 divider token 同一套路：独占一段、行级可定位） */
 function markerParagraph(token: string): any {
   return { type: "paragraph", content: [{ type: "text", text: token, styles: {} }] };
+}
+
+/**
+ * 空段落块判定（编辑页"空行"的标准形态）
+ *
+ * BlockNote 里按回车产生的空段落 = `paragraph` 块且 inline `content` 为**空数组**。
+ * 额外要求**无 children**：带子块的空段（极罕见）承载嵌套结构，转换会误伤。
+ */
+function isEmptyParagraph(b: any): boolean {
+  return (
+    b?.type === "paragraph" &&
+    Array.isArray(b.content) &&
+    b.content.length === 0 &&
+    (!Array.isArray(b.children) || b.children.length === 0)
+  );
+}
+
+/**
+ * 导出前预处理：空段落块（编辑页"空行"）→ token 占位段落（递归 children）
+ *
+ * 根因与机制见 [BLANK_LINE_TOKEN]。官方导出对空段输出连续空行（无语义、
+ * 载入必丢），替换为 token 行后即可随 markdown 正常往返。
+ *
+ * ⚠️ 折叠标题 / 块级色 / 行内色的编码产物都是**含文本**的段落，不会被本函数误伤；
+ * 本函数排在它们之前执行（空段无内容、无颜色，先行处理最干净）。
+ *
+ * @param blocks 任一层的块数组（递归 children）
+ * @returns 空段已替换为 token 占位段的块数组
+ */
+function encodeBlankParagraphs(blocks: any[]): any[] {
+  return blocks.map((b) => {
+    if (isEmptyParagraph(b)) {
+      return markerParagraph(BLANK_LINE_TOKEN);
+    }
+    if (Array.isArray(b?.children) && b.children.length > 0) {
+      return { ...b, children: encodeBlankParagraphs(b.children) };
+    }
+    return b;
+  });
 }
 /**
  * 导出前预处理：把「可折叠标题」块展开为"标记段落 + 原标题 + 标记段落 + 子块 + 标记段落"序列
@@ -708,12 +772,17 @@ export async function mdToBlocks(editor: any, markdown: string): Promise<any[]> 
   // ② 官方解析
   const blocks: any[] = await editor.tryParseMarkdownToBlocks(preMarkdown);
 
-  // ③ 后处理：token 段落 → divider 块（带样式）
+  // ③ 后处理：token 段落 → divider 块（带样式）/ 空段落块（空行，v2026-09-23）
   const result = blocks.map((b) => {
     const content = b?.content;
     if (b?.type === "paragraph" && Array.isArray(content) && content.length === 1) {
       const inline = content[0];
       if (inline?.type === "text") {
+        // 空行 token → 空段落块（与导出侧 [encodeBlankParagraphs] 配对；
+        // 还原形态 = BlockNote 空段落标准形态 `content: []`）
+        if (inline.text === BLANK_LINE_TOKEN) {
+          return { type: "paragraph", content: [] };
+        }
         const style = parseDividerToken(inline.text ?? "");
         if (style) {
           return { type: "divider", props: { style } };
@@ -759,8 +828,12 @@ export function blocksToMd(editor: any, blocks: any[]): string {
     return b;
   });
 
+  // ①b 空段落块（编辑页"空行"）→ token 占位段落（CommonMark 不可表示空段，
+  //    官方导出的连续空行在载入方向必丢，见 [BLANK_LINE_TOKEN] / [encodeBlankParagraphs]）
+  const noBlanks = encodeBlankParagraphs(mapped);
+
   // ② 行内色编码为 token（官方导出会剥掉颜色 span，必须自编码）
-  const colored = encodeInlineColorsDeep(mapped);
+  const colored = encodeInlineColorsDeep(noBlanks);
 
   // ③ 块级色编码为行首 token（官方块序列化器不读块元素属性，必须自编码）
   const blockColored = encodeBlockColorsDeep(colored);

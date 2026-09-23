@@ -3,16 +3,21 @@ import { BlockNoteView } from "@blocknote/mantine";
 import {
   DeleteLinkButton,
   EditLinkButton,
+  EditLinkMenuItems,
   FormattingToolbar,
   FormattingToolbarController,
   LinkToolbarController,
+  PositionPopover,
   useBlockNoteEditor,
   useComponentsContext,
   useCreateBlockNote,
   type LinkToolbarProps,
 } from "@blocknote/react";
 import { BlockNoteEditor, blockHasType } from "@blocknote/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+// floating-ui 的防裁剪三件套：与官方 FormattingToolbarController 完全同款
+// （offset 离锚点 10px、shift 贴边回拉治右裁剪、flip 上放不下翻转治上裁剪）。
+import { flip, offset, shift } from "@floating-ui/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { editorSchema } from "./schema";
 import { bindDown, sendUp, BUILD_FINGERPRINT, SRC_HASH, type ThemePayload } from "./bridge";
 import { mdToBlocks, blocksToMd, toWebImageUrl } from "./markdown/converter";
@@ -487,6 +492,20 @@ export default function EditorApp() {
   const [fontWeights, setFontWeights] = useState<Record<string, number[]>>({});
   /** 表情选择面板显隐（v1.5 openEmojiPicker 下行切换） */
   const [emojiOpen, setEmojiOpen] = useState(false);
+  /**
+   * 链接面板显隐 + 其锚点/预填数据（v2026-09-24）
+   *
+   * 由宿主下行 `openLinkPanel` / `closeLinkPanel` 驱动（底部工具栏 🔗 按钮）。
+   * `range` 取宿主 `saveSelection` 快照回来的区间，`url` 取 `blockState.linkUrl`
+   * ——三者在**打开那一刻**一并定下，随后由 `LinkEditPanel` 内部冻结，避免用户
+   * 打字期间被外部上行覆写。
+   */
+  const [linkPanel, setLinkPanel] = useState<{
+    open: boolean;
+    range: { from: number; to: number };
+    url: string;
+    text: string;
+  }>({ open: false, range: { from: -1, to: -1 }, url: "", text: "" });
   /** 解析完成的初始块 */
   const [initialBlocks, setInitialBlocks] = useState<any[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -825,6 +844,34 @@ export default function EditorApp() {
   }, []);
 
   /**
+   * 变更立即上行（v2026-09-23 保存竞态修复）
+   *
+   * 背景：正常编辑经 [pushChanged] 防抖 800ms 上行；宿主「完成」按钮在用户
+   * 停手不足 800ms 时点下，读到的 `_contentFormat` 还是上一次防抖快照——
+   * 最后一批编辑（敲的空行/文字）没进库。真机复现：连敲 3 次回车立刻点完成，
+   * 重进只剩 1 个空行（JS 导出/载入链路四轮探针已证无损，竞态在防抖窗口）。
+   *
+   * 行为：收到 `requestSave` 命令时**同步导出、立即上行**，同时清掉 pending
+   * 的防抖任务（避免 800ms 后重复上行一条同内容 changed）。宿主侧配套
+   * `requestSaveAndAwait`：发出命令后挂起等 changed 上行（超时兜底），
+   * 拿到最新 markdown 再落库。
+   */
+  const pushChangedNow = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    try {
+      const md = blocksToMd(editor, editor.document);
+      sendUp({ type: "changed", markdown: md });
+    } catch (e: any) {
+      sendUp({ type: "error", message: `changedNow: ${e.message}` });
+    }
+  }, []);
+
+  /**
    * 编辑器 DOM 焦点判定（v2026-09-22）
    *
    * 判据是 `document.activeElement` 是否落在 `.bn-editor` 内（编辑器容器本身带
@@ -981,7 +1028,9 @@ export default function EditorApp() {
           pushBlockState();
           break;
         case "requestSave":
-          pushChanged();
+          // v2026-09-23 保存竞态修复：立即导出上行（原走 pushChanged 防抖，
+          // 宿主点完成后立刻保存会读到 800ms 前的旧快照）
+          pushChangedNow();
           break;
         case "requestUndo":
           editorRef.current?.undo();
@@ -1078,6 +1127,47 @@ export default function EditorApp() {
         }
         case "openEmojiPicker": {
           setEmojiOpen((v) => !v);
+          break;
+        }
+        /**
+         * 打开 / 关闭链接面板（v2026-09-24）
+         *
+         * 锚点与预填数据**都在 JS 侧现取**，不依赖宿主回传：
+         * - `range`：直读 `prosemirrorView.state.selection`——选区真值只在 WebView 里
+         *   （宿主的 `saveSelection` 快照要经 `selectionRange` 上行、是异步的，
+         *   命令紧随其后就下发，宿主那会儿多半还没收到）；
+         * - `url`：`ed.getSelectedLinkUrl?.()` 与官方 `CreateLinkButton` 同款判据，
+         *   光标落在已有链接上时预填出来，用户可直接改。
+         */
+        case "openLinkPanel": {
+          /** ⚠️ `ed` 在本 case 内单独取：上方 `case "format"` 里的 `ed` 是块级作用域，出不来 */
+          const ed = editorRef.current;
+          if (!ed) break;
+          const view = ed.prosemirrorView;
+          if (!view) break;
+          const sel = view.state.selection;
+          /** 官方 CreateLinkButton 的取值口径；旧产物无此方法时回落空串 */
+          const existingUrl = (() => {
+            try {
+              return (ed.getSelectedLinkUrl?.() as string) || "";
+            } catch {
+              return "";
+            }
+          })();
+          setLinkPanel({
+            open: true,
+            range: { from: sel.from, to: sel.to },
+            url: existingUrl,
+            text: ed.getSelectedText?.() || "",
+          });
+          sendUp({
+            type: "diagnostic",
+            message: `openLinkPanel: ${sel.from}-${sel.to} url=${existingUrl}`,
+          });
+          break;
+        }
+        case "closeLinkPanel": {
+          setLinkPanel((p) => (p.open ? { ...p, open: false } : p));
           break;
         }
         case "format": {
@@ -1701,7 +1791,7 @@ export default function EditorApp() {
     return () => {
       window.BlockNoteEditorHost = undefined;
     };
-  }, [pushChanged, pushUndoState, getHistoryCommands]);
+  }, [pushChanged, pushChangedNow, pushUndoState, getHistoryCommands]);
 
   // ---- booted 后解析 markdown（完成才挂编辑器核心） ----
   useEffect(() => {
@@ -1756,6 +1846,16 @@ export default function EditorApp() {
           { type: "text", text: emoji, styles: {} },
         ]);
       }}
+      linkPanel={linkPanel}
+      onLinkPanelClose={() => {
+        setLinkPanel((p) => (p.open ? { ...p, open: false } : p));
+        /**
+         * 无条件上行一次：用户点面板外部 / 按 Esc 关闭时，宿主无从得知
+         * （面板渲染在 WebView 内部的 React 树上）。宿主据此对齐本地状态，
+         * 才能正确处理「面板收起后是否把软键盘弹回来」。
+         */
+        sendUp({ type: "linkPanelClosed" });
+      }}
     />
   );
 }
@@ -1799,6 +1899,10 @@ function EditorCore(props: {
   emojiOpen: boolean;
   onEmojiClose: () => void;
   onEmojiPick: (emoji: string) => void;
+  /** 链接面板状态（v2026-09-24）：宿主下行 openLinkPanel / closeLinkPanel 驱动 */
+  linkPanel: { open: boolean; range: { from: number; to: number }; url: string; text: string };
+  /** 链接面板关闭回调：用户点外部 / 按 Esc / 提交表单后，经 `linkPanelClosed` 通报宿主 */
+  onLinkPanelClose: () => void;
   onReady: (editor: any) => void;
   onChange: () => void;
   /** v1.7：撤销/重做可用态上报（宿主左上角按钮置灰用） */
@@ -2203,6 +2307,20 @@ function EditorCore(props: {
             无打开按钮之外的任何改动，详见 {@link ProjectLinkToolbar}。
           */}
           <LinkToolbarController linkToolbar={ProjectLinkToolbar} />
+          {/*
+            链接面板（v2026-09-24）
+            —— 底部工具栏 🔗 按钮的弹层。内容用官方 `EditLinkMenuItems`，
+            定位用官方 `PositionPopover`（锚点跟随选区），与 WebView 内官方
+            FormattingToolbar 的「链接」按钮收敛为同一套实现。
+            详见 {@link LinkEditPanel}。
+          */}
+          <LinkEditPanel
+            open={props.linkPanel.open}
+            range={props.linkPanel.range}
+            initialUrl={props.linkPanel.url}
+            initialText={props.linkPanel.text}
+            onClose={props.onLinkPanelClose}
+          />
         </BlockNoteView>
       </div>
       {props.emojiOpen && (
@@ -2305,6 +2423,456 @@ function OpenLinkIcon() {
       <polyline points="15 3 21 3 21 9" />
       <line x1="10" y1="14" x2="21" y2="3" />
     </svg>
+  );
+}
+
+/**
+ * 链接面板（v2026-09-24 新增）—— 底部工具栏 🔗 按钮的弹层
+ *
+ * **背景**：此前底部按钮弹的是宿主自绘的 Compose `AlertDialog`，与 WebView 内官方
+ * `CreateLinkButton` 的弹层构成**两套并行实现**——外观、校验规则、提交路径各不相同
+ * （自绘版判 `!= "https://"`；官方用 `VALID_LINK_PROTOCOLS` 补全协议）。现收敛为一套：
+ * 底部按钮也走官方那套表单。
+ *
+ * **为什么能复用官方组件**：官方 `CreateLinkButton`（FormattingToolbar 里的「链接」）
+ * 与 `EditLinkButton`（LinkToolbar 里的「Edit link」）渲染的是**同一个**
+ * `EditLinkMenuItems`。二者唯一的结构差异在 popover 的控制方式：
+ * - `EditLinkButton`：非受控（只给 `onOpenChange`）→ **无法从外部打开**；
+ * - `CreateLinkButton`：受控（`open={showPopover}`）→ 这正是可被外部驱动的钩子。
+ *
+ * 本组件即照 `CreateLinkButton` 的结构，把开关从「点按钮」换成宿主下行的
+ * `openLinkPanel` / `closeLinkPanel`。
+ *
+ * **定位**：官方 `CreateLinkButton` 用的是 `Generic.Popover.Root`，而 mantine 那层
+ * 实现里 `withinPortal={!!portalRoot}` 且调用方未传 `portalRoot` ⇒ 走 `withinPortal=false`，
+ * popover 留在原地 DOM & 被祖先的 `overflow` 裁剪。故此处改用官方 `PositionPopover`：
+ * 它以**文档位置区间**（`posToDOMRect`）为锚点，并默认 Portal 到 `editor.portalElement`，
+ * 既不被裁剪，锚点语义又与「Edit link / 打开 / 删除」工具条一致（同为 `top-start`），
+ * 位置表现与用户已熟悉的那个面板对齐。
+ *
+ * ⚠️ **不显式传 `middleware`（`offset` / `flip`）**：这两个函数来自
+ * `@floating-ui/react`，而它只是 `@blocknote/react` 的**传递依赖**、本项目未在
+ * `package.json` 声明（同 `prosemirror-state` 的情形）。直接 import 会在依赖树变动时
+ * 埋下解析隐患，故只传 `placement`，其余定位交给官方默认值。
+ *
+ * **与已有桥能力的关系**：`EditLinkMenuItems` 提交走 `editLink(url, text, range.from)`。
+ * `range` 由宿主经 `saveSelection` 快照后随命令带回（见 `savedSelectionFrom/To`），
+ * 故无选区时 `from == to`，行为与官方在浏览器里点「链接」完全一致。宿主原有的
+ * `format.createLink` / `deleteLink` 桥能力保留不动（供其它入口使用），本次不删。
+ */
+function LinkEditPanel(props: {
+  open: boolean;
+  /** 面板锚点与提交落点：`saveSelection` 快照回来的区间（-1 = 无有效快照） */
+  range: { from: number; to: number };
+  /** 预填的已有链接 URL（空串 = 新建） */
+  initialUrl: string;
+  /** 预填的显示文字 */
+  initialText: string;
+  onClose: () => void;
+}) {
+  const editor = useBlockNoteEditor<any, any, any>();
+
+  /**
+   * 面板的 Portal 宿主（v2026-09-24 定案）。
+   *
+   * ★ **既不能用 `document.body`、也不能用 `editor.portalElement`**，两者各缺一半：
+   *
+   * | 目标 | 逃出 `overflow` 裁剪 | 继承 `.bn-mantine` 的 CSS 变量 |
+   * |---|---|---|
+   * | `editor.portalElement`（默认） | ✗ 在 `bn-container` 内，被祖先裁 | ✓ |
+   * | `null` → `document.body` | ✓ | **✗ → 图标渲染成乱码** |
+   * | **本容器（自建）** | ✓（挂在 `document.body` 下） | ✓（自带两个类名） |
+   *
+   * **为什么必须带 `bn-mantine`**：`mantineStyles.css:133` 的注释写明
+   * 「Mantine default CSS variables, scoped to `.bn-mantine` element」——
+   * **全部 `--mantine-*` 变量都直接定义在 `.bn-mantine` 这个选择器上**
+   * （第 135、401、532 行三条规则，其中 401 / 532 分别是
+   * `.bn-mantine[data-mantine-color-scheme="dark"|"light"]` 的暗/亮分支）。
+   * 本轮实测：传 `portalElement={null}` 后 `document.body` 不是 `.bn-mantine`
+   * ⇒ 变量全失效 ⇒ `TextInput` 的 `leftSection` 尺寸/定位塌掉 ⇒ 左侧图标 SVG 被挤压，
+   * 只露出中间几个字母残片（真机截图里 `Edit URL` 前显示成 "eat"）。
+   *
+   * **为什么还要带 `bn-root`**：BlockNote 的 `--bn-*` 主题变量（边框/圆角/阴影/菜单底色）
+   * 同样挂在 `.bn-root` 上；`editor.portalElement` 本身也是
+   * `mergeCSSClasses("bn-root", …)`（`BlockNoteView.tsx:198`）。缺它则面板无边框、无背景。
+   *
+   * 容器挂在 `document.body` 下（而非编辑区内部）⇒ 天然逃出编辑区滚动容器的 `overflow`，
+   * 这就是上一轮「面板被裁剪」的根治手法，只是当时漏了继承链。
+   *
+   * ⚠️ 容器本身**不设** `position` / `overflow` / `transform`：它只作为 Portal 挂点，
+   * 内部 `GenericPopover` 自己用 `position: fixed` + 内联 `left/top` 定位，
+   * 父级一旦引入 `transform`/`filter` 会让 `fixed` 退化为相对该父级定位、破坏定位。
+   */
+  const panelHost = useMemo(() => {
+    if (typeof document === "undefined") return undefined;
+    const el = document.createElement("div");
+    el.className = "bn-root bn-mantine";
+    /**
+     * 色彩方案必须用 **`data-mantine-color-scheme`**（不是 `data-color-scheme`）：
+     * `.bn-mantine[data-mantine-color-scheme="dark"|"light"]` 才是承载
+     * `--mantine-*` 明暗变量的选择器（mantineStyles.css 第 401 / 532 行）。
+     *
+     * ⚠️ **不能只读 `editor.portalElement` 的属性**：那两处属性由 `BlockNoteView`
+     * 在 `useEffect` 里赋值，而本 `useMemo` 可能在赋值之前就跑完（时序不稳）。
+     * 故改为**从活着的 `.bn-mantine` 元素上现查**——它一定已挂载且带齐属性；
+     * 查不到再回落 `data-color-scheme` 与系统偏好，保证任何时序下都有合理取值。
+     */
+    const liveMantine = document.querySelector(".bn-mantine[data-mantine-color-scheme]");
+    const scheme =
+      liveMantine?.getAttribute("data-mantine-color-scheme") ??
+      editor?.portalElement?.getAttribute("data-color-scheme") ??
+      (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    if (scheme) el.setAttribute("data-mantine-color-scheme", scheme);
+    /**
+     * **容器样式**（内联写，不依赖样式表加载时序）。
+     *
+     * ★★ **`width:0` 是错的，会让面板宽度塌陷**（v2026-09-24 实测修正）。
+     *
+     * 面板尺寸不由内容撑开，而由**包含块的可用空间**决定：
+     * - `.bn-form-popover` 自身**没有 width**（库 `blocknoteStyles.css:218`），
+     *   它靠内部 `.bn-form-popover .mantine-TextInput-root { width:300px }`
+     *   （同文件 17-20 行）把父级撑到 300px；
+     * - 但 `GenericPopover` 的浮层 div 是 `display:flex` + floating-ui 给的
+     *   **`position:absolute; width:auto`** ⇒ **可用宽度 = 包含块宽度 − left**；
+     * - 容器 `width:0` ⇒ 可用宽度近乎 0 ⇒ flex 项被压缩 ⇒ 面板只剩
+     *   「锚点到容器右缘」那一小段（真机截图：左缘贴锚点、右缘贴编辑区右边界）。
+     *
+     * 正确做法：容器**铺满视口**，给内部绝对定位元素留出完整可用空间。
+     * 用 `position: fixed; inset: 0` 而非默认 static，理由：
+     * ① 它明确成为包含块，且内容区与视口**完全重合**（左上角对齐），
+     *    于是 floating-ui 按视口算出的 `left/top` 落进来后坐标不变；
+     * ② `fixed` 元素**脱离文档流**，不会把 `body` 撑高、不产生滚动条。
+     *
+     * ⚠️ **绝不能设 `transform` / `filter` / `will-change`**：那会让内部 `fixed`
+     * 退化为相对本容器定位，浮层位置全崩。
+     * ⚠️ **必须设 `pointer-events: none`（v2026-09-24 二次修正，曾误删）**：
+     * 容器 `position:fixed; inset:0` 铺满视口后是一个**常驻的全屏透明层**——
+     * 「透明 ≠ 点击穿透」，CSS 命中测试不看透明度。它挂在 `document.body`
+     * 下、DOM 顺序靠后且是定位元素 ⇒ paint 在编辑内容之上 ⇒ **吃掉全屏所有
+     * 触摸**：点正文 → 命中本容器 → 编辑器收不到事件 → 光标无法聚焦、软键盘
+     * 呼不出（真机故障：整个编辑页聚焦失效）。上一轮删掉 `none` 是错误的——
+     * 「输入框要能点」的正确解法不是让容器可点，而是**分层恢复**：
+     * 容器 `none` 挡一切 + 浮层自身经 `elementProps` 恢复 `auto`（见下方
+     * `<PositionPopover elementProps=…>`）。
+     * 附带收益：`none` 后点击穿透回编辑器/页面本身，`useDismiss` 的
+     * 「点外部关闭」判定也回归正常语义（点在浮层外 → 关）。
+     * ⚠️ **不能设 `display:none` / `visibility:hidden` / `width:0`**：子树无法
+     * 测量或可用空间不足，floating-ui 的「先测后定」会直接失效。
+     */
+    el.style.position = "fixed";
+    el.style.inset = "0";
+    el.style.pointerEvents = "none";
+    document.body.appendChild(el);
+    return el;
+  }, [editor]);
+
+  useEffect(() => {
+    return () => {
+      panelHost?.remove();
+    };
+  }, [panelHost]);
+
+  /**
+   * 色彩方案校准（v2026-09-24）。
+   *
+   * `panelHost` 在 `useMemo` 里创建，当时编辑器可能还没挂载完
+   * （`BlockNoteView` 的属性是挂载后在 `useEffect` 里写的）⇒ scheme 会读到 fallback。
+   * 这里在**每次打开面板时**再对齐一次活着的 `.bn-mantine` 元素，
+   * 保证暗色主题下面板不会以亮色变量绘制（否则会看到一帧白底闪烁）。
+   * 用 `useLayoutEffect` 语义等价的做法：该 `useEffect` 依赖 `props.open`，
+   * 在面板绘制前完成属性写入（React 会在 commit 后、paint 前同步跑 layout effect；
+   * 此处用普通 `useEffect` + 仅改属性（不触发重渲）已足够，因为 Portal 内容
+   * 依赖的是 CSS 变量而非 React 状态）。
+   */
+  useEffect(() => {
+    if (!panelHost || !props.open) return;
+    const live = document.querySelector(".bn-mantine[data-mantine-color-scheme]");
+    const scheme = live?.getAttribute("data-mantine-color-scheme");
+    if (scheme && panelHost.getAttribute("data-mantine-color-scheme") !== scheme) {
+      panelHost.setAttribute("data-mantine-color-scheme", scheme);
+    }
+  }, [panelHost, props.open]);
+
+  /**
+   * 点外部关闭兜底（v2026-09-24 新增；官方 `useDismiss` 在本环境失效）。
+   *
+   * **根因（floating-ui.react.mjs:2727 实证）**：`useDismiss` 的 outside 判定
+   * ```
+   * if (isEventTargetWithin(event, elements.floating)
+   *   || isEventTargetWithin(event, elements.domReference) || ...) return;
+   * ```
+   * **点在 `domReference` 内不算「外部」**。而 `GenericPopover` 会把
+   * `editorDOMElement.firstElementChild`（**整个编辑器内容根**）设为
+   * `domReference`（`refs.setReference`，FocusManager disabled 时必设）——
+   * 于是**点击正文任何位置都被排除在 outside 之外**，dismiss 永不触发
+   * （真机日志佐证：关闭时从无 `onOpenChange: open=false` 的诊断行）。
+   * 官方 FormattingToolbar 不踩这个坑：它靠「选区变化 → show=false」关闭，
+   * 不依赖 dismiss；本面板由宿主命令驱动、不跟随选区，故必须自补关闭时机。
+   *
+   * **兜底方案**（照 `EmojiGridPanel` 既有先例）：document 级 `click`
+   * **capture** 监听——点击目标不在面板内容（`.bn-popover-content`）内即关。
+   * capture 先于一切目标处理器，PM 不会拦；同一次 click 继续传给编辑器
+   * （移动光标）正是期望行为。与官方 dismiss 并存且幂等（dismiss 在
+   * 「面板外非编辑器区域」仍会先触发，二者都落到同一个 onClose）。
+   *
+   * ⚠️ 依赖数组刻意不写：每次渲染重挂监听，保证闭包里的 `props.onClose`
+   * 恒为最新引用（与 EmojiGridPanel 同款约定）。
+   */
+  useEffect(() => {
+    if (!props.open) return;
+    const onDocClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && !target.closest(".bn-popover-content")) {
+        props.onClose();
+      }
+    };
+    document.addEventListener("click", onDocClick, true);
+    return () => document.removeEventListener("click", onDocClick, true);
+  });
+
+  /**
+   * 面板打开瞬间的 props 快照。
+   *
+   * ⚠️ 必须**冻结**：面板开着时编辑器仍会因用户操作上行新的选区 / `linkUrl`，
+   * 若实时读 props，输入框内容与锚点会在用户打字期间被外部变化覆写。
+   * 只在 `props.open` 由 false → true 的那一刻重取。
+   *
+   * ★ **不能用 `useRef` + `useEffect` 承载**（v2026-09-24 修复「第一次点不出现」）。
+   * `useEffect` 在渲染**之后**才跑，`ref` 的赋值又**不触发重渲染** ⇒ 首次打开时：
+   * 第 1 帧 `snapRef.current` 仍是初始值（`range.from === -1`）⇒ `anchorPosition`
+   * 为 `undefined` ⇒ `PositionPopover` 按 `position !== undefined && children`
+   * **不渲染任何 children**；`useEffect` 随后更新了 ref，却因为没有 setState
+   * 而不会再来一帧 ⇒ 面板在整个「打开」周期里始终是空的。
+   * 直到用户**第二次**点击（`props.open` 再次翻转）才补上——这正是
+   * 「第一次不出现、再点才出现」的根因之一。
+   *
+   * 用 `useMemo([props.open])` 在**同一帧内**取快照，首帧即可拿到正确锚点。
+   */
+  const snap = useMemo(
+    () => ({ range: props.range, url: props.initialUrl, text: props.initialText }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在 open 翻转时重取快照
+    [props.open],
+  );
+
+  /**
+   * 锚点位置：用「快照区间的起点到起点」——无选区时光标处弹出，有选区时落在选区起始位置
+   * （与官方 FormattingToolbar 的呈现一致）。
+   *
+   * ⚠️ 三个前置条件缺一不可，否则 `PositionPopover` 内部的 `posToDOMRect` 会抛错
+   * （该异常发生在渲染期，会直接卸载编辑器子树 → 编辑区变空白）：
+   * ① 面板已打开；② 区间有效（`from >= 0`，即宿主/JS 拿到了选区快照）；
+   * ③ `prosemirrorView` 已就绪。
+   */
+  const anchorPosition = useMemo(() => {
+    if (!props.open || snap.range.from < 0) return undefined;
+    if (!editor?.prosemirrorView) return undefined;
+    return { from: snap.range.from, to: snap.range.from };
+  }, [props.open, snap.range.from, editor]);
+
+  /**
+   * 锚点诊断 + **浮层实测矩形**（v2026-09-24 增补，口径当日二次修正）。
+   *
+   * 面板「宽度塌陷/被裁剪」这类问题无法从 React 侧推断——`GenericPopover` 的
+   * 实际几何完全由 floating-ui 写进内联 style。故这里在面板打开后
+   * **去 DOM 里回捞真实 rect**。⚠️ 浮层**不是** `panelHost` 的直接子元素——
+   * FloatingPortal 会先包一层无样式包装 div（见下方测量处的说明），
+   * 必须穿透 static 包装层定位到第一个非 static 元素；直接测首子元素
+   * 会拿到包装层（static、h=0）的无效数据。
+   * 把 `left/top/width/height` 与视口尺寸一并上行，供宿主日志判读：
+   * - `x` 恰好等于锚点 x → 说明宽度被「从锚点到容器右缘」约束（含块问题）；
+   * - `width` 远小于内容应有宽度 → 说明宽度塌陷；
+   * - `y` 为负数或越出 `innerHeight` → 说明垂直定位/夹取异常。
+   */
+  useEffect(() => {
+    sendUp({
+      type: "diagnostic",
+      message: `linkPanel anchor: open=${props.open} from=${snap.range.from} to=${snap.range.to} hasView=${!!editor?.prosemirrorView} anchor=${anchorPosition ? "yes" : "no"}`,
+    });
+    if (!props.open || !panelHost) return;
+    /**
+     * `requestAnimationFrame` 等一帧：floating-ui 在 mount 后的 effect 里才写入
+     * `left/top`，同步读会拿到初始 0。双 rAF 确保测量发生在首次定位之后。
+     */
+    const raf = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        /**
+         * ★ **实测口径：必须穿透 FloatingPortal 的包装层**（v2026-09-24 实证修正）。
+         * floating-ui 的 `useFloatingPortalNode` 即使收到 root 也会先
+         * `document.createElement('div')` 建一层**无样式包装 div**（subRoot）
+         * 再把浮层挂进去——上一轮测 `panelHost.firstElementChild` 测到的是
+         * 包装层（pos=static、h=0——因真浮层 absolute 脱流），全部无效数据，
+         * 还误导出「宽度塌陷」的错误判读（contentW=306 其实一直是浮层宽度，
+         * 即定位与宽度早就正常）。
+         * 正确口径：从 panelHost 向下找**第一个 `position !== "static"` 的元素**，
+         * 那才是带 floating-ui 定位样式的浮层本体。
+         */
+        let el = panelHost.firstElementChild as HTMLElement | null;
+        while (el && getComputedStyle(el).position === "static") {
+          el = el.firstElementChild as HTMLElement | null;
+        }
+        if (!el) {
+          sendUp({ type: "diagnostic", message: "linkPanel rect: <no panel element>" });
+          return;
+        }
+        const r = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        sendUp({
+          type: "diagnostic",
+          message:
+            `linkPanel rect: x=${Math.round(r.x)} y=${Math.round(r.y)} w=${Math.round(r.width)} h=${Math.round(r.height)}` +
+            ` vw=${window.innerWidth} vh=${window.innerHeight}` +
+            ` pos=${cs.position} disp=${cs.display} minW=${cs.minWidth} maxW=${cs.maxWidth}` +
+            ` inlineLeft=${el.style.left} inlineTop=${el.style.top} tf=${el.style.transform}` +
+            ` hostW=${panelHost.getBoundingClientRect().width}` +
+            ` contentW=${(el.firstElementChild as HTMLElement | null)?.getBoundingClientRect().width}`,
+        });
+      });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [props.open, snap.range.from, snap.range.to, anchorPosition, editor, panelHost]);
+
+  return (
+    <PositionPopover
+      position={anchorPosition}
+      /**
+       * Portal 到**自建容器**（见 `panelHost` 的注释）：
+       * 同时拿到「逃出 `overflow` 裁剪」+「`.bn-mantine` / `.bn-root` 的 CSS 变量继承」。
+       * 不能用 `null`（丢变量 → 图标乱码），也不能用 `undefined`（落回
+       * `editor.portalElement`，在 `bn-container` 内被裁）。
+       */
+      portalElement={panelHost ?? null}
+      /**
+       * ★ `elementProps.style.pointerEvents = "auto"` 与容器 `none` 是**一对**
+       * （v2026-09-24 修复「编辑页无法聚焦」）：
+       *
+       * `panelHost` 铺满视口且 `pointerEvents:"none"`（挡不住点击了），
+       * 但浮层是这个 `none` 容器的子节点——`pointer-events` 是**可继承属性**，
+       * 不显式恢复的话浮层（连同里面的两个输入框）也收不到任何点击。
+       * `GenericPopover` 会把 `elementProps` 展开进浮层根 div 的属性里
+       * （其源码 `mergedProps = { ...props.elementProps, style: {...} }`，
+       * `pointerEvents` 不在后续覆盖项中，能存活）⇒ 在这里恢复 `auto`
+       * 即可让面板本身恢复交互，容器其余区域仍保持点击穿透。
+       */
+      elementProps={{ style: { pointerEvents: "auto" } }}
+      /**
+       * ★ `focusManagerProps={{ disabled: true }}` 是**必须**的（v2026-09-24 修复）。
+       *
+       * 官方 `PositionPopover` 底层是 `GenericPopover`，后者无条件套了一层
+       * `FloatingFocusManager`，默认行为是「弹出时把焦点移入面板 + 焦点离开面板即关闭」
+       * （`closeOnFocusOut`）。本场景下这套机制会**在打开当帧就把自己关掉**：
+       *
+       * ① 面板内是 `EditLinkMenuItems` 的两个 Mantine `TextInput`（`autoFocus`），
+       *    `FloatingFocusManager` 尝试把焦点交给它们 ⇒ 编辑器 `contenteditable` 失焦
+       *    （真机日志实证：`openLinkPanel` 后 ~20ms 即出现 `editorFocus=false`）；
+       * ② Android WebView 里焦点转移的 `relatedTarget` 常为 `null`，
+       *    `closeOnFocusOut` 据此判定「焦点跑到面板外」⇒ 立刻 `onOpenChange(false)`；
+       * ③ 结果：**第一次点只有一帧、肉眼看不到面板**，第二次点因焦点已在面板内不再搬移
+       *    才正常显示——这正是「第一次不出现、再点才出现」的根因。
+       *
+       * 面板本身不需要焦点管理：它是宿主命令驱动的受控浮层，关闭权在 `props.open`；
+       * 点外部 / 按 Esc 由 `useDismiss`（`getFloatingProps` 注入的监听）继续覆盖。
+       */
+      focusManagerProps={{ disabled: true }}
+      useFloatingOptions={{
+        open: props.open,
+        onOpenChange: (open) => {
+          /**
+           * 关闭一律经 `onClose` 回宿主：
+           * - 用户提交表单 → 面板自关，同时宿主收到 `closeLinkPanel` 收尾（幂等）；
+           * - 用户点外部 / 按 Esc → 官方 dismiss 行为关闭，宿主无从得知，
+           *   故由这里上行 `linkPanelClosed`（见 `onClose` 的实现）。
+           * 只处理「关」不处理「开」——开只能由宿主命令驱动，避免误开。
+           */
+          sendUp({
+            type: "diagnostic",
+            message: `linkPanel onOpenChange: open=${open} active=${String(
+              document.activeElement?.tagName,
+            )}`,
+          });
+          if (!open) props.onClose();
+        },
+        placement: "top-start",
+        /**
+         * ★★ **防裁剪三件套 middleware 是官方标配，缺了就裁**（v2026-09-24 实证修复）。
+         *
+         * 官方 `FormattingToolbarController.tsx:101` 传的是
+         * `middleware: [offset(10), shift(), flip()]`，本面板此前**一个都没传**，
+         * 后果（真机日志 + 截图实证）：
+         * - 无 `flip()`：锚点（光标）在编辑区顶部时面板仍坚持放上方，
+         *   顶出视口 → **上边缘被裁**；
+         * - 无 `shift()`：锚点靠右时面板（`top-start` 左对齐锚点）右半截
+         *   越出视口右缘 → **右边缘被裁**；
+         * - 无 `offset()`：面板紧贴锚点 0 间距，观感生硬且与官方不一致。
+         *
+         * 三者全为 floating-ui 内置 middleware，与官方工具栏同参数，不另发明。
+         */
+        middleware: [offset(10), shift(), flip()],
+      }}
+    >
+      <div
+        className="bn-popover-content bn-form-popover"
+        /**
+         * ★ **宽度必须显式给，不能靠内容撑**（v2026-09-24 修复「面板宽度塌陷」）。
+         *
+         * **官方原本是怎么撑开的**：库样式 `blocknoteStyles.css:17-20`
+         * ```
+         * .bn-form-popover .mantine-TextInput-root { width: 300px; }
+         * ```
+         * 即 `.bn-form-popover` 自身**不设宽度**，靠内部 TextInput 的 `300px`
+         * 把父级顶开。**那个机制只在「浮层不受外部宽度约束」时成立**——
+         * 我们的容器修好后它本来也能工作。
+         *
+         * **为什么还要显式写死**：本面板的两个前置条件（Portal 到自建容器 +
+         * 官方 `.bn-form-popover` 的 `display:flex` 由 `GenericPopover` 注入）
+         * 让「谁撑谁」依赖 floating-ui 的可用空间推断，太脆弱。写死宽度后
+         * **不再依赖任何上下文推断**，与 `flexShrink:0` 配合可彻底钉死。
+         *
+         * **取值口径（对齐官方，不另创尺寸）**：
+         * `TextInput-root 300px` + `.bn-form-popover` 左右 padding 各 2px
+         * （库第 14 行 `padding: 2px`）+ 左右 border 各 1px（库第 8 行
+         * `border: var(--bn-border)`，本项目主题为 1px）**= 306px**。
+         * 外层再包 `boxSizing:border-box`，故 `width:306px` 即最终外框宽度。
+         * 小屏用 `calc(100vw - 32px)` 收缩（左右各留 16px 安全边距），
+         * `100vw` 在 WebView 等于可视宽度，无需读 `window.innerWidth`
+         * （避免键盘弹出导致取值过时）。
+         */
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 4,
+          boxSizing: "border-box",
+          width: "min(306px, calc(100vw - 32px))",
+          maxWidth: "calc(100vw - 32px)",
+          /** 覆盖库的 `min-width:145px`，避免与上面的宽度计算打架 */
+          minWidth: 0,
+          /**
+           * 面板自身是 flex item，禁止收缩 —— 否则外层 flex 容器（`fit-content`）
+           * 在空间不足时仍会把它压窄，写死的 `width` 会被 `flex-shrink` 抵消。
+           */
+          flexShrink: 0,
+        }}
+        /**
+         * 阻断冒泡到编辑器：面板虽经 `PositionPopover` Portal 到 `editor.portalElement`，
+         * 但 React 合成事件**沿 fiber 树传播**（Portal 只改 DOM 归属），
+         * 不拦住会让点击穿透到编辑器导致光标/选区变化。
+         */
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        {/*
+          `showTextField` 保持默认 `true`：本项目链接面板一直提供「显示文字」输入框
+          （官方 CreateLinkButton 传 `false` 隐藏它，此处刻意不跟随——留住既有能力）。
+        */}
+        <EditLinkMenuItems
+          url={snap.url}
+          text={snap.text}
+          range={{ from: snap.range.from, to: snap.range.to }}
+          setToolbarOpen={(open) => {
+            if (!open) props.onClose();
+          }}
+        />
+      </div>
+    </PositionPopover>
   );
 }
 

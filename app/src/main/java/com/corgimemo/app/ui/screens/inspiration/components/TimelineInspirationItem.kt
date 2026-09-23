@@ -30,6 +30,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import com.corgimemo.app.ui.theme.ContentFontManager
+/** 灵感正文 → 纯文本的唯一入口（摘要/搜索/字数统计共用同一口径，v2026-09-23） */
+import com.corgimemo.app.ui.screens.inspiration.InspirationTextUtils
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -378,7 +380,40 @@ fun TimelineInspirationItem(
 
                     // 正文（14sp，行高 21sp，最多6行超出省略）
                     if (inspiration.content.isNotBlank()) {
-                        val plainContent = removeHtmlTags(inspiration.content)
+                        /**
+                         * 正文摘要取纯文本（v2026-09-23 修正）。
+                         *
+                         * **此前用本文件私有的 `removeHtmlTags()`**——它只剥 HTML 标签，
+                         * **对 markdown 一无所知**，于是正文里的 `---` / `***` 分割线、
+                         * `#` 标题、`**` 粗体、`@@@CORGI_…@@@` 内部 token 全会原样漏进
+                         * 首页时间线摘要（用户报"首页列表不应该有分割线"）。
+                         *
+                         * 现统一走 [InspirationTextUtils.markdownToPlainText]（即
+                         * `MarkdownParser.toPlainText`）——这是本项目**唯一**的
+                         * "灵感正文 → 纯文本"入口（见该方法的 KDoc：凡取纯文本一律走它），
+                         * 分割线 / 内部 token / 行内 span / 标题 / 引用等均已在其中收敛处理。
+                         *
+                         * **为何此处再剥一次**：`content` 字段在保存时（
+                         * `InspirationEditViewModel`）已按同一口径生成，正常数据下本调用
+                         * 是**幂等**的；但历史数据的 `content` 可能是旧口径产物、仍残留标记
+                         * （`repairInspirationPlainText` 受污染线索所限不保证清洗干净），
+                         * 渲染端兜一道可保证摘要永远干净，不依赖数据是否已修复。
+                         *
+                         * **再叠一层 [InspirationTextUtils.collapseBlankLines]（v2026-09-23 补）**：
+                         * BlockNote 每按一次回车就生成一个独立段落块，导出 markdown 时块间以
+                         * `\n\n` 连接 ⇒ 编辑页视觉紧贴的两行，其 `content` 实为 `行1\n\n行2`。
+                         * Compose 的 `Text` **把每个 `\n` 都画成一整行**，于是一个段间空行就
+                         * 变成一整行空白 ⇒ **行距翻倍**（真机：9 条链接只显示 3 条就出现 `…`，
+                         * 因为 9 行文字 + 8 个空行 = 17 行，`maxLines = 6` 被空行吃掉一半）。
+                         *
+                         * 口径（用户确认）：**时间线摘要里不出现任何空行** —— 既包含块间自动
+                         * 产生的空行，也包含用户在编辑页手动敲出的空行，一律折叠掉。
+                         * 折叠只作用于渲染，不写回数据（`content` 字段保持原样，
+                         * 字数统计 / 剪贴板 / 搜索口径不受影响）。
+                         */
+                        val plainContent = InspirationTextUtils.collapseBlankLines(
+                            InspirationTextUtils.markdownToPlainText(inspiration.content)
+                        )
                         Text(
                             text = plainContent,
                             fontFamily = inspirationFontFamily,
@@ -723,17 +758,4 @@ private fun InspirationTimelineImage(
             // 从而实现点击图片进入预览页、点击其他位置进入详情页的区分
             .clickable(onClick = onClick)
     )
-}
-
-/**
- * 去除HTML标签工具函数
- */
-private fun removeHtmlTags(html: String): String {
-    return html
-        .replace("<[^>]*>".toRegex(), "")
-        .replace("&nbsp;", " ")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&amp;", "&")
-        .trim()
 }

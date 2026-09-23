@@ -407,6 +407,15 @@ fun InspirationViewCard(
  * 现改为逐段 `extractBlockColorMarkers` 解析后映射成 Compose 颜色，落到
  * [InspirationBodyParagraph] 的 `textColor` / `backgroundColor` 上。
  *
+ * **v2026-09-23 追加：空段渲染为空行占位（还原用户留白）**。编辑页敲的空行以
+ * `@@@CORGI_BLANK@@@` token 段持久化（见 converter.ts 的 BLANK_LINE_TOKEN），剥标记后
+ * 成为空段——此前空段一律跳过，用户留白在详情页消失。现空段渲染一行**空行占位**
+ * （空格 Text，15sp/22sp 与正文一致）；**例外**：① 原始段为分割线 token 载体
+ * （`@@@CORGI_DIVIDER_…@@@`）仍整体跳过——详情页从渲染过分割线，不能凭空多出空行；
+ * ② 图片间载体空行仍由 skipRenderIndexes 优先跳过（图片区自行留白）。
+ * ⚠️ 历史数据（token 引入前保存）的空段是官方导出折叠后的残留，数量可能少于
+ * 用户当时敲的空行——无法重建，只能按现状渲染。
+ *
  * @param contentFormat 富文本 Markdown（由编辑页 `RichTextState.toMarkdown()` 导出）。
  * @param fallbackContent 旧记录 `contentFormat` 为空时的纯文本回退（按改造前的纯 Text
  *   渲染，不喂给 markdown 解析，避免旧文本里的 `*` 等字符被误当语法）。
@@ -566,8 +575,28 @@ private fun InspirationBodyRichText(
             val blockTextColor = blockColorOf(blockColors?.textColor, background = false)
             val blockBgColor = blockColorOf(blockColors?.backgroundColor, background = true)
             when {
-                /** 空段（含图片边界空段）：不渲染（与原过滤管线一致） */
-                para.isEmpty() -> Unit
+                /**
+                 * 空段（v2026-09-23 起分两类）：
+                 * - 剥标记后为空、但原始段是**分割线 token 载体**（@@@CORGI_DIVIDER_…@@@）
+                 *   → 维持既有口径整体跳过（详情页不渲染分割线，也不给它留空行）；
+                 * - 其余空段 = 用户在编辑页主动敲的空行（@@@CORGI_BLANK@@@ token 段
+                 *   剥标记后为空，或历史数据折叠残留的空段）→ 渲染一行**空行占位**
+                 *   （空格 Text，字号/行高与正文一致），还原用户留白。
+                 *   图片间载体空行仍由 skipRenderIndexes 优先跳过（图片区自行留白）。
+                 */
+                para.isEmpty() -> {
+                    if (isDividerTokenParagraph(paragraphs[pIdx])) {
+                        // 分割线 token 载体段：维持"不渲染"口径
+                    } else {
+                        Text(
+                            text = " ",
+                            fontFamily = fontFamily,
+                            fontSize = 15.sp,
+                            lineHeight = 22.sp,
+                            color = Color.Transparent
+                        )
+                    }
+                }
                 /** 图片段（整段恰为 `![alt](path)`，与 parseMarkdownSegments 的图片
                  *  正则同源）：由卡面独立图片区展示，此处跳过 */
                 InspirationImageSegmentRegex.matches(para) -> Unit
@@ -693,6 +722,25 @@ private val InspirationImageSegmentRegex = Regex("""^!\[[^\]]*\]\([^)]+\)$""")
  */
 private fun isBlankBodyParagraph(para: String): Boolean =
     para.replace("\u00A0", "").replace("\u200B", "").isBlank()
+
+/**
+ * 原始段（**未剥标记**）是否为分割线 token 独立段（v2026-09-23 空行渲染配套）
+ *
+ * 背景：`@@@CORGI_DIVIDER_solid|dashed|wavy@@@` 独立段经
+ * [MarkdownParser.stripStructuralMarkers] 剥标记后成为**空段**；空段改为渲染
+ * 空行占位后，若不把分割线载体段排除，详情页每条分割线位置会多出一行空白
+ * （既有口径是"分割线在详情页不渲染、无痕迹"——详情页从未渲染过分割线）。
+ * 故空段分支渲染前用它区分「用户敲的空行（@@@CORGI_BLANK@@@ 段 / 历史空段）」
+ * 与「分割线载体段」。
+ *
+ * token 形态与写入侧对齐：JS converter.ts 的 `DIVIDER_TOKEN_PREFIX/SUFFIX`，
+ * 样式值仅 solid / dashed / wavy 三种（trim 处理段内可能的缩进）。
+ *
+ * @param raw 原始段落 markdown（剥标记**前**）
+ * @return true = 该段是分割线 token 独立段，剥完为空时应整体跳过、不渲染空行
+ */
+private fun isDividerTokenParagraph(raw: String): Boolean =
+    raw.trim().matches(Regex("""@@@CORGI_DIVIDER_(solid|dashed|wavy)@@@"""))
 
 /**
  * 详情页正文单段渲染：把单段 markdown 解析进独立 [RichTextState] 后用只读 [RichText] 展示。

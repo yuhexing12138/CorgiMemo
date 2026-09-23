@@ -39,6 +39,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.corgimemo.app.data.model.Inspiration
+/** 灵感正文 → 纯文本的唯一入口（摘要/搜索/字数统计共用同一口径，v2026-09-23） */
+import com.corgimemo.app.ui.screens.inspiration.InspirationTextUtils
 import com.corgimemo.app.ui.components.calendar.CalendarMonthView
 import com.corgimemo.app.ui.components.calendar.DateWheelPicker
 import com.corgimemo.app.ui.theme.UiColors
@@ -376,8 +378,22 @@ internal fun CalendarInspirationItem(
         Spacer(modifier = Modifier.height(9.dp))
 
         // ===== 正文（14sp，行高 21sp）=====
+        /**
+         * v2026-09-23 修正：此前用本文件私有的 `removeHtmlTags()`，它只剥 HTML 标签、
+         * **不认 markdown**，导致正文里的分割线 `---` / `***`、标题 `#` 等原样漏进摘要。
+         * 现统一走 [InspirationTextUtils.markdownToPlainText]，
+         * 与首页时间线 [TimelineInspirationItem]、列表卡片 [InspirationCard] 口径一致。
+         *
+         * v2026-09-23 再修「摘要行距翻倍」：BlockNote 每行是一个独立段落块，导出 markdown
+         * 时块间以 `\n\n` 连接，而 Compose 的 `Text` 会把每个 `\n` 画成一整行空行 ⇒
+         * `maxLines = 6` 被空行吃掉一半、可见内容腰斩。故再叠一层
+         * [InspirationTextUtils.collapseBlankLines]，口径与另外两处摘要一致：
+         * **摘要里不出现任何空行**（含用户手动敲的空行）。仅作用于渲染，不写回数据。
+         */
         if (inspiration.content.isNotBlank()) {
-            val plainContent = removeHtmlTags(inspiration.content)
+            val plainContent = InspirationTextUtils.collapseBlankLines(
+                InspirationTextUtils.markdownToPlainText(inspiration.content)
+            )
             Text(
                 text = plainContent,
                 fontSize = 14.sp,
@@ -474,19 +490,3 @@ internal fun CalendarInspirationItem(
  * @return 标签列表
  */
 internal fun decodeTagsJson(tagsJson: String): List<String> = TagUtils.decodeTags(tagsJson)
-
-/**
- * 去除HTML标签
- *
- * @param html 包含HTML标签的字符串
- * @return 纯文本字符串
- */
-private fun removeHtmlTags(html: String): String {
-    return html
-        .replace("<[^>]*>".toRegex(), "")
-        .replace("&nbsp;", " ")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&amp;", "&")
-        .trim()
-}

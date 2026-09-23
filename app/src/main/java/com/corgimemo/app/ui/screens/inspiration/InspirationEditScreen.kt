@@ -198,26 +198,6 @@ fun InspirationEditScreen(
     val contentLoaded by viewModel.contentLoaded.collectAsState()
     val blockNoteController = remember { BlockNoteBridgeController() }
     var blockNoteLoadStarted by remember { mutableStateOf(false) }
-    /** BlockNote 模式链接对话框（P1.5 浮层桥接：🔗 按钮 → URL + 显示文字输入 → downlink createLink） */
-    var showLinkDialog by remember { mutableStateOf(false) }
-    var linkDialogUrl by remember { mutableStateOf("https://") }
-    /**
-     * 链接对话框的「显示文字」输入（v2026-09-22，可留空）。
-     *
-     * 语义按用户决策：**未选中文字**时必填感最强——留空则直接用 URL 原文作为显示文字；
-     * 填了则用它。选中文字时该值优先级更高（会用标题替换选中文字），
-     * 故留空是常态（选中文字本身就是标题）。
-     */
-    var linkDialogText by remember { mutableStateOf("") }
-    /**
-     * 打开链接对话框那一刻的「已有链接 URL」快照（v2026-09-22）。
-     *
-     * 非空 = **编辑链接模式**：对话框预填该 URL、标题改为「编辑链接」、确定按钮改文案，
-     * 并额外提供「移除链接」。之所以取「打开那一刻的快照」而不是直接读
-     * `blockNoteController.blockState.linkUrl`：对话框开着期间编辑器仍可能上行新的
-     * blockState（选区/内容变化），若实时读会让标题与按钮文案中途跳变。
-     */
-    var linkDialogExistingUrl by remember { mutableStateOf<String?>(null) }
     /**
      * 当前展开的底部内联面板（v2026-09-21 收敛为单一状态，取代原先三个 boolean）
      *
@@ -676,6 +656,13 @@ fun InspirationEditScreen(
         } else {
             keyboardController?.hide()
             openPanel = panel
+            /**
+             * 链接面板互斥（v2026-09-24 新增）：T/H/A 任一面板展开时收掉 WebView 内
+             * 的链接面板，保证「同一时刻至多一个面板」。幂等：链接面板未开时
+             * 多发一条 `closeLinkPanel` 命令，JS 侧把已是 false 的 open 再置一次
+             * false，无任何副作用。
+             */
+            blockNoteController.closeLinkPanel()
         }
     }
 
@@ -1352,6 +1339,16 @@ fun InspirationEditScreen(
                         isSaving = true
                         coroutineScope.launch {
                             try {
+                                /**
+                                 * v2026-09-23 保存竞态修复：保存前先向 WebView 要一次**即时快照**。
+                                 *
+                                 * 背景：正常编辑经 JS 防抖 800ms 上行；用户停手不足 800ms 点「完成」，
+                                 * `_contentFormat` 还是上一次防抖快照，最后一批编辑（敲的空行/文字）
+                                 * 不落库（真机复现：连敲 3 次回车立刻点完成，重进只剩 1 个空行）。
+                                 * JS 侧 requestSave 已改为立即导出上行，这里挂起等它到达
+                                 * （800ms 超时兜底：WebView 未就绪/异常时按现有内存值保存，与旧行为一致）。
+                                 */
+                                blockNoteController.requestSaveAndAwait(timeoutMs = 800L)
                                 if (viewModel.saveInspiration()) {
                                     homeViewModel.setPoseForLoading()
                                     homeViewModel.refreshSubTaskProgress()
@@ -1684,23 +1681,48 @@ fun InspirationEditScreen(
                 },
                 onInsertLink = {
                     /**
-                     * 弹 URL + 显示文字输入对话框 → downlink createLink 下发。
+                     * 打开 WebView 内的**官方链接面板**（v2026-09-24 改造）。
                      *
-                     * v2026-09-22 两步前置动作：
-                     * 1. [BlockNoteBridgeController.saveSelection]：**打开弹窗前**把当前选区
-                     *    快照留在 JS 侧——AlertDialog 会让 WebView 失焦，若 Android WebView
-                     *    在失焦时折叠了内部选区，随后的 createLink 就会按「无选区」处理
-                     *    （用户明明选了字，却在光标处插了 URL）；
-                     * 2. 读一次 `blockState.linkUrl` 判断是否落在已有链接上 → 决定对话框是
-                     *    「插入链接」还是「编辑链接」。
+                     * 此前这里弹的是宿主自绘的 Compose `AlertDialog`，与 WebView 内官方
+                     * FormattingToolbar 的「链接」按钮构成两套并行实现（外观、校验、
+                     * 提交路径各不相同）。现统一收敛：面板内容直接用官方
+                     * `EditLinkMenuItems`，定位用官方 `PositionPopover`（锚点跟随选区），
+                     * 与 WebView 内那个按钮**逐字一致**。
+                     *
+                     * **toggle 语义（v2026-09-24 二次改造）**：面板已打开时再点 = 关闭。
+                     * 真值读 [BlockNoteBridgeController.linkPanelOpen]（三路同步：
+                     * openLinkPanel/closeLinkPanel 置位 + JS 上行 `linkPanelClosed`
+                     * 复位点外关闭/提交关闭），高亮态（isLinkPanelActive）与 toggle
+                     * 判定用同一真值，二者不会漂移。
+                     *
+                     * 先 [BlockNoteBridgeController.saveSelection] 再下发命令：
+                     * 面板打开后 WebView 会失焦，若 Android 在失焦时折叠了内部选区，
+                     * 用户提交时官方 `editLink` 依赖的 `range` 仍是 JS 侧快照过的区间，
+                     * 位置不受影响（锚点与预填的 URL 由 JS 现取，宿主无需传参）。
+                     * （关闭分支无需快照，saveSelection 放进打开分支。）
+                     *
+                     * ⚠️ 不再需要宿主判断「插入」还是「编辑」：官方 `EditLinkMenuItems`
+                     * 的 URL 框会按 `getSelectedLinkUrl()` 自动预填，光标在链接上时
+                     * 用户直接改即可；「移除链接」则由 WebView 内官方 LinkToolbar 提供
+                     * （光标落在链接上时它会自动浮出）。
                      */
-                    blockNoteController.saveSelection()
-                    val existing = blockNoteController.blockState.linkUrl.takeIf { it.isNotBlank() }
-                    linkDialogExistingUrl = existing
-                    linkDialogUrl = existing ?: "https://"
-                    linkDialogText = ""
-                    showLinkDialog = true
+                    if (blockNoteController.linkPanelOpen) {
+                        /** 已开 → 再点即收（toggle；键盘去留由面板收起副作用统一处理） */
+                        blockNoteController.closeLinkPanel()
+                    } else {
+                        /** 未开 → 与 T/H/A 面板互斥（一次只开一个面板），快照后打开 */
+                        openPanel = null
+                        blockNoteController.saveSelection()
+                        blockNoteController.openLinkPanel()
+                    }
                 },
+                /**
+                 * 链接按钮高亮（v2026-09-24 新增）：面板打开期间保持点亮。
+                 * 真值 = [BlockNoteBridgeController.linkPanelOpen]，与 onInsertLink
+                 * 的 toggle 判定同源；「光标在链接上」的高亮（linkUrl）在
+                 * [RichTextFormatToolbar] 内与之取或——两种亮起语义并存。
+                 */
+                isLinkPanelActive = blockNoteController.linkPanelOpen,
                 onToggleCodeSpan = {
                     blockNoteController.format("codeSpan")
                 },
@@ -2307,103 +2329,6 @@ fun InspirationEditScreen(
                     }
                 )
             }
-
-            /**
-             * BlockNote 模式（P1.5）：链接对话框——插入 / 编辑 / 移除，三态合一。
-             *
-             * 底部工具栏 🔗 按钮触发。⚠️ 该按钮在**光标落在已有链接上**时会高亮
-             * （判据来自 JS 上行的 `blockState.linkUrl`，见 `RichTextFormatToolbar`），
-             * 此时本对话框进入「编辑链接」模式：预填 URL、确定按钮改文案、多一个「移除链接」。
-             *
-             * ⚠️ v2026-09-22 修复「未选中文字时点了链接不生效」：
-             * BlockNote 的 `createLink(url)` 在**空选区**（仅光标）下执行的是
-             * `tr.addMark(from, to)` 且 `from == to` —— 给空区间加 mark 是**空操作**，
-             * 于是无选区时点击完成毫无反应、也无任何报错。修复放在 JS 侧
-             * （见 EditorApp.tsx 的 `createLink` case）：无选区时以「用户输入的标题」
-             * 或「URL 原文」为显示文字**插入一段带链接的新文本**；
-             * 光标落在已有链接上时则改走 `editLink`，避免插出「链接里套链接」。
-             *
-             * 所有写操作前都先下发 `restoreSelection`：把弹窗打开前的选区还原回来，
-             * 保证命令作用在用户当初选中的位置上（命令按序执行，restore 必定先生效）。
-             */
-            if (showLinkDialog) {
-                /** 是否编辑已有链接（取打开弹窗那一刻的快照，弹窗期间不随 blockState 跳变） */
-                val editingExistingLink = linkDialogExistingUrl != null
-                /** URL 合法性：非空且不只是刚预填的协议前缀（否则会写入一个空链接） */
-                val trimmedUrl = linkDialogUrl.trim()
-                val urlOk = trimmedUrl.isNotBlank() &&
-                    trimmedUrl != "https://" && trimmedUrl != "http://"
-                androidx.compose.material3.AlertDialog(
-                    onDismissRequest = { showLinkDialog = false },
-                    title = { Text(if (editingExistingLink) "编辑链接" else "插入链接") },
-                    text = {
-                        Column {
-                            OutlinedTextField(
-                                value = linkDialogUrl,
-                                onValueChange = { linkDialogUrl = it },
-                                label = { Text("链接地址") },
-                                placeholder = { Text("https://example.com") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = linkDialogText,
-                                onValueChange = { linkDialogText = it },
-                                label = { Text("显示文字（可留空）") },
-                                placeholder = {
-                                    Text(
-                                        if (editingExistingLink) "留空则保留原显示文字"
-                                        else "未选中文字且留空时，显示链接本身"
-                                    )
-                                },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    },
-                    confirmButton = {
-                        TextButton(
-                            onClick = {
-                                if (urlOk) {
-                                    /**
-                                     * 标题留空 / 有选区时传 null：由 JS 侧按「有选区→给选中文字挂链接；
-                                     * 无选区且有链接→改这条链接；无选区且无链接→用 URL 原文插入」
-                                     * 自行分流（宿主不判断选区，因为选区真值只在 WebView 里）。
-                                     */
-                                    val title = linkDialogText.trim().ifEmpty { null }
-                                    blockNoteController.restoreSelection()
-                                    blockNoteController.createLink(trimmedUrl, title)
-                                }
-                                showLinkDialog = false
-                            },
-                            enabled = urlOk
-                        ) {
-                            Text(if (editingExistingLink) "更新" else "确定")
-                        }
-                    },
-                    dismissButton = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            /** 仅编辑模式提供「移除链接」：去掉 link mark，**文字保留** */
-                            if (editingExistingLink) {
-                                TextButton(
-                                    onClick = {
-                                        blockNoteController.restoreSelection()
-                                        blockNoteController.deleteLink()
-                                        showLinkDialog = false
-                                    }
-                                ) {
-                                    Text("移除链接", color = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                            TextButton(onClick = { showLinkDialog = false }) {
-                                Text("取消")
-                            }
-                        }
-                    }
-                )
-            }
-
             /**
              * ⚠️ v2026-09-21：此处原有的「颜色」AlertDialog 弹窗接线已删除。
              *
