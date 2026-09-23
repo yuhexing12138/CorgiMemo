@@ -779,7 +779,13 @@ private fun RiFormatButton(
      * - longPressRepeat 底层改用 detectTapGestures：动作**不在 down 执行**，而是抬起（短按）/
      *   长按期间（连发），且能识别「拖动」——被父级 horizontalScroll 消费时 onPress 取消、
      *   tryAwaitRelease 返回 false，不触发任何动作（误触修复）；
-     * - 按压交互源由手势全权持有，finally 必 emit Release → 圆圈永不残留。
+     * - 按压交互源由手势全权持有：正常路径收尾发 Release/Cancel，异常终止（协程被杀）由
+     *   finally 兜底补发 Cancel → 圆圈永不残留。
+     * - 波纹发射参考工具栏其他按钮的官方实现（v2026-09-23）：其他按钮走 IconButton（clickable），
+     *   Foundation 在 horizontalScroll 内会把 Press 延迟 TapIndicationDelay(100ms) 发射、
+     *   滑动被消费时什么都不发，所以它们滑动起手不闪小波纹。此处传 delayPressIndication = true
+     *   复刻同一语义：滑动起手不发 Press（**不闪小波纹**）；延迟期间正常抬起 → 瞬时补发
+     *   Press+Release，快速点按的波纹不受影响。
      *
      * 边界置灰语义不变：`enabled = false` 时手势层直接不响应（无波纹、无动作）。
      */
@@ -796,6 +802,9 @@ private fun RiFormatButton(
                 enabled = enabled,
                 canRepeat = canRepeat,
                 interactionSource = interactionSource,
+                // 与其他按钮（IconButton/clickable）在滚动容器内的波纹行为对齐：
+                // Press 延迟 100ms 发射，滑动起手不闪小波纹；快速点按不受影响
+                delayPressIndication = true,
             ),
         contentAlignment = Alignment.Center
     ) {
