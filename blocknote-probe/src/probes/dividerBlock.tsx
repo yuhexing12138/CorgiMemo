@@ -51,6 +51,92 @@ const DIVIDER_ROW_STYLE: CSSProperties = {
 const TOOLBAR_SAFE_GAP = 8;
 
 /**
+ * 工具条按钮的固定尺寸（px，v2026-09-23 第二轮修复）。
+ *
+ * **为什么必须写死**：工具条按钮原先只给了 `padding` 与 `fontSize`，靠内容自然撑开，
+ * 于是宽度由**最长按钮**（虚线档）决定，高度由**折行行数**决定——而这两者都随
+ * 实际渲染时的字体度量浮动（真机实测同一处分割线两次点击，因折行行数不同，
+ * 工具条宽度与按钮高度都不一样）。写死宽高后：
+ * - 三个样式档按钮**等宽等高**，切换档位不会引起任何尺寸变化；
+ * - 图标改用 SVG（见 `DividerStyleIcon`）后宽度绝对可控，不依赖设备字体是否含 `╌` `〰`；
+ * - 工具条整体尺寸恒定 ⇒ `useLayoutEffect` 实测的 `rect` 恒定 ⇒ 夹取位置也恒定，
+ *   不会再出现"同一位置两次点击、位置也不一样"的抖动。
+ */
+const TOOLBAR_BTN_W = 52;
+const TOOLBAR_BTN_H = 28;
+/** 删除按钮稍宽（容纳两个汉字），高度与样式档按钮对齐 */
+const TOOLBAR_DEL_W = 46;
+
+/**
+ * 工具条基准字号（px，v2026-09-23 第二轮修复）。
+ *
+ * **必须显式写死，不能靠继承**：本工具条渲染在 `.editor-page` 的祖链之下
+ * （`EditorApp.tsx` 在该元素内联注入了 `--bn-editor-base-font-size`，值 = 宿主
+ * 「正文字号」设置），若工具条自身不声明字号，子元素就会继承到这个可变值。
+ * 虽然当前各按钮的 `font-size` 已是绝对 px，但 `line-height: normal`
+ * 与行高计算仍会**按继承字号**推导，导致按钮高度跟着宿主字号浮动。
+ * 写死 12px 即把这条继承链彻底截断：无论正文字号设成 14 还是 32，
+ * 工具条尺寸完全一致。
+ */
+const TOOLBAR_BASE_FONT = 12;
+
+/**
+ * 分割线样式档的线性图标（v2026-09-23 第二轮新增）。
+ *
+ * **为什么换成 SVG**：原先三个按钮用文本标签 `─────` / `╌ ╌ ╌` / `〰〰〰`，
+ * 这些制表符类字形在真机上：
+ * - 各设备字体度量不同，宽度浮动，最窄时挤成两行（甚至三行），按钮高度随之变化；
+ * - `╌`(U+254C) 与 `〰`(U+3030) 属冷僻码位，部分设备字体缺失时会渲染成豆腐块；
+ * - 折行后视觉上完全看不出"这是虚线"，反而像乱码。
+ * 改用 SVG 后线型**由几何路径确定**，与字体、字号、设备完全无关，
+ * 且能保证三个档位在固定尺寸按钮内视觉重量一致。
+ *
+ * 三个图标共用 `viewBox="0 0 24 12"`：宽 24 高 12 的坐标系，
+ * 线段统一放在 `y=6` 中线，`stroke-width=1.5` 与正文分割线观感对齐。
+ *
+ * @param style 要绘制的线型档位
+ * @param color 描边色（选中态由调用方传入主题主色）
+ */
+function DividerStyleIcon(props: { style: DividerStyle; color: string }) {
+  const common = {
+    width: 24,
+    height: 12,
+    viewBox: "0 0 24 12",
+    fill: "none",
+    stroke: props.color,
+    strokeWidth: 1.5,
+    // 让线型端点圆润，避免短横显得生硬（与真机分割线观感一致）
+    strokeLinecap: "round" as const,
+  };
+
+  // 实线：一条整线
+  if (props.style === "solid") {
+    return (
+      <svg {...common}>
+        <path d="M1 6 H23" />
+      </svg>
+    );
+  }
+
+  // 虚线：四段短横，间隔均匀（几何确定，不依赖字体里的 ╌ 字形）
+  if (props.style === "dashed") {
+    return (
+      <svg {...common}>
+        <path d="M1 6 H5 M8 6 H12 M15 6 H19 M22 6 H23" />
+      </svg>
+    );
+  }
+
+  // 波浪：两段正弦曲线，与正文 wavy 分割线的视觉语义一致
+  return (
+    <svg {...common}>
+      <path d="M1 6 Q 3.75 2, 6.5 6 T 12 6" />
+      <path d="M12.5 6 Q 15.25 2, 18 6 T 23.5 6" />
+    </svg>
+  );
+}
+
+/**
  * 分割线浮动工具条（样式三选 + 删除；点击分割线弹出，点外部关闭）
  *
  * **定位策略（v2026-09-23 修复被编辑器边缘裁剪）**：理想位置是"点击处正上方居中"
@@ -61,8 +147,9 @@ const TOOLBAR_SAFE_GAP = 8;
  * 1. **渲染前先用理想位置挂上**（`visibility:hidden`），
  * 2. `useLayoutEffect` 里量出真实尺寸后夹取到视口安全区内，再显示。
  *
- * 之所以不能"用固定尺寸直接算"：按钮内容含 `┈ ╌ 〰` 等**本地字体可能缺失**的字形，
- * 以及"删除"两个汉字，工具条宽度会随设备字体变化——最准的办法就是**实测**。
+ * 之所以用"实测"而不是纯数学推算：夹取需要知道工具条真实宽高，而它最终取决于
+ * 浏览器排版结果。配合 `TOOLBAR_BTN_W/H` 等写死的宽高常量，`rect` 每次都相等，
+ * 实测也就退化成一次稳定的常量读取。
  * 放在 `useLayoutEffect`（而非 `useEffect`）是因为它在浏览器绘制前同步执行，
  * 用户看不到"先错位再跳回来"的一帧闪烁。
  *
@@ -123,10 +210,11 @@ function DividerToolbar(props: {
     setPos({ left, top });
   }, [props.x, props.y]);
 
-  const styles: Array<{ key: DividerStyle; label: string }> = [
-    { key: "solid", label: "─────" },
-    { key: "dashed", label: "╌ ╌ ╌" },
-    { key: "wavy", label: "〰〰〰" },
+  /** 三个样式档：key 决定图标线型，title 供长按/悬停提示（原先靠文本标签自解释） */
+  const styles: Array<{ key: DividerStyle; title: string }> = [
+    { key: "solid", title: "实线" },
+    { key: "dashed", title: "虚线" },
+    { key: "wavy", title: "波浪线" },
   ];
 
   return (
@@ -144,43 +232,73 @@ function DividerToolbar(props: {
         border: "1px solid #ddd",
         borderRadius: 10,
         boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
+        // ⚠️ 必须写死字号：截断来自 .editor-page 的「正文字号」继承链，
+        // 否则按钮高度会随宿主字号设置浮动（详见 TOOLBAR_BASE_FONT 注释）
+        fontSize: TOOLBAR_BASE_FONT,
+        lineHeight: 1,
         display: "flex",
+        // 固定尺寸按钮之间用固定 gap，工具条总宽 = 3×52 + 46 + 3×4 + 2×6 = 240px
         gap: 4,
         padding: 6,
+        // 固定尺寸后内容不会再溢出，禁止任何意外折行
+        whiteSpace: "nowrap",
         zIndex: 10000,
       }}
     >
-      {styles.map((s) => (
-        <button
-          key={s.key}
-          onClick={() => {
-            props.onStyle(s.key);
-            props.onClose();
-          }}
-          style={{
-            padding: "4px 10px",
-            fontSize: 12,
-            borderRadius: 6,
-            border:
-              s.key === props.current
+      {styles.map((s) => {
+        const active = s.key === props.current;
+        return (
+          <button
+            key={s.key}
+            title={s.title}
+            aria-label={s.title}
+            onClick={() => {
+              props.onStyle(s.key);
+              props.onClose();
+            }}
+            style={{
+              // 宽高写死：三档按钮等宽等高，切档不会引起工具条尺寸变化
+              width: TOOLBAR_BTN_W,
+              height: TOOLBAR_BTN_H,
+              padding: 0,
+              boxSizing: "border-box",
+              fontSize: TOOLBAR_BASE_FONT,
+              lineHeight: 1,
+              // 图标与边框留出呼吸位，避免 SVG 撑满显得局促
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 6,
+              border: active
                 ? "1.5px solid var(--editor-primary, #1976d2)"
                 : "1px solid #ddd",
-            background: s.key === props.current ? "#eef4ff" : "#fff",
-            color: "#333",
-            cursor: "pointer",
-          }}
-        >
-          {s.label}
-        </button>
-      ))}
+              background: active ? "#eef4ff" : "#fff",
+              cursor: "pointer",
+            }}
+          >
+            <DividerStyleIcon
+              style={s.key}
+              color={active ? "var(--editor-primary, #1976d2)" : "#888"}
+            />
+          </button>
+        );
+      })}
       <button
         onClick={() => {
           props.onDelete();
           props.onClose();
         }}
         style={{
-          padding: "4px 10px",
-          fontSize: 12,
+          // 删除按钮宽度单独给（容纳「删除」两字），高度与样式档按钮严格对齐
+          width: TOOLBAR_DEL_W,
+          height: TOOLBAR_BTN_H,
+          padding: 0,
+          boxSizing: "border-box",
+          fontSize: TOOLBAR_BASE_FONT,
+          lineHeight: 1,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
           borderRadius: 6,
           border: "1px solid #f3c2c2",
           background: "#fff2f2",

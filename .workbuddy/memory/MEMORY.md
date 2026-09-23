@@ -24,6 +24,8 @@
 - 撤销可用态用 editor.canExec（yUndo/history 扩展）；toggleStyles 在光标态只改 stored marks 不触发 onChange → 须主动 pushBlockState()。面板收起时先 requestBlockState 再恢复软键盘。
 - ★ 代码块（2026-09-23 定位）：官方 codeBlock content="plain"→PM 表达式 "text*"，段落/标题/引用/列表都是 "inline"→"inline*"；updateBlock 换类型且未显式传 content 时按表达式字符串比较 → 不同则 content=[] ⇒ 原文被清空（updateBlock.ts:200-214，随后走 replaceContentMinimal 字符级 diff 全删）。故只有 Code Block 按钮吞文字。insertBlocks 不移动光标，需显式 setTextCursorPosition。
 - ★ 自定义块渲染必须自行撑满（2026-09-23）：官方 `.bn-block-content{width:100%;display:flex}` 是 **flex 容器**，官方 divider 用 `<hr>`+`[data-content-type=divider] hr{flex:1}` 撑满；自定义 render 的外层 div 是 flex item，不写 `flex:1` 就按 max-content 收缩、内部空 div ⇒ 宽度坍缩 0（样式全在、线长为 0，肉眼不可见）。solid/dashed（空 div+border-top）与 wavy（svg width:100% 但父宽 0）皆中招。凡"靠边框/背景撑视觉"的空元素在 flex 容器里都要显式 flex:1。
+- ★ 浮动工具条（divider 样式条）尺寸必须**全写死**（2026-09-23）：`display:flex` + 按钮仅给 padding 时，行内 flex 项默认 `flex-shrink:1`，三档相互挤压 ⇒ 每个按钮可用宽度由**最长者**决定；`╌`/`〰` 折行后行宽反而 > 单行宽 ⇒ 按钮被拉宽，`line-height:normal` 又令高度随行数变。改法：写死 fontSize + 按钮 width/height + `boxSizing:border-box` + `lineHeight:1` + `whiteSpace:nowrap`，标签一律换 SVG 图标（几何路径与字体/设备无关）。
+- ★ 用户描述里的**归因可能本身是错的**（2026-09-23）：用户报「不同位置时宽高不同」，实为**同一位置两次点击**（原图逐像素比对：图1/图2 页面内容逐字相同）。**先用原图确认变量是否真的变了**再排查，否则会白查 WebView 缩放 / viewport meta / 根容器 transform / Mantine CSS 变量（本次四项全排空）。
 - ★ 产物哈希采集范围（2026-09-23 已修）：原只算 `editor.html + src/editor/`，导致 `src/probe.css`、`src/probes/dividerBlock.tsx`、`src/probes/fontSizeStyle.tsx`（editor 入口真实依赖、会进产物）改动后不报"产物过期"、pre-commit 静默放过；已把这 3 项加入**两侧同序清单**（config 的 `ENTRIES` + ps1 的 `foreach`），现共 10 个文件。探针页专用文件（checks.ts / probes/schema.ts）刻意不纳入以免误报；editor 侧新增依赖须同步该清单。改 ps1 后务必复核 UTF-8 BOM 未丢。
 
 ## 字体体系
