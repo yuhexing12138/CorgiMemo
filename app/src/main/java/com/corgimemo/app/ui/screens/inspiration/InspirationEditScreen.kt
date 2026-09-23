@@ -2,8 +2,6 @@ package com.corgimemo.app.ui.screens.inspiration
 
 import android.net.Uri
 import android.Manifest
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
@@ -39,7 +37,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.filled.Lock
@@ -950,38 +947,6 @@ fun InspirationEditScreen(
     }
 
     /**
-     * v2026-08-01 新增：复制到剪贴板功能
-     *
-     * 行为：
-     * - 若正文有选区（selection.start != selection.end）→ 复制选区文本
-     * - 若无选区 → 复制正文全文
-     * - 复制后通过 SnackbarHostState 显示"已复制到剪贴板"提示（遵循项目规则：禁用系统 Toast）
-     *
-     * 实现要点：
-     * - 使用 RichTextState.annotatedString.text 获取纯文本（去除富文本格式标记）
-     * - 用 Android 系统 ClipboardManager 写入 ClipData
-     * - 复制操作不推入撤销栈（不属于内容编辑，是只读操作的派生）
-     */
-    val copyToClipboard: () -> Unit = {
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val selection = richTextState.selection
-        val fullText = richTextState.annotatedString.text
-        /** 有选区时复制选区文本，无选区时复制全文 */
-        val textToCopy = if (selection.start != selection.end) {
-            val start = minOf(selection.start, selection.end)
-            val end = maxOf(selection.start, selection.end)
-            fullText.substring(start, end)
-        } else {
-            fullText
-        }
-        val clip = ClipData.newPlainText("灵感内容", textToCopy)
-        clipboard.setPrimaryClip(clip)
-        coroutineScope.launch {
-            snackbarHostState.showSnackbar("已复制到剪贴板")
-        }
-    }
-
-    /**
      * 拦截系统返回事件（侧滑返回 / 系统返回键）
      *
      * v2026-07-22 改造：从直接调用 navigateBack 改为 attemptBack
@@ -1177,12 +1142,27 @@ fun InspirationEditScreen(
          *  用户可通过背景色选择器自选颜色 */
         containerColor = Color.Transparent,
         topBar = {
-            /** 顶部工具栏：返回 | 撤销/重做 | 画板/分享/删除 | 锁定 | 完成 */
+            /**
+             * 顶部工具栏：返回 | 撤销/重做 | 画板/分享/删除/锁定 | 完成
+             *
+             * v2026-09-23 横向收紧（真机 360.dp 宽机型反馈「完成」被挤成两行）：
+             * 该行按钮密集、空间紧张。做四处收敛：
+             * ① 返回按钮 40.dp → 36.dp；
+             * ② 撤销/重做触摸区 48.dp → 36.dp（此前被 `minimumInteractiveComponentSize()`
+             *    悄悄抬到 48.dp，是本行唯一"超宽"元素）；
+             * ③ 各段 Spacer 4/4/8.dp → 2/2/2.dp，左右内边距 4.dp → 2.dp；
+             * ④ 原「复制」按钮整块移除（连同其 clipboard 写入逻辑，按需求下线）。
+             * 累计使总需求从 ~390.dp 降到 ~314.dp，落在 360.dp 机型的 356.dp 可用宽度内，
+             * 「完成」按钮稳定拿到它所需的 58.dp 最小宽度（M3 `defaultMinSize`），不再折行。
+             *
+             * 注：撤销/重做按钮的调用处显式传 `Modifier.size(36.dp)`，原因见其上方说明——
+             * 组件内部的 `minimumInteractiveComponentSize()` 只尊重更外层的尺寸约束。
+             */
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .safeAreaForTopBar()
-                    .padding(horizontal = 4.dp, vertical = 6.dp),
+                    .padding(horizontal = 2.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 /**
@@ -1193,7 +1173,12 @@ fun InspirationEditScreen(
                  */
                 IconButton(
                     onClick = attemptBack,
-                    modifier = Modifier.size(40.dp)
+                    /**
+                     * v2026-09-23 顶栏间距收敛：40.dp → 36.dp
+                     * 与顶栏其余图标按钮（画板/分享/删除/锁定）统一为 36.dp，
+                     * 为右侧「完成」按钮腾出横向空间（24.dp 图标在 36.dp 框内居中，视觉不受影响）。
+                     */
+                    modifier = Modifier.size(36.dp)
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -1203,7 +1188,8 @@ fun InspirationEditScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.width(4.dp))
+                /** v2026-09-23：4.dp → 2.dp（顶栏整体收紧） */
+                Spacer(modifier = Modifier.width(2.dp))
 
                 /**
                  * 撤销 + 重做（紧凑组）
@@ -1216,6 +1202,15 @@ fun InspirationEditScreen(
                  * v2026-09-17 追加：改用 [LongPressRepeatIconButton] 恢复原 JS 按钮的
                  * 长按连发手感（按下即执行 → 450ms 后每 150ms）；
                  * 连发途中若历史栈见底（canUndo/canRedo 翻 false）立即停发。
+                 *
+                 * v2026-09-23 间距收敛（真机反馈：撤销栈占位过宽，把右侧「完成」按钮挤成两行）：
+                 * [LongPressRepeatIconButton] 内部的 `minimumInteractiveComponentSize()`
+                 * 会把 Box 的实测宽度抬到 **48.dp**（本行其余 IconButton 因外部 `size(36.dp)`
+                 * 先固定约束而保住 36.dp），于是撤销+重做比相邻按钮多占 24.dp，
+                 * 顶栏总需求超出屏宽 → Row 只能压缩末尾的「完成」按钮 → 文字换行变形。
+                 * 修法：在调用处显式传 `Modifier.size(36.dp)`——外层 size 先固定约束，
+                 * 内层 `minimumInteractiveComponentSize()` 被 constrain 到 36.dp，
+                 * 触摸区与顶栏其余按钮一致（图标仍 18.dp 居中，视觉间距同步收窄）。
                  */
                 val noteCanUndo = blockNoteController.canUndo && !isLocked
                 val noteCanRedo = blockNoteController.canRedo && !isLocked
@@ -1226,6 +1221,7 @@ fun InspirationEditScreen(
                         onAction = { blockNoteController.undo() },
                         enabled = noteCanUndo,
                         canRepeat = noteCanUndo,
+                        modifier = Modifier.size(36.dp),
                     )
                     LongPressRepeatIconButton(
                         icon = Icons.AutoMirrored.Filled.Redo,
@@ -1233,28 +1229,14 @@ fun InspirationEditScreen(
                         onAction = { blockNoteController.redo() },
                         enabled = noteCanRedo,
                         canRepeat = noteCanRedo,
+                        modifier = Modifier.size(36.dp),
                     )
                 }
-
-                Spacer(modifier = Modifier.width(4.dp))
 
                 /**
-                 * v2026-08-01 新增：复制按钮
-                 *
-                 * 行为：有选区复制选区文本，无选区复制正文全文
-                 * 详见 [copyToClipboard] 函数实现
+                 * v2026-09-23：原「复制」按钮（撤销组右侧）已按需求移除，
+                 * 其后的 2.dp 间隔一并删除；弹性空间统一交给下方 weight(1f) Spacer 分配。
                  */
-                IconButton(
-                    onClick = copyToClipboard,
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ContentCopy,
-                        contentDescription = "复制",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
 
                 Spacer(modifier = Modifier.weight(1f))
 
@@ -1333,9 +1315,19 @@ fun InspirationEditScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.width(8.dp))
+                /** v2026-09-23：8.dp → 2.dp（顶栏整体收紧，避免把「完成」挤出屏幕） */
+                Spacer(modifier = Modifier.width(2.dp))
 
-                /** 完成按钮 */
+                /**
+                 * 完成按钮
+                 *
+                 * v2026-09-23 抗压缩加固（真机反馈：文字被挤成两行「完/成」）：
+                 * - contentPadding 水平 14.dp → 12.dp：不改变按钮常态宽度
+                 *   （M3 的 `defaultMinSize(minWidth = 58.dp)` 才是主导），
+                 *   但让按钮在极窄剩余空间下仍能容下两个 13.sp 汉字，不再触发换行。
+                 * - Text 显式 `maxLines = 1` + `softWrap = false`：兜底禁止折行，
+                 *   即使被压缩也不出现两行变形的胶囊。
+                 */
                 Button(
                     onClick = {
                         /**
@@ -1378,13 +1370,15 @@ fun InspirationEditScreen(
                         containerColor = Color(0xFFFF9A5C)
                     ),
                     modifier = Modifier.height(32.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 0.dp)
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 0.dp)
                 ) {
                     Text(
                         text = "完成",
                         color = Color.White,
                         fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
             }
