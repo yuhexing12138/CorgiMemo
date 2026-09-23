@@ -2,8 +2,12 @@ package com.corgimemo.app.ui.screens.probe
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
+import android.graphics.Bitmap
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.os.Message
 import android.util.Log
 import android.view.ViewGroup
 /** 软键盘抑制（v2026-09-21）：WebView 子类拦截输入连接所需 */
@@ -805,6 +809,31 @@ class BlockNoteBridgeController {
                     Log.d(TAG, "diag | selectionRange = $savedSelectionFrom-$savedSelectionTo")
                 }
                 "error" -> Log.e(TAG, "js error: ${msg.optString("message")}")
+                /**
+                 * 外部浏览器打开链接（v2026-09-24 新增）
+                 *
+                 * JS 侧两个入口汇聚到这条上行（详见 [openInBrowser] 与 JS 侧
+                 * `handleLinkClick` / `ProjectLinkToolbar`）：
+                 * ① 自定义 LinkToolbar 的「打开」按钮 —— 官方原版调
+                 *    `window.open(url, "_blank")`，在 Android WebView 下被静默丢弃；
+                 * ② 只读态点击链接 —— 无 LinkToolbar 可用，点击即"要打开"。
+                 *
+                 * **编辑态单击链接不会走到这里**：那是产品决策下的"只落光标"，
+                 * 由 JS 侧吃掉事件（见 `handleLinkClick` 的注释）。
+                 *
+                 * ⚠️ 本分支是**用户显式表达打开意图**的唯一路径，因此这里不再做
+                 * "是否编辑态"之类的判断——JS 侧已在源头分流完毕。
+                 */
+                "openLink" -> {
+                    val url = msg.optString("url")
+                    /** WebView 引用可能已释放（onRelease 置空），此时无从取 Context，静默跳过 */
+                    val ctx = webView?.context
+                    if (ctx == null) {
+                        Log.w(TAG, "openLink ignored (no webView): $url")
+                    } else {
+                        openInBrowser(ctx, url)
+                    }
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "bad up message", e)
@@ -971,6 +1000,107 @@ private fun sendDown(webView: WebView?, msg: JSONObject) {
 }
 
 /**
+ * 是否属于编辑器**自身**的运行期 URL（v2026-09-24 新增）
+ *
+ * 导航拦截的白名单判据。只有下列三类放行，其余一律拦下交外部浏览器：
+ *
+ * 1. **编辑器页面本体**：`file:///android_asset/blocknote-web/` 下的资源
+ *    （editor.html 与其同目录的静态资源）——这是页面运行的基础。
+ * 2. **字体流虚拟域**：`https://corgimemo.local/fonts/...`——
+ *    不存在真实服务器，全部由 [WebViewClient.shouldInterceptRequest] 在应用内
+ *    用 `openRawResource` 回填（见 [FONT_HOST]）。
+ * 3. **本地媒体**：`file://` 与 `content://`——图片/音视频附件经此加载，
+ *    是编辑器正文的一部分，不是"外链"。
+ *
+ * ⚠️ 判据刻意用 `startsWith` 而非 `host` 比较：`file://` URL 的 host 为空串，
+ * 用 host 判断会让编辑器自身也被拦下（那样页面永远加载不出来）。
+ *
+ * ⚠️ 不要改成"放行一切 file://"——assets 之外的用户私有目录（如
+ * `/sdcard/Download`）若被导航进来，同样是"编辑器被顶掉"。
+ *
+ * ⚠️ **可见性是 `internal` 而非 `private`**：Kotlin 的 `private` 是**文件级**的，
+ * [BlockNoteEditorScreen]（探针页）也要复用同一判据，两处必须行为一致——
+ * 探针页存在的意义就是复现正式页行为，判据分叉即失去参照价值。
+ *
+ * @param url 待判定的 URL 字符串
+ * @return true = 编辑器内部 URL，导航放行
+ */
+internal fun isEditorInternalUrl(url: String): Boolean {
+    /** ① 编辑器页面本体（editor.html 及其同目录资源） */
+    if (url.startsWith("file:///android_asset/blocknote-web/")) return true
+    /** ② 字体流虚拟域（shouldInterceptRequest 在应用内回填） */
+    if (url.startsWith("https://$FONT_HOST/")) return true
+    /** ③ 其它本地资源（附件图/音视频）：编辑器正文的一部分 */
+    if (url.startsWith("file://") || url.startsWith("content://")) return true
+    return false
+}
+
+/**
+ * 在**系统浏览器**中打开一个链接（v2026-09-24 新增）
+ *
+ * 这是本页所有"链接要打开"路径的唯一出口——JS 侧 `openLink` 上行与只读态点击
+ * 都收敛到这里。编辑器 WebView 自身**永不导航**（详见 `createEditorWebView`
+ * 里的三道导航拦截）。
+ *
+ * ## 为什么必须走 ACTION_VIEW 而不是 WebView 内导航
+ *
+ * 编辑器页面是 `file:///android_asset/blocknote-web/editor/editor.html`，
+ * 一旦主框架导航到目标站，**编辑器整体被目标页顶掉**——页面栈里没有后退项、
+ * 用户编辑到一半的内容（JS 侧尚未防抖上行的部分）直接丢。三条可用的导航通道
+ * 在 Android WebView 上各有坑（见 `createEditorWebView` 的注释），因此干脆
+ * 全部拦下、一律外送。
+ *
+ * ## 关键实现点
+ *
+ * - **`Uri.parse` 而非 `Uri.fromParts`**：URL 自带 scheme（`https` / `mailto`
+ *   / `tel` 等），原样交给系统分发即可；解析出的 scheme 为空串说明 URL 残缺，
+ *   此时**直接丢弃**——否则 `ACTION_VIEW` 会因 "No Activity found" 抛异常。
+ * - **`FLAG_ACTIVITY_NEW_TASK` 必须有**：WebView 的回调（`shouldOverrideUrlLoading`
+ *   / `onCreateWindow`）不保证运行在 Activity 上下文里，且本方法不持有 Activity
+ *   引用（只传 `Context`）；不加此 flag 在非 Activity Context 下会抛
+ *   `AndroidRuntimeException`。加了对 Activity Context 也是无害的。
+ * - **`try/catch` 兜底**：设备可能没有浏览器/邮件客户端能处理该 URL，此时
+ *   `startActivity` 抛 `ActivityNotFoundException`。这是**正常情况而非缺陷**，
+ *   只打日志、静默返回（宿主不应因为用户点了 `tel:` 而崩）。
+ * - **`Intent` 不入 Manifest 的 `<queries>`**：`ACTION_VIEW` 属隐式 Intent，
+ *   Android 11+ 的包可见性限制不影响 `startActivity` 的解析（限制的是
+ *   `queryIntentActivities` 之类的主动查询）。故无需新增 `<queries>` 声明。
+ *
+ * ⚠️ **可见性是 `internal` 而非 `private`**：Kotlin 的 `private` 是文件级的，
+ * [BlockNoteEditorScreen]（探针页）需复用同一实现，两页对外链的处置必须一致。
+ *
+ * @param context 任意 Context（内部会加 NEW_TASK，Activity / Application 均可）
+ * @param url     目标链接（应为绝对 URL；JS 侧已过滤 `javascript:` 等伪协议）
+ */
+internal fun openInBrowser(context: Context, url: String) {
+    if (url.isBlank()) return
+    val uri = try {
+        Uri.parse(url)
+    } catch (e: Exception) {
+        Log.e(TAG, "openInBrowser: bad url $url", e)
+        return
+    }
+    /** scheme 为空说明不是绝对 URL（如 `example.com` 裸域名）——系统无从分发 */
+    if (uri.scheme.isNullOrEmpty()) {
+        Log.w(TAG, "openInBrowser: no scheme, dropped: $url")
+        return
+    }
+    val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+        context.startActivity(intent)
+        Log.d(TAG, "openInBrowser: $url")
+    } catch (e: Exception) {
+        /**
+         * 无匹配应用（无浏览器 / 无邮件客户端等）。属**正常分支**，
+         * 不能让它把宿主带崩 —— 只留证据。
+         */
+        Log.w(TAG, "openInBrowser: no activity for $url", e)
+    }
+}
+
+/**
  * 创建编辑器 WebView：Bridge 注入 + 字体流拦截 + 错误日志
  *
  * @param backgroundColor 编辑区背景色（v1.9）：作为 WebView 自身底色，
@@ -1012,6 +1142,23 @@ private fun createEditorWebView(
              * 由 IMM 直接请求输入法，与 WebView 内部对"用户手势"的策略无关。
              */
             cacheMode = WebSettings.LOAD_DEFAULT
+            /**
+             * 多窗口支持（v2026-09-24 新增）
+             *
+             * **默认值是 false，这是本项目"点链接没反应"的根源之一**：
+             * 该值 false 时，页面里 `window.open(url, "_blank")` 会被 Chromium
+             * **静默丢弃**——不弹窗、不导航、不回调、无日志。官方 LinkToolbar 的
+             * 「打开」按钮正是 `window.open(url, "_blank")`，因此点了完全没反应。
+             *
+             * 置 true 后请求会走到 [WebChromeClient.onCreateWindow]，
+             * 我们在那里取 URL 交系统浏览器（**不创建子 WebView**）。
+             *
+             * ⚠️ 这两个开关必须**成对开启**：只开 `setSupportMultipleWindows`
+             * 时，Chromium 仍可能以"非用户手势"为由丢弃请求。WebView 对手势的
+             * 判定粒度较粗，两者同开才是稳定形态。
+             */
+            setSupportMultipleWindows(true)
+            javaScriptCanOpenWindowsAutomatically = true
         }
 
         addJavascriptInterface(
@@ -1026,6 +1173,32 @@ private fun createEditorWebView(
         )
 
         webViewClient = object : WebViewClient() {
+            /**
+             * 导航通道 ①：超链接点击（v2026-09-24 新增）
+             *
+             * 编辑器页面是 assets 里的本地文件，除自身外**任何**目标 URL 都不该在
+             * WebView 内加载——否则编辑器被目标页顶掉（内容丢失、无后退项）。
+             * 白名单判据统一收敛在 [isEditorInternalUrl]（编辑器页面本体 /
+             * 字体流虚拟域 / 本地媒体附件），不在本处重复列举。
+             *
+             * ⚠️ 本回调在 API 24+ 走 `WebResourceRequest` 重载（旧 `String` 重载
+             * 已废弃且不会在此版本被调用），故只实现新版即可。
+             *
+             * ⚠️ 返回 `true` = "已处理，别导航"；返回 `false` = 放行给 WebView。
+             * 非白名单一律 `true` + 外送浏览器。
+             */
+            override fun shouldOverrideUrlLoading(
+                view: WebView?,
+                request: WebResourceRequest?
+            ): Boolean {
+                val url = request?.url?.toString() ?: return false
+                /** 编辑器自身 / 字体流虚拟域 / 本地媒体：放行（都是页面运行必需） */
+                if (isEditorInternalUrl(url)) return false
+                Log.d(TAG, "nav intercepted (link): $url")
+                openInBrowser(appContext, url)
+                return true
+            }
+
             override fun onPageFinished(view: WebView?, url: String?) {
                 Log.d(TAG, "page finished: $url")
                 /**
@@ -1033,6 +1206,31 @@ private fun createEditorWebView(
                  * 页面重载（或首帧早于抑制开启）会丢掉此前的标记，此处兜住。
                  */
                 (view as? ImeSuppressibleWebView)?.applyImeSuppression()
+            }
+
+            /**
+             * 导航通道 ③：兜底还原（v2026-09-24 新增）
+             *
+             * 前两道（`shouldOverrideUrlLoading` / `onCreateWindow`）覆盖了常规路径，
+             * 但仍有漏网的可能：JS 里直接 `location.href = ...`（**不经过**链接点击
+             * 回调）、`<meta http-equiv="refresh">`、或未来某次升级改了行为。
+             * 一旦真发生，编辑器就被顶掉了，用户会看到"开发者的 WebView 在读新闻"。
+             *
+             * 这里做最后一道兜底：**主框架**一旦开始加载非白名单 URL，立刻终止导航
+             * 并把编辑器 URL 重新载回来——这是用户可见的故障，必须自愈，
+             * 不能只打日志。
+             *
+             * ⚠️ `onPageStarted` **本身就只对主框架触发**（子资源不触发本回调），
+             * 故此处无需再判 `isForMainFrame`——不存在"图片加载被误拦"的风险。
+             * ⚠️ 重载前 `stopLoading()`：否则中止的导航与新的 loadUrl 会互相打断。
+             */
+            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                if (view == null || url == null) return
+                if (isEditorInternalUrl(url)) return
+                Log.w(TAG, "main-frame nav to foreign url, restoring editor: $url")
+                view.stopLoading()
+                view.loadUrl(EDITOR_URL)
             }
 
             /** S5：字体流拦截——res/font 字体以流回给 WebView（字体单份存储，零体积增量） */
@@ -1069,14 +1267,81 @@ private fun createEditorWebView(
         }
 
         /**
-         * console 转发（v2026-09-21）：JS 侧 console.log/warn/error 全量转 logcat。
+         * 导航通道 ②：JS `window.open`（v2026-09-24 新增）
          *
-         * 背景：@font-face 字体加载失败（404 / CORS 拒绝 / 解码失败）Chromium **只打
-         * console，不触发 onReceivedError**——没有这条通道，正文字体「换了个寂寞」时
-         * 完全黑盒。现在 `adb logcat -s chromium`（或本 TAG）可直接看到字体流的真实结果，
-         * 配合 [shouldInterceptRequest] 的拦截日志即可闭环诊断字体链路。
+         * **为什么必须专门接管这一条**：Android WebView 的
+         * `WebSettings.setSupportMultipleWindows()` **默认 false**，此时页面里
+         * 任何 `window.open(url, "_blank")` 会被 Chromium **静默丢弃**——
+         * 不弹新窗口、不导航主框架、不触发 `shouldOverrideUrlLoading`、
+         * 不报错、连 console 都没有。官方 LinkToolbar 的「打开」按钮正是这么写的
+         * （`@blocknote/react` 的 `OpenLinkButton.tsx`：`window.open(url, "_blank")`），
+         * 这正是"点打开毫无反应"的根源。
+         *
+         * **修法**：打开多窗口支持，让 Chromium 把请求交到 `onCreateWindow`；
+         * 我们在回调里**不创建新 WebView**，而是取出目标 URL 交系统浏览器，
+         * 并 `return false` 表示"宿主已处理，无需 WebView 创建子窗口"。
+         *
+         * ⚠️ 配套必须同时开 `setJavaScriptCanOpenWindowsAutomatically(true)`，
+         * 否则 Chromium 仍会以"未经用户手势"为由丢弃请求（WebView 的判定粒度较粗，
+         * 两个开关一起开才是稳定形态）。
+         *
+         * ⚠️ 本回调若返回 true 却**不**调用 `resultMsg.sendToTarget()`，
+         * WebView 会一直等这个 `WebViewTransport`，可能拖住渲染进程；
+         * 故无论如何都在末尾 `sendToTarget()`（不塞 WebView 即为"取消"）。
          */
         setWebChromeClient(object : WebChromeClient() {
+            override fun onCreateWindow(
+                view: WebView?,
+                isDialog: Boolean,
+                isUserGesture: Boolean,
+                resultMsg: Message?
+            ): Boolean {
+                /**
+                 * ⚠️ 这里**取不到**目标 URL：`WebViewTransport` 要等宿主在
+                 * 结果 Message 里塞进一个 WebView 后，才由那个新 WebView 去加载。
+                 * 因此采取「造一个一次性 WebView 接住 URL，再读取它」的做法：
+                 *
+                 * 1. 造一个不可见的临时 WebView，塞进 resultMsg 发回；
+                 * 2. Chromium 随即让这个临时 WebView 加载目标 URL，触发其
+                 *    `shouldOverrideUrlLoading`（我们已在上面把"非白名单一律外送
+                 *    浏览器 + return true"写成统一策略，此处自然复用）；
+                 * 3. 临时 WebView 立刻销毁，绝不进入视图树。
+                 *
+                 * 这样"取 URL"与"外送"两条逻辑都收敛在已有实现里，无需重复解析。
+                 */
+                val transport = resultMsg?.obj as? WebView.WebViewTransport
+                if (transport == null || view == null) {
+                    resultMsg?.sendToTarget()
+                    return false
+                }
+                /**
+                 * ⚠️ 临时 WebView 用**同一个 applicationContext**：
+                 * 它只是用来触发一次 `shouldOverrideUrlLoading`，
+                 * 归属哪个 Activity 无所谓；用 appContext 还能避免持有 Activity。
+                 */
+                val holder = WebView(appContext)
+                holder.webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(
+                        v: WebView?,
+                        request: WebResourceRequest?
+                    ): Boolean {
+                        val url = request?.url?.toString()
+                        if (!url.isNullOrEmpty() && !isEditorInternalUrl(url)) {
+                            Log.d(TAG, "nav intercepted (window.open): $url")
+                            openInBrowser(appContext, url)
+                        } else if (url != null) {
+                            Log.d(TAG, "window.open to internal url ignored: $url")
+                        }
+                        /** 用完即毁：不留任何 WebView 实例 */
+                        v?.destroy()
+                        return true
+                    }
+                }
+                transport.webView = holder
+                resultMsg.sendToTarget()
+                return true
+            }
+
             override fun onConsoleMessage(message: ConsoleMessage): Boolean {
                 /** console 级别 → logcat 优先级（ERROR→E / WARNING→W / 其余→D） */
                 val priority = when (message.messageLevel()) {

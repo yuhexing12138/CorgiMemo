@@ -1,5 +1,13 @@
 import { createReactBlockSpec } from "@blocknote/react";
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  useEffect,
+  useState,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
+// Portal 让工具条挂到 document.body：DOM 上脱离分割线子树，
+// 从结构上消除"点击冒泡回外层、坐标被覆写"的跳位隐患（见 DividerToolbar 注释）
+import { createPortal } from "react-dom";
 
 /**
  * 三样式分割线（迁移 P1-S10 定稿）：
@@ -81,6 +89,48 @@ const TOOLBAR_DEL_W = 46;
 const TOOLBAR_BASE_FONT = 12;
 
 /**
+ * 工具条内边距与按钮间距（px，v2026-09-23 第三轮：配合尺寸推算抽出）。
+ *
+ * 原先这两个值直接写在 JSX 的 `padding: 6` / `gap: 4` 里，
+ * 现在位置改为**纯常量推算**（不再实测），必须让"写进 style 的值"
+ * 与"推导尺寸用的值"读同一个常量，避免两处各写一个数字后改一处漏一处。
+ */
+const TOOLBAR_PADDING = 6;
+const TOOLBAR_GAP = 4;
+
+/**
+ * 工具条整体尺寸（px，v2026-09-23 第三轮：由"实测"改为"推算"）。
+ *
+ * **为什么可以推算**：自 v2026-09-23 第二轮起，三个样式按钮
+ * （`TOOLBAR_BTN_W × TOOLBAR_BTN_H`）、删除按钮（`TOOLBAR_DEL_W × TOOLBAR_BTN_H`）、
+ * 内边距与间距全部写死，且字号也写死（`TOOLBAR_BASE_FONT`）——
+ * 工具条的内容尺寸已不再受宿主字号、设备字体、折行行为影响。
+ * 因此 `getBoundingClientRect()` 的返回值**每次必然等于下面两个推导值**，
+ * 实测已无信息量，可以省掉。
+ *
+ * ⚠️ **改按钮尺寸时这两个值必须同步改**：它们与 style 里的常量同源，
+ * 但"布局结构"（几个按钮、外层有无边框）是硬编码在算式里的。
+ * 具体构成：
+ * - 宽 = (3 个样式按钮 + 1 个删除按钮 + 3 个 gap) + 2×padding + 2×1px 边框
+ * - 高 = 按钮高 + 2×padding + 2×1px 边框
+ *
+ * 当前取值（改动按钮尺寸后请重算这两行）：
+ * - `TOOLBAR_W = 3×52 + 46 + 3×4 + 2×6 + 2 = 228`
+ * - `TOOLBAR_H = 28 + 2×6 + 2 = 42`
+ */
+const TOOLBAR_W =
+  3 * TOOLBAR_BTN_W + TOOLBAR_DEL_W + 3 * TOOLBAR_GAP + 2 * TOOLBAR_PADDING + 2;
+const TOOLBAR_H = TOOLBAR_BTN_H + 2 * TOOLBAR_PADDING + 2;
+
+/**
+ * 工具条垂直方向与点击点的间隙（px）。
+ *
+ * 抽成常量是因为它在夹取逻辑里出现两次（上方残留判断、翻转后偏移），
+ * 原先分别写成字面量 4，改一处容易漏另一处。
+ */
+const TOOLBAR_ANCHOR_GAP = 4;
+
+/**
  * 分割线样式档的线性图标（v2026-09-23 第二轮新增）。
  *
  * **为什么换成 SVG**：原先三个按钮用文本标签 `─────` / `╌ ╌ ╌` / `〰〰〰`，
@@ -137,21 +187,60 @@ function DividerStyleIcon(props: { style: DividerStyle; color: string }) {
 }
 
 /**
+ * 读取编辑器主题主色（v2026-09-23 第三轮新增）。
+ *
+ * **为什么需要这个函数**：工具条改用 `createPortal` 挂到 `document.body` 后，
+ * 它已**不在** `.editor-page` 的祖链上，原先靠 CSS 继承拿到的
+ * `--editor-primary` 不再可见（`var(--editor-primary, #1976d2)` 会退回硬编码蓝，
+ * 主题换色时选中态就不跟随了）。故改为**主动读取**该变量。
+ *
+ * 取值来源就是 `.editor-page`——`EditorApp.tsx` 把主题色以内联 style 形式
+ * 写在该元素上（`["--editor-primary"]: props.theme.primary`）。
+ * 找不到元素或取不到值时回落 `#1976d2`（与改造前 fallback 一致，保证不劣化）。
+ *
+ * ⚠️ 若与宿主共用同一份取值口径，将来主题色改由别处下发时需同步这里。
+ */
+function readEditorPrimary(): string {
+  const el = document.querySelector<HTMLElement>(".editor-page");
+  const v = el?.style.getPropertyValue("--editor-primary")?.trim();
+  return v || "#1976d2";
+}
+
+/**
  * 分割线浮动工具条（样式三选 + 删除；点击分割线弹出，点外部关闭）
  *
- * **定位策略（v2026-09-23 修复被编辑器边缘裁剪）**：理想位置是"点击处正上方居中"
- * （水平居中于点击点、垂直抬到点击点上方 120% 处）。但真机上分割线常常贴近
- * 编辑区顶部，或点击点落在左右两端，理想位置会越出编辑区被裁掉。
- * 因此改为**两步**：
+ * **定位策略（v2026-09-23 修复被编辑器边缘裁剪；第三轮改为常量推算）**：
+ * 理想位置是"点击处正上方居中"（水平居中于点击点、垂直抬到点击点上方）。
+ * 但真机上分割线常常贴近编辑区顶部，或点击点落在左右两端，
+ * 理想位置会越出编辑区被裁掉，故都要**夹取到视口安全区内**。
  *
- * 1. **渲染前先用理想位置挂上**（`visibility:hidden`），
- * 2. `useLayoutEffect` 里量出真实尺寸后夹取到视口安全区内，再显示。
+ * v2026-09-23 第二轮之前是"两步实测"：先 `visibility:hidden` 挂载，
+ * `useLayoutEffect` 里读 `getBoundingClientRect()`，夹取后再显示。
+ * 当时必须实测，是因为工具条尺寸会随内容/字体浮动。
  *
- * 之所以用"实测"而不是纯数学推算：夹取需要知道工具条真实宽高，而它最终取决于
- * 浏览器排版结果。配合 `TOOLBAR_BTN_W/H` 等写死的宽高常量，`rect` 每次都相等，
- * 实测也就退化成一次稳定的常量读取。
- * 放在 `useLayoutEffect`（而非 `useEffect`）是因为它在浏览器绘制前同步执行，
- * 用户看不到"先错位再跳回来"的一帧闪烁。
+ * **第三轮起改为常量推算**：尺寸与字号全部写死后（见 `TOOLBAR_W` / `TOOLBAR_H`
+ * 的注释），`rect` 必然等于这两个推导值，实测已无信息量。
+ * 于是夹取直接在渲染前用常量算好，**一次渲染到位**：
+ * 省掉一次强制同步布局（`getBoundingClientRect` 会强制 reflow），
+ * 也省掉"隐藏态 → 显示态"的第二趟渲染和 `visibility` 闪烁隐患。
+ *
+ * **DOM 归属：改用 Portal（v2026-09-23 第三轮）**：
+ * 最早工具条直接渲染在分割线外层 div 之内，于是点样式按钮时事件冒泡到外层
+ * `onClick`，外层拿"按钮的点击坐标"当成"分割线的点击坐标"重新定位工具条
+ * ⇒ 工具栏跟着手指跳到按钮处。第三轮改为 `createPortal` 挂到 `document.body`，
+ * 让工具条在 DOM 上不再是分割线的后代（真机日志 `measure parent="BODY"` 已证实）。
+ *
+ * ★ **但 Portal 不足以阻断事件（第四轮真机日志实锤）**：
+ * 当时据此**删掉了** `stopPropagation`，理由是"DOM 上已不是后代，冒泡不存在"——
+ * **这个判断是错的**。`createPortal` 只改 **DOM 归属**，不改 **React 组件树（fiber）关系**；
+ * React 17+ 的合成事件是**沿 fiber 树传播**的，Portal 出去的节点在 React 树上
+ * **仍然是 `DividerRender` 的子节点** ⇒ `onClick` 照旧冒泡到分割线本体的
+ * `openToolbarAt` ⇒ 外层再次用按钮坐标重定位 ⇒ 工具条跟着点击跳，
+ * 且 `closeToolbar` 刚置空就被 `openToolbar` 填回 ⇒ 工具条一直不消失。
+ * 日志证据：`openToolbar inToolbar=true targetTag="svg"`。
+ *
+ * ⇒ 结论：**`position:fixed` / `createPortal` 都不阻断事件，要阻断只能 `stopPropagation`**。
+ * 现恢复本层拦截，与按钮各自的 `stopPropagation` 形成两道。
  *
  * 夹取规则：
  * - 水平：先按点击点居中，若左/右越界则水平滑动到安全区内（**不**越界时保持居中）；
@@ -165,15 +254,21 @@ function DividerToolbar(props: {
   onDelete: () => void;
   onClose: () => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  /** 夹取后的最终位置；null = 尚未量取（此帧以隐藏态渲染在理想位置） */
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  /**
+   * 主题主色（选中态描边与图标色）。
+   *
+   * Portal 到 `body` 后无法再靠 CSS 继承拿到 `--editor-primary`，故主动读取；
+   * 用 `useState` 惰性初始化，保证只在首次渲染时查一次 DOM，
+   * 而不是每次重渲染都 `querySelector`。
+   */
+  const [primary] = useState(readEditorPrimary);
 
   // 点外部关闭（capture 在冒泡前拦截，避免先触发样式按钮的 onClick 又立即关闭）
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (!target.closest(".probe-divider-toolbar")) props.onClose();
+      const inside = !!target.closest(".probe-divider-toolbar");
+      if (!inside) props.onClose();
     };
     // 延迟绑定：跳过打开工具条的那次点击
     const t = setTimeout(
@@ -186,29 +281,32 @@ function DividerToolbar(props: {
     };
   });
 
-  /** 量取真实尺寸后计算安全位置（绘制前同步执行，避免跳位闪烁） */
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
+  /**
+   * 夹取后的最终位置（v2026-09-23 第三轮：改为常量推算，一次算好）。
+   *
+   * 直接由 `props.x/y` + `TOOLBAR_W/H` 推导，不再经 state 中转，
+   * 因此不会有"先按理想位置渲染、再跳回来"的中间帧。
+   * 视口尺寸在打开工具条这一刻读取即可——工具条生命周期很短
+   * （点外部即关闭），期间发生旋转/尺寸变化由宿主重建 WebView 处理。
+   */
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
 
-    // 水平：居中于点击点 → 越界则滑动进安全区
-    let left = props.x - rect.width / 2;
-    left = Math.min(left, vw - TOOLBAR_SAFE_GAP - rect.width);
-    left = Math.max(left, TOOLBAR_SAFE_GAP);
+  // 水平：居中于点击点 → 越界则滑动进安全区
+  const left = Math.max(
+    TOOLBAR_SAFE_GAP,
+    Math.min(props.x - TOOLBAR_W / 2, vw - TOOLBAR_SAFE_GAP - TOOLBAR_W)
+  );
 
-    // 垂直：优先置于点击点上方（留 4px 间隙）；上方放不下则翻转到底部
-    const above = props.y - rect.height - 4;
-    const flipGap = 4; // 翻转后与点击点的间隙
-    const top =
-      above >= TOOLBAR_SAFE_GAP
-        ? above
-        : Math.min(props.y + flipGap, vh - TOOLBAR_SAFE_GAP - rect.height);
-
-    setPos({ left, top });
-  }, [props.x, props.y]);
+  // 垂直：优先置于点击点上方；上方放不下则翻转到底部
+  const above = props.y - TOOLBAR_H - TOOLBAR_ANCHOR_GAP;
+  const top =
+    above >= TOOLBAR_SAFE_GAP
+      ? above
+      : Math.min(
+          props.y + TOOLBAR_ANCHOR_GAP,
+          vh - TOOLBAR_SAFE_GAP - TOOLBAR_H
+        );
 
   /** 三个样式档：key 决定图标线型，title 供长按/悬停提示（原先靠文本标签自解释） */
   const styles: Array<{ key: DividerStyle; title: string }> = [
@@ -217,29 +315,41 @@ function DividerToolbar(props: {
     { key: "wavy", title: "波浪线" },
   ];
 
-  return (
+  return createPortal(
     <div
-      ref={ref}
       className="probe-divider-toolbar"
+      /**
+       * ★ 兜底阻断（v2026-09-23 第四轮，真机日志实证）。
+       *
+       * 第三轮曾误判"Portal 后不必再拦截"并删除此处，结果是 bug 依旧——
+       * 因为 `createPortal` 只改 **DOM 归属**，React 17+ 的**合成事件仍按 fiber 树
+       * 冒泡**，Portal 出去的节点在 fiber 上依旧是 `DividerRender` 的子节点，
+       * 点击照旧触达线外侧 div 的 `onClick`（真机 `openToolbar inToolbar=true` 实锤）。
+       *
+       * 现恢复本层拦截，与按钮各自的 `stopPropagation` 形成两道：
+       * - 按钮层：就近拦截，也是主要防线；
+       * - 本层：控件整体与外部隔离的语义边界，将来新增按钮忘了写也不会复发。
+       */
+      onClick={(e) => e.stopPropagation()}
       style={{
         position: "fixed",
-        // 未量取前先按理想位置挂载（隐藏态），量取后立即切到夹取结果
-        left: pos ? pos.left : props.x,
-        top: pos ? pos.top : props.y,
-        transform: pos ? undefined : "translate(-50%, -120%)",
-        visibility: pos ? "visible" : "hidden",
+        // 位置已由常量算好（含夹取），无需隐藏态过渡，一次渲染到位
+        left,
+        top,
         background: "#ffffff",
         border: "1px solid #ddd",
         borderRadius: 10,
         boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
         // ⚠️ 必须写死字号：截断来自 .editor-page 的「正文字号」继承链，
-        // 否则按钮高度会随宿主字号设置浮动（详见 TOOLBAR_BASE_FONT 注释）
+        // 否则按钮高度会随宿主字号设置浮动（详见 TOOLBAR_BASE_FONT 注释）。
+        // Portal 到 body 后已不在该继承链上，但这行仍保留——它是尺寸可推算的前提，
+        // 也是将来万一改回非 Portal 渲染时的保险。
         fontSize: TOOLBAR_BASE_FONT,
         lineHeight: 1,
         display: "flex",
-        // 固定尺寸按钮之间用固定 gap，工具条总宽 = 3×52 + 46 + 3×4 + 2×6 = 240px
-        gap: 4,
-        padding: 6,
+        // gap / padding 与 TOOLBAR_W/H 的推导同源，改这里必须同步改那个算式
+        gap: TOOLBAR_GAP,
+        padding: TOOLBAR_PADDING,
         // 固定尺寸后内容不会再溢出，禁止任何意外折行
         whiteSpace: "nowrap",
         zIndex: 10000,
@@ -252,7 +362,32 @@ function DividerToolbar(props: {
             key={s.key}
             title={s.title}
             aria-label={s.title}
-            onClick={() => {
+            onClick={(e) => {
+              /**
+               * ★ 必须阻断传播（v2026-09-23 第四轮，真机日志实证）。
+               *
+               * **为什么 Portal 救不了这里**：`createPortal` 只改变 **DOM 归属**
+               * （工具条确实挂在 `body` 下，实测 `parent=BODY`），
+               * 但 React 17+ 的**合成事件是按 React 组件树（fiber 树）传播**的，
+               * 而 Portal 出去的节点在 fiber 树上**仍然是本组件的子节点**。
+               * 于是按钮点击照旧冒泡到 `DividerRender` 外层 div 的 `onClick`，
+               * 外层拿"按钮坐标"当成"分割线坐标"重新置位 `toolbar` ⇒ 工具栏跳位。
+               *
+               * **真机日志（15:15:24.657）实锤**：
+               * ```
+               * clickStyle   style="dashed"
+               * closeToolbar from="toolbar-wavy"
+               * openToolbar  x=237 y=61 targetTag="svg" inToolbar=true   ← 跳位
+               * ```
+               * `inToolbar=true` 说明这次 `openToolbar` 就是按钮自己触发的；
+               * 同时它紧跟在 `closeToolbar` 之后，把刚置空的 `toolbar` 又填回按钮坐标，
+               * 于是"工具栏一直显示"——每次关闭都被这次重新打开覆盖。
+               *
+               * **教训**：`position: fixed` 与 `createPortal` 解决的都是**布局/DOM 归属**，
+               * 都不是**事件传播**。跨 Portal 的父子仍共用 React 事件链，
+               * 该 `stopPropagation` 时躲不掉。
+               */
+              e.stopPropagation();
               props.onStyle(s.key);
               props.onClose();
             }}
@@ -269,22 +404,19 @@ function DividerToolbar(props: {
               alignItems: "center",
               justifyContent: "center",
               borderRadius: 6,
-              border: active
-                ? "1.5px solid var(--editor-primary, #1976d2)"
-                : "1px solid #ddd",
+              border: active ? `1.5px solid ${primary}` : "1px solid #ddd",
               background: active ? "#eef4ff" : "#fff",
               cursor: "pointer",
             }}
           >
-            <DividerStyleIcon
-              style={s.key}
-              color={active ? "var(--editor-primary, #1976d2)" : "#888"}
-            />
+            <DividerStyleIcon style={s.key} color={active ? primary : "#888"} />
           </button>
         );
       })}
       <button
-        onClick={() => {
+        onClick={(e) => {
+          /** 与样式按钮同理：跨 Portal 的 React 事件仍会冒泡到线外侧 div，必须阻断 */
+          e.stopPropagation();
           props.onDelete();
           props.onClose();
         }}
@@ -308,7 +440,8 @@ function DividerToolbar(props: {
       >
         删除
       </button>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -320,12 +453,36 @@ function DividerRender(props: {
 }) {
   const [toolbar, setToolbar] = useState<{ x: number; y: number } | null>(null);
 
+  /**
+   * 打开工具条（仅由"点分割线本体"触发）。
+   *
+   * 这里的坐标是**分割线的点击位置**，`DividerToolbar` 据此居中并夹取。
+   *
+   * ⚠️ **本函数只应被"点分割线"触发**。工具条内的点击必须在此之前被阻断，
+   * 否则会带着"按钮坐标"重新来到这里，把 `toolbar` 置成按钮位置 ⇒ 工具栏跳位。
+   *
+   * **为什么 Portal 不能替代拦截（v2026-09-23 第四轮真机日志实证）**：
+   * 第三轮曾以为 `createPortal` 到 `document.body` 后事件就不会再传到这里，
+   * 并据此删掉了按钮的 `stopPropagation`——实测**无效**。
+   * 原因是 `createPortal` 只改变 DOM 归属，而 React 17+ 的**合成事件沿 fiber 树
+   * 传播**，Portal 出去的节点在 fiber 上仍是本组件的子节点，
+   * 点击照旧触达本 div 的 `onClick`。真机日志：
+   * `closeToolbar` 之后紧跟 `openToolbar inToolbar=true`（坐标即按钮位置）。
+   *
+   * 现由 `DividerToolbar` 的按钮层 + 容器层两道 `stopPropagation` 拦住。
+   */
+  const openToolbarAt = (e: ReactMouseEvent) => {
+    setToolbar({ x: e.clientX, y: e.clientY });
+  };
+
+  /** 关闭工具条 */
+  const closeToolbar = () => {
+    setToolbar(null);
+  };
+
   if (props.style === "wavy") {
     return (
-      <div
-        style={DIVIDER_ROW_STYLE}
-        onClick={(e) => setToolbar({ x: e.clientX, y: e.clientY })}
-      >
+      <div style={DIVIDER_ROW_STYLE} onClick={openToolbarAt}>
         <svg
           className="probe-divider"
           viewBox="0 0 400 8"
@@ -346,7 +503,7 @@ function DividerRender(props: {
             current={props.style}
             onStyle={props.onUpdateStyle}
             onDelete={props.onDelete}
-            onClose={() => setToolbar(null)}
+            onClose={closeToolbar}
           />
         )}
       </div>
@@ -354,10 +511,7 @@ function DividerRender(props: {
   }
 
   return (
-    <div
-      style={DIVIDER_ROW_STYLE}
-      onClick={(e) => setToolbar({ x: e.clientX, y: e.clientY })}
-    >
+    <div style={DIVIDER_ROW_STYLE} onClick={openToolbarAt}>
       <div className="probe-divider" data-style={props.style} />
       {toolbar && (
         <DividerToolbar
@@ -366,7 +520,7 @@ function DividerRender(props: {
           current={props.style}
           onStyle={props.onUpdateStyle}
           onDelete={props.onDelete}
-          onClose={() => setToolbar(null)}
+          onClose={closeToolbar}
         />
       )}
     </div>

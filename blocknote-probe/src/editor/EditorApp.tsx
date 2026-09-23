@@ -1,11 +1,15 @@
 import "@blocknote/mantine/style.css";
 import { BlockNoteView } from "@blocknote/mantine";
 import {
+  DeleteLinkButton,
+  EditLinkButton,
   FormattingToolbar,
   FormattingToolbarController,
+  LinkToolbarController,
   useBlockNoteEditor,
   useComponentsContext,
   useCreateBlockNote,
+  type LinkToolbarProps,
 } from "@blocknote/react";
 import { BlockNoteEditor, blockHasType } from "@blocknote/core";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -83,6 +87,92 @@ function linkDataAt(ed: any, pos: number | undefined): { href: string; text: str
 /** 只要 href（回显与激活态用） */
 function linkHrefAt(ed: any, pos: number | undefined): string | undefined {
   return linkDataAt(ed, pos)?.href;
+}
+
+/**
+ * 链接地址的安全归一（v2026-09-24）
+ *
+ * 口径与官方 `@blocknote/react` 内部的 `sanitizeUrl` 一致：能解析出 URL 且协议
+ * **不是 `javascript:`** 才放行，否则返回空串（调用方据此放弃打开）。
+ *
+ * **为什么必须留这道闸**：链接 href 的内容来自用户输入与 markdown 导入，
+ * 进宿主后要经 `Intent.ACTION_VIEW` 交给系统——放行 `javascript:` 之类伪协议
+ * 既无意义（外部浏览器不认），也平添攻击面。相对路径（无 base 时解析失败）
+ * 同样丢弃：在编辑器语境里它指向 WebView 的 assets 目录，打开必然 404。
+ *
+ * @param raw 链接原始 href（可能是 `example.com`、`#anchor`、`javascript:…`）
+ * @returns 可安全外部打开的绝对 URL；不可用时为空串
+ */
+function sanitizeOutboundUrl(raw: string | undefined): string {
+  if (typeof raw !== "string" || raw.trim() === "") return "";
+  try {
+    const url = new URL(raw, window.location.href);
+    if (url.protocol === "javascript:") return "";
+    return url.href;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * 链接点击处理器（v2026-09-24）—— 挂在官方 `useCreateBlockNote` 的 `links.onClick`
+ *
+ * ## 它替换掉了什么
+ *
+ * 官方 `clickHandler` 插件（`@blocknote/core` 的
+ * `extensions/tiptap-extensions/Link/plugins/clickHandler.ts`）在**未配置**
+ * `links.onClick` 时会走默认分支：`window.open(href, target)`，而 Link 扩展的
+ * `HTMLAttributes` 默认带 `target: "_blank"`。
+ *
+ * 这条默认路径在 Android WebView 上有两个致命问题：
+ * ① `setSupportMultipleWindows` 默认 false → **带 target 的 `window.open` 被
+ *    Chromium 静默丢弃**：不导航、不报错、无日志，"点了没反应"；
+ * ② 官方 `clickHandler` 首行是 `if (event.button !== 0 || !view.editable) return false;`
+ *    ——**编辑态能拦、只读态直接放行**给 DOM 默认行为，一旦放行就有原地导航
+ *    把编辑器顶掉的风险。
+ *
+ * 官方源码注释明确：配置 `onClick` 后「the default open-on-click behavior is
+ * disabled and this function is called instead」——即本函数一挂，
+ * 上面那条 `window.open` 默认路径**彻底不再执行**，两个问题一并消失。
+ *
+ * ## 本函数的行为（按产品决策）
+ *
+ * - **编辑态（`editable === true`）**：返回 `true` 吃掉事件，**只落光标不打开**。
+ *   光标落下后官方 LinkToolbar 自会弹出，用户通过它的「打开」按钮决定是否打开
+ *   （见下方 `bindDown` 里对该按钮的接管）。理由：编辑态里用户更可能是在改链接
+ *   文字，误触即跳走会打断编辑。
+ * - **只读态（`editable === false`）**：无 LinkToolbar 可用，此时点击即"要打开"
+ *   ——上行 `openLink` 交宿主送系统浏览器。
+ *
+ * ⚠️ **必须返回 `true`（已处理）而非 `false`**：返回 false 表示"我没处理，交给
+ * ProseMirror 继续"，会再次落到 DOM 默认行为（`<a>` 锚点导航）——那正是要避免的。
+ *
+ * @param event  ProseMirror 透传的原始 MouseEvent
+ * @param editor 触发点击的 BlockNoteEditor 实例
+ */
+function handleLinkClick(event: MouseEvent, editor: any): boolean {
+  /**
+   * 中键 / 右键不接管：官方 `clickHandler` 同样只认左键（`event.button !== 0`
+   * 时 return false），保持一致，避免抢掉长按菜单等系统交互。
+   */
+  if (event.button !== 0) return false;
+
+  /**
+   * 从事件目标上读 href，而不是从编辑器选区读：点击位置与键盘光标位置可能不同
+   * （用户点的是另一个链接），`closest("a")` 才是"用户实际点的那个链接"。
+   */
+  const anchor = (event.target as HTMLElement | null)?.closest?.("a");
+  const href = sanitizeOutboundUrl(anchor?.getAttribute("href") ?? undefined);
+  if (href === "") return true; // 空 href / 伪协议：吃事件，不做任何事
+
+  /** 编辑态：落光标 + 弹 LinkToolbar，是否打开交给用户 */
+  if (editor?.isEditable !== false) {
+    return true;
+  }
+
+  /** 只读态：无工具栏可用，点击即打开 */
+  sendUp({ type: "openLink", url: href });
+  return true;
 }
 
 /**
@@ -1770,6 +1860,17 @@ function EditorCore(props: {
     schema: editorSchema as any,
     initialContent: props.initialBlocks,
     editable: !props.readOnly,
+    /**
+     * 链接点击接管（v2026-09-24）
+     *
+     * 配置本回调即**关闭官方默认的 `window.open`**（官方源码注释原文：
+     * "If provided, the default open-on-click behavior is disabled and this
+     * function is called instead"）——那是 Android WebView 下"点链接没反应 /
+     * 编辑器被顶掉"两条病根的源头，详见 {@link handleLinkClick}。
+     */
+    links: {
+      onClick: handleLinkClick,
+    },
   });
 
     /**
@@ -2094,6 +2195,14 @@ function EditorCore(props: {
               </>
             )}
           />
+          {/*
+            覆盖官方链接工具栏（v2026-09-24）
+            —— 只替换「打开」按钮的行为：官方那版调 `window.open(url, "_blank")`，
+            在 Android WebView（`setSupportMultipleWindows` 默认 false）下被静默丢弃，
+            点「打开」毫无反应。改为经桥上行 `openLink` 交宿主送系统浏览器。
+            无打开按钮之外的任何改动，详见 {@link ProjectLinkToolbar}。
+          */}
+          <LinkToolbarController linkToolbar={ProjectLinkToolbar} />
         </BlockNoteView>
       </div>
       {props.emojiOpen && (
@@ -2106,6 +2215,96 @@ function EditorCore(props: {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * 自定义链接工具栏（v2026-09-24）
+ *
+ * **唯一改动**：把官方的「打开」按钮换成走桥的版本。
+ *
+ * 官方 `OpenLinkButton`（`@blocknote/react` 的
+ * `components/LinkToolbar/DefaultButtons/OpenLinkButton.tsx`）实现是
+ * `window.open(sanitizeUrl(url, window.location.href), "_blank")`——
+ * 在 Android WebView 里 `setSupportMultipleWindows` 默认 false，
+ * 带 `_blank` 的 `window.open` **被 Chromium 静默丢弃**（不导航、不报错、无日志），
+ * 于是点「打开」看起来毫无反应。宿主侧另需 `onCreateWindow` 才能接管，
+ * 但那条通道拿不到"用户确实点了打开"的语义，且与 WebView 的新窗口策略耦合。
+ *
+ * 因此改为**直接经桥上行 `openLink`**，由宿主 `Intent.ACTION_VIEW` 送系统浏览器
+ * ——链路最短、语义最明确、与 WebView 的窗口策略完全解耦。
+ *
+ * **其余两个按钮照用官方**（`EditLinkButton` / `DeleteLinkButton`）：
+ * 编辑按钮内含官方的 URL 表单弹层（`EditLinkMenuItems`），删除按钮走
+ * `deleteLink(range.from)`；两者与本项目既有 `deleteLink` / `format.createLink`
+ * 桥能力并存不冲突（它们作用于 JS 侧文档，不涉及导航）。自绘会丢掉这些细节，
+ * 而本次改动与它们无关，最小影响面。
+ *
+ * ⚠️ 官方默认布局是 `[编辑, 打开, 删除]`（`LinkToolbar.tsx` 的 children 顺序），
+ * 此处保持一致，避免用户肌肉记忆错位。
+ *
+ * ⚠️ **不套官方 `<LinkToolbar>` 组件本身**：它只接受 `LinkToolbarProps`、**不接受
+ * `className`**，且内部把 `"bn-toolbar bn-link-toolbar"` 硬编码在
+ * `Components.LinkToolbar.Root` 上。若沿用它就得把整份 props 透传、又无法加类名。
+ * 直接渲染 `Components.LinkToolbar.Root` 更直接，且类名与官方逐字一致
+ * （样式零偏移——`bn-link-toolbar` 的定位/间距规则全部照旧命中）。
+ */
+function ProjectLinkToolbar(props: LinkToolbarProps) {
+  const Components = useComponentsContext()!;
+  return (
+    <Components.LinkToolbar.Root className="bn-toolbar bn-link-toolbar">
+      <EditLinkButton
+        url={props.url}
+        text={props.text}
+        range={props.range}
+        setToolbarOpen={props.setToolbarOpen}
+        setToolbarPositionFrozen={props.setToolbarPositionFrozen}
+      />
+      <Components.LinkToolbar.Button
+        className="bn-button"
+        label="打开链接"
+        mainTooltip="打开链接"
+        isSelected={false}
+        onClick={() => {
+          const href = sanitizeOutboundUrl(props.url);
+          if (href === "") return;
+          sendUp({ type: "openLink", url: href });
+        }}
+        icon={<OpenLinkIcon />}
+      />
+      <DeleteLinkButton
+        range={props.range}
+        setToolbarOpen={props.setToolbarOpen}
+      />
+    </Components.LinkToolbar.Root>
+  );
+}
+
+/**
+ * 「打开」按钮的图标（外链箭头 + 方框）
+ *
+ * 官方用的是 mantine 图标库的图标，本项目未引入该依赖的独立包，
+ * 故按官方图标的视觉（方框 + 右上出箭头）自绘一个 16×16 的内联 SVG：
+ * 尺寸、`currentColor` 取色方式都与官方图标一致，
+ * 在深/浅主题下均自动跟随文字色。
+ */
+function OpenLinkIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+      <polyline points="15 3 21 3 21 9" />
+      <line x1="10" y1="14" x2="21" y2="3" />
+    </svg>
   );
 }
 

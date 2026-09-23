@@ -411,7 +411,29 @@ export type UpMessage =
    * ⚠️ 与 `error` 的区别：`error` 表示**异常**（宿主可能据此提示用户）；
    * `diagnostic` 只是**观测值**，宿主只打 log，不做任何 UI 反应。
    */
-  | { type: "diagnostic"; message: string };
+  | { type: "diagnostic"; message: string }
+  /**
+   * 请求宿主在**外部浏览器**打开链接（v2026-09-24 新增）
+   *
+   * = JS 侧 `links.onClick`（只读态）与自定义 LinkToolbar「打开」按钮的统一出口。
+   *
+   * **为什么要走这条上行，而不是让 JS 自己 `window.open`**：
+   * Android WebView 的 `setSupportMultipleWindows` 默认 false，任何**带 target 的
+   * `window.open`（含官方 LinkToolbar 的 `_blank`）会被 Chromium 静默丢弃**——
+   * 不导航、不报错、无日志，表现就是"点了没反应"（WebView 侧完全黑盒，无从排查）。
+   * 而 WebView 内主框架导航又会让编辑器被目标页顶掉。故链接一律交宿主用
+   * `Intent.ACTION_VIEW` 送系统浏览器，WebView 自身永不导航。
+   *
+   * **调用时机**（两处，均为用户**显式表达"我要打开"**）：
+   * ① 自定义 LinkToolbar 的「打开」按钮（本项目的规范打开入口）；
+   * ② 只读态下点击链接（`editable === false`，无 LinkToolbar 可用，点击即打开）。
+   *
+   * ⚠️ **编辑态单击链接不在此列**：按产品决策，编辑态单击只落光标并弹出
+   * LinkToolbar，由用户自行决定是否打开——见 `EditorApp.tsx` 的 `handleLinkClick`。
+   *
+   * @param url 完整 URL（JS 侧已过滤 `javascript:` 等伪协议与解析失败的相对路径）
+   */
+  | { type: "openLink"; url: string };
 
 declare global {
   interface Window {

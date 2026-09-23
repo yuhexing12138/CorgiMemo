@@ -6,10 +6,12 @@
  *
  * 载入 mdToBlocks：
  *   ① 预处理（逐行）：分割线样式行 `--- dashed` / `--- wavy` → token 占位段落；
- *      载体空块占位（纯 NBSP 行）→ 剥离；裸 `---`/`***`/`___` 交官方 parser（→ divider solid）
+ *      **裸实线分割线 `---` / `***` / `___` → 同款 `solid` token 占位段**
+ *      （v2026-09-23：不再交官方 parser，官方会静默丢弃 ⇒ 实线进编辑页消失）；
+ *      载体空块占位（纯 NBSP 行）→ 剥离
  *   ② editor.tryParseMarkdownToBlocks()
  *   ③ 后处理：
- *      - token 占位段落 → divider 块（props.style）
+ *      - token 占位段落 → divider 块（props.style，三种样式同一条路径）
  *      - 块级色的行首 token → 块 props（见 [decodeBlockColorTokens]）
  *      - image 块本地路径 → file:// URL（WebView 可加载；保存时剥离还原）
  *
@@ -49,6 +51,29 @@ const DIVIDER_TOKEN_SUFFIX = "@@@";
 
 /** 带样式的分割线行：`--- dashed` / `*** wavy` 等（裸 `---` 不匹配，交官方 parser） */
 const DIVIDER_STYLED_LINE = /^(-{3,}|\*{3,}|_{3,})[ \t]+(dashed|wavy)[ \t]*$/;
+
+/**
+ * 裸 thematic break 的**别名**写法（`***` / `___`，含 3 个以上的变体）。
+ *
+ * 官方导出器对 divider 块产出 `***`，而本管线统一以 `---` 作为实线分割线的载体，
+ * 故 `blocksToMd` ⑦ 与 `mdToBlocks` ① 都要用本判定把别名翻转成 `---`。
+ *
+ * 必须整行**仅由同一种符号**构成，避免误伤 `**粗体**` 之类：`*` 与 `_`
+ * 已由 `[ \t]*` 之外的字符排除，`---` 自身不在此列（无需翻转）。
+ *
+ * ⚠️ **两侧必须同时归一**（v2026-09-23 修复「重进编辑页实线消失」）：
+ * 只在导出侧归一是不够的——落库的 markdown 未必都经过本管线（旧数据、
+ * 其它写入路径、用户手输），一旦库里存的是 `***`，载入侧若不认，
+ * 官方 parser 会把它当 thematic break **静默丢弃**（divider 块不生成、
+ * 也不留字面文本），表现为"实线分割线凭空消失"。详见 [mdToBlocks] ①。
+ */
+const BARE_THEMATIC_BREAK_ALIAS = /^(?:\*{3,}|_{3,})[ \t]*$/;
+
+/**
+ * 整行恰为 `---`（裸实线分割线载体；`--- dashed` / `--- wavy` 由
+ * [isDividerStyledLine] 先行匹配，不落到这里）。
+ */
+const BARE_HYPHEN_THEMATIC_BREAK = /^-{3,}[ \t]*$/;
 
 /** 整行仅由 NBSP/空白构成（载体空块占位行） */
 const NBSP_ONLY_LINE = /^(?:[\u00A0\s])*$/
@@ -640,6 +665,38 @@ export async function mdToBlocks(editor: any, markdown: string): Promise<any[]> 
       pre.push(dividerToken(style));
       continue;
     }
+    /**
+     * 裸实线分割线（`---` / `***` / `___`）→ **显式 token 占位段**
+     * （v2026-09-23 修复「重进编辑页实线分割线消失」）。
+     *
+     * **原实现**：把裸 `---` / `***` 直接留给官方 `tryParseMarkdownToBlocks`，
+     * 指望它解析出 divider 块。**这在本项目 schema 下不成立**——实测（真机数据 id=14）：
+     * ```
+     * 项目 schema： [para:"实线分割线", para:"虚线"]            ← divider 凭空消失
+     * 官方 schema： [para:"实线分割线", divider, para:"虚线"]    ← 正常
+     * ```
+     * 同一份 markdown、同一个官方 parser，差别只在 schema：本项目在
+     * `schema.ts` 用 `StyledDividerBlock` **同名覆盖**了内置 divider
+     * （多一个 `style` prop、`content: "none"`），官方 markdown tokenizer
+     * 按内置 `thematicBreak` 语义找不到可落地的块类型，于是**静默丢弃整行**
+     * ——既不建块、也不留字面文本（这正是"没有线、也没有文字"的原因）。
+     *
+     * **为什么此前只暴露实线**：虚线 / 波浪走 token 路径
+     * （`--- dashed` → `@@@CORGI_DIVIDER_dashed@@@` → ③ 还原成 divider 块），
+     * 压根不经过官方 thematic break 分支；唯有裸实线依赖官方识别，
+     * 于是「详情页正常（那里是 Compose 直接按 `---` 画线）、重进编辑页却没了」。
+     *
+     * **归一方向**：三种等价写法都收敛到 `solid` token，与 ③ 的还原逻辑对接，
+     * 使实线与另两种样式走**同一条**载入路径（不再依赖官方 thematic break 行为）。
+     *
+     * **安全性**：与导出侧同款理由——本项目块间恒以 `\n\n` 连接、分割线独占一段，
+     * `---` 不会被当作 setext 标题下划线；且此处仅做整行等价替换，不增删行。
+     */
+    if (BARE_HYPHEN_THEMATIC_BREAK.test(line.trim()) ||
+      BARE_THEMATIC_BREAK_ALIAS.test(line.trim())) {
+      pre.push(dividerToken("solid"));
+      continue;
+    }
     if (isPlaceholderLine(line)) {
       // 载体空块占位行剥离：一行一块模型下不再需要载体
       continue;
@@ -723,6 +780,29 @@ export function blocksToMd(editor: any, blocks: any[]): string {
     .flatMap((line) => {
       const style = parseDividerToken(line.trim());
       if (style) return [`--- ${style}`];
+      /**
+       * 裸 `***` / `___` → `---`（v2026-09-23 修复「分割线存库后丢失」）。
+       *
+       * **背景**：官方 `blocksToMarkdownLossy` 对 divider 块输出的是 `***`
+       * （CommonMark thematic break 的等价写法之一），而宿主侧
+       * `BodyBlocksController.DIVIDER_MD` 定义的分割线载体**只有 `---` 系列**
+       * （`---` / `--- dashed` / `--- wavy`），且 `isDividerMarkdown()` 是**精确等值**判定
+       * ——`***` 不匹配任何一条 ⇒ 详情页不画线、重进编辑页被还原成普通文本
+       * （用户感知为"分割线消失"）。样式版（dashed/wavy）因走 token 路径被规范成
+       * `--- <style>` 而不受影响，故此前只暴露在默认实线上。
+       *
+       * **为何不直接在 `blocksToMd` 的 solid 分支改**：那里是"块 → 块"的预处理，
+       * divider 块须交给官方导出器（它同时负责 `---` 前后的空行语义）。
+       * 改块模型反而要自己重建空行，故在文本后处理阶段归一 —— 与 token 行同一处、同一时机。
+       *
+       * ⚠️ 导出侧归一**不足以保证载入侧认得**（v2026-09-23 补）：落库 markdown 未必
+       * 都经本管线。载入侧的对应归一在 [mdToBlocks] ①，两侧必须成对存在。
+       *
+       * **安全性**：`---` 紧跟非空行时会被 markdown 当作 setext 标题下划线（把上一行
+       * 变成 h2）。本项目块间恒以 `\n\n` 连接、分割线独占一段，故天然不触发；
+       * 此处仅做等价翻转（`***` → `---`），不新增行、不改变空行结构。
+       */
+      if (BARE_THEMATIC_BREAK_ALIAS.test(line.trim())) return ["---"];
       const marker = TOGGLE_MARKER_HTML.get(line.trim());
       /**
        * 折叠标题标记**前后必须各留一个空行**（故返回三个元素）：

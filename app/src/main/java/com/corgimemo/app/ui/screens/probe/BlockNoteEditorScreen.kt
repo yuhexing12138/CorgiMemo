@@ -2,12 +2,14 @@ package com.corgimemo.app.ui.screens.probe
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
+import android.os.Message
 import android.util.Log
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -214,6 +216,14 @@ private const val FONT_HOST = "corgimemo.local"
 private const val FONT_PATH_PREFIX = "/fonts/"
 
 /**
+ * 编辑器产物的加载地址（v2026-09-24 抽出为常量）
+ *
+ * 原先硬编码在 `loadUrl(...)` 里、只出现一次；现在 `onPageStarted` 兜底还原
+ * 也要用它（主框架被劫持时把编辑器载回来），抽出常量避免两处写法漂移。
+ */
+private const val EDITOR_URL = "file:///android_asset/blocknote-web/editor/editor.html"
+
+/**
  * 创建编辑器 WebView：
  * - Bridge 注入 + 错误日志
  * - 字体流拦截（S5）：命中伪域名请求时按 id+字重查 resId，openRawResource 流式回流
@@ -289,6 +299,22 @@ private fun createEditorWebView(
                                 // v1.11.7：JS 回传的运行时观测值，仅供 logcat 排错
                                 Log.d(TAG, "diag | ${msg.optString("message")}")
                             }
+                            /**
+                             * 外部浏览器打开链接（v2026-09-24 新增）
+                             *
+                             * 与正式页同一语义：JS 侧「打开」按钮 / 只读态点击
+                             * 汇聚到这条上行，由宿主送系统浏览器（编辑器自身永不导航）。
+                             * 完整原理见 [BlockNoteEditorWebView] 的 [openInBrowser]。
+                             *
+                             * ⚠️ 本分支**必须 post 到主线程**：`startActivity` 是
+                             * 主线程 API，而本处运行在 WebView 的 JS 桥线程。
+                             * 正式页因「整条消息已 post 到主线程再解析」而无需再 post，
+                             * 探针页是内联解析，故必须显式 post。
+                             */
+                            "openLink" -> {
+                                val url = msg.optString("url")
+                                mainHandler.post { openInBrowser(appContext, url) }
+                            }
                             "error" -> Log.e(
                                 "BlockNoteEditor",
                                 "js error: ${msg.optString("message")}"
@@ -303,8 +329,45 @@ private fun createEditorWebView(
         )
 
         webViewClient = object : WebViewClient() {
+            /**
+             * 导航通道 ①：超链接点击（v2026-09-24 新增）
+             *
+             * 与正式页 [createEditorWebView] 保持**行为一致**（探针页的价值就在于
+             * 复现正式页的行为，两处若不齐就失去参照意义）。判据与处置全部复用
+             * 同一套 `isEditorInternalUrl` / `openInBrowser`。
+             */
+            override fun shouldOverrideUrlLoading(
+                view: WebView?,
+                request: WebResourceRequest?
+            ): Boolean {
+                val url = request?.url?.toString() ?: return false
+                if (isEditorInternalUrl(url)) return false
+                Log.d(TAG, "nav intercepted (link): $url")
+                openInBrowser(appContext, url)
+                return true
+            }
+
             override fun onPageFinished(view: WebView?, url: String?) {
                 Log.d(TAG, "page finished: $url")
+            }
+
+            /**
+             * 导航通道 ③：兜底还原（v2026-09-24 新增）
+             *
+             * 主框架一旦要加载非白名单 URL，终止导航并把编辑器载回来。
+             * 与正式页同一策略，详见 [createEditorWebView] 的注释。
+             */
+            override fun onPageStarted(
+                view: WebView?,
+                url: String?,
+                favicon: Bitmap?
+            ) {
+                super.onPageStarted(view, url, favicon)
+                if (view == null || url == null) return
+                if (isEditorInternalUrl(url)) return
+                Log.w(TAG, "main-frame nav to foreign url, restoring editor: $url")
+                view.stopLoading()
+                view.loadUrl(EDITOR_URL)
             }
 
             /** S5：字体流拦截——res/font 字体以流回给 WebView（字体单份存储，零体积增量） */
@@ -343,7 +406,55 @@ private fun createEditorWebView(
             }
         }
 
-        loadUrl("file:///android_asset/blocknote-web/editor/editor.html")
+        /**
+         * 导航通道 ②：JS `window.open`（v2026-09-24 新增）
+         *
+         * 与正式页同一套做法：打开多窗口支持让 Chromium 回调到 `onCreateWindow`，
+         * 在那里取 URL 交系统浏览器、绝不创建子 WebView。完整原理见
+         * [createEditorWebView] 中对应段落。
+         */
+        setWebChromeClient(object : WebChromeClient() {
+            override fun onCreateWindow(
+                view: WebView?,
+                isDialog: Boolean,
+                isUserGesture: Boolean,
+                resultMsg: Message?
+            ): Boolean {
+                val transport = resultMsg?.obj as? WebView.WebViewTransport
+                if (transport == null || view == null) {
+                    resultMsg?.sendToTarget()
+                    return false
+                }
+                val holder = WebView(appContext)
+                holder.webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(
+                        v: WebView?,
+                        request: WebResourceRequest?
+                    ): Boolean {
+                        val url = request?.url?.toString()
+                        if (!url.isNullOrEmpty() && !isEditorInternalUrl(url)) {
+                            Log.d(TAG, "nav intercepted (window.open): $url")
+                            openInBrowser(appContext, url)
+                        }
+                        v?.destroy()
+                        return true
+                    }
+                }
+                transport.webView = holder
+                resultMsg.sendToTarget()
+                return true
+            }
+        })
+
+        /**
+         * 多窗口支持（v2026-09-24）：`setSupportMultipleWindows` 默认 false 时，
+         * `window.open(url, "_blank")` 会被 Chromium 静默丢弃（无回调、无日志）。
+         * 两个开关成对开启，原理详见 [createEditorWebView]。
+         */
+        settings.setSupportMultipleWindows(true)
+        settings.javaScriptCanOpenWindowsAutomatically = true
+
+        loadUrl(EDITOR_URL)
     }
     return webView
 }
