@@ -1148,14 +1148,14 @@ fun InspirationEditScreen(
              * v2026-09-23 横向收紧（真机 360.dp 宽机型反馈「完成」被挤成两行）：
              * 该行按钮密集、空间紧张。做四处收敛：
              * ① 返回按钮 40.dp → 36.dp；
-             * ② 撤销/重做触摸区 48.dp → 36.dp（此前被 `minimumInteractiveComponentSize()`
-             *    悄悄抬到 48.dp，是本行唯一"超宽"元素）；
+             * ② 撤销/重做触摸区 48.dp → 44.dp（此前被 `minimumInteractiveComponentSize()`
+             *    悄悄抬到 48.dp，是本行唯一"超宽"元素；44.dp 兼顾紧凑与触摸舒适）；
              * ③ 各段 Spacer 4/4/8.dp → 2/2/2.dp，左右内边距 4.dp → 2.dp；
              * ④ 原「复制」按钮整块移除（连同其 clipboard 写入逻辑，按需求下线）。
-             * 累计使总需求从 ~390.dp 降到 ~314.dp，落在 360.dp 机型的 356.dp 可用宽度内，
+             * 累计使总需求从 ~390.dp 降到 ~330.dp，落在 360.dp 机型的 356.dp 可用宽度内，
              * 「完成」按钮稳定拿到它所需的 58.dp 最小宽度（M3 `defaultMinSize`），不再折行。
              *
-             * 注：撤销/重做按钮的调用处显式传 `Modifier.size(36.dp)`，原因见其上方说明——
+             * 注：撤销/重做按钮的调用处显式传 `Modifier.size(...)`，原因见其上方说明——
              * 组件内部的 `minimumInteractiveComponentSize()` 只尊重更外层的尺寸约束。
              */
             Row(
@@ -1208,9 +1208,12 @@ fun InspirationEditScreen(
                  * 会把 Box 的实测宽度抬到 **48.dp**（本行其余 IconButton 因外部 `size(36.dp)`
                  * 先固定约束而保住 36.dp），于是撤销+重做比相邻按钮多占 24.dp，
                  * 顶栏总需求超出屏宽 → Row 只能压缩末尾的「完成」按钮 → 文字换行变形。
-                 * 修法：在调用处显式传 `Modifier.size(36.dp)`——外层 size 先固定约束，
-                 * 内层 `minimumInteractiveComponentSize()` 被 constrain 到 36.dp，
-                 * 触摸区与顶栏其余按钮一致（图标仍 18.dp 居中，视觉间距同步收窄）。
+                 * 修法：在调用处显式传 `Modifier.size(...)`——外层 size 先固定约束，
+                 * 内层 `minimumInteractiveComponentSize()` 被 constrain 到该值。
+                 *
+                 * 最终取 **44.dp**（先临时收到 36.dp 解挤压，复制按钮下线、余量回充裕后回调）：
+                 * 比 48.dp 省 8.dp、比 36.dp 更接近 M3 的无障碍触摸目标，
+                 * 图标仍 18.dp 居中，长按连发时手指不易滑出热区。
                  */
                 val noteCanUndo = blockNoteController.canUndo && !isLocked
                 val noteCanRedo = blockNoteController.canRedo && !isLocked
@@ -1221,7 +1224,7 @@ fun InspirationEditScreen(
                         onAction = { blockNoteController.undo() },
                         enabled = noteCanUndo,
                         canRepeat = noteCanUndo,
-                        modifier = Modifier.size(36.dp),
+                        modifier = Modifier.size(44.dp),
                     )
                     LongPressRepeatIconButton(
                         icon = Icons.AutoMirrored.Filled.Redo,
@@ -1229,7 +1232,7 @@ fun InspirationEditScreen(
                         onAction = { blockNoteController.redo() },
                         enabled = noteCanRedo,
                         canRepeat = noteCanRedo,
-                        modifier = Modifier.size(36.dp),
+                        modifier = Modifier.size(44.dp),
                     )
                 }
 
