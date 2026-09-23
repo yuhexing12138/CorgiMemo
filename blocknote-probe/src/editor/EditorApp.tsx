@@ -261,10 +261,45 @@ function cycleTextColor(editor: any): void {
   editor.addStyles({ textColor: TEXT_COLOR_CYCLE[i + 1] });
 }
 
+/**
+ * 当前光标/选区所在块**是否可承载行内样式**（v2026-09-23）。
+ *
+ * **为什么需要这个判定**：行内样式（字号 fontSize / 文字色 textColor）只能挂在
+ * **行内文本**上，而 BlockNote 的块有三种内容形态：
+ * - `inline`（段落/标题/引用/列表…）→ 有文本，可施加行内样式；
+ * - `table` → 内容由单元格承载，本工具栏不处理；
+ * - `none`（**divider / image / video / audio / file / pageBreak**）→ **零文本**，
+ *   在它上面点「字号 / 文字颜色」必然无效（`getActiveStyles()` 拿不到任何可写的 mark），
+ *   真机表现就是"按钮亮着、点了没反应"。
+ *
+ * 分割线场景正是踩到这里：点分割线弹样式条时，编辑器自带的行内工具栏同时出现，
+ * 其中的 Aa / A 两个按钮完全无效，纯属干扰（用户截图里那两个蓝色块）。
+ *
+ * **判据来源**：直接问 schema 拿该块类型的 `content` 声明——
+ * 比按块类型名硬编码白名单更稳（自定义块、后续新增块类型都自动适配）。
+ * 读不到声明时返回 true（宁可多显示，也不误藏有用按钮）。
+ *
+ * @param editor BlockNote 编辑器实例
+ */
+function canApplyInlineStyles(editor: any): boolean {
+  try {
+    const block = editor.getTextCursorPosition()?.block;
+    if (!block) return true;
+    const spec = editor.schema?.blockSpecs?.[block.type];
+    const content = spec?.config?.content;
+    return content === "inline";
+  } catch {
+    // 取不到光标位置（无选区等边界）时按"可施加"处理，不影响正常输入路径
+    return true;
+  }
+}
+
 /** S8：字号循环按钮（格式工具栏内）——无 → 最小 → 递增 → 末档清除 */
 function FontSizeButton() {
   const Components = useComponentsContext()!;
   const editor = useBlockNoteEditor<any, any, any>();
+  // 无文本块（分割线/图片等）上直接隐藏，避免"点了没反应"的无效按钮
+  if (!canApplyInlineStyles(editor)) return null;
   const cur = editor.getActiveStyles()?.fontSize as string | undefined;
   return (
     <Components.FormattingToolbar.Button
@@ -282,6 +317,8 @@ function FontSizeButton() {
 function TextColorButton() {
   const Components = useComponentsContext()!;
   const editor = useBlockNoteEditor<any, any, any>();
+  // 同 FontSizeButton：无文本块上隐藏（行内色无处施加）
+  if (!canApplyInlineStyles(editor)) return null;
   const cur = editor.getActiveStyles()?.textColor as string | undefined;
   return (
     <Components.FormattingToolbar.Button
@@ -880,10 +917,45 @@ export default function EditorApp() {
           break;
         }
         case "insertDivider": {
+          /**
+           * 在聚焦块之后插入分割线，并把光标落到**分割线之后的空段落**（v2026-09-23）。
+           *
+           * **为什么必须显式定位光标**：`insertBlocks` 内部只做 `tr.step`，**不移动光标**
+           * （见下方 codeBlock 分支的同类注释）。原实现插入后光标仍停在分割线**之前**的
+           * 原块上，带来两个真机可见的副作用：
+           * 1. 点分割线弹出样式工具条时，**编辑器的行内工具栏（Aa / A 等）也一并弹出**，
+           *    正好压在分割线工具条下方（截图里"Aa A"两个蓝色块）——而分割线块是
+           *    `content: "none"`、没有可加的样式，那些按钮点了本就无效，属于纯干扰；
+           * 2. 分割线之后没有可落笔的块，继续输入会挤在原行。
+           *
+           * 修法 = 官方斜杠菜单口径（`insertOrUpdateBlockForSlashMenu` 插入后同样
+           * `setTextCursorPosition` 到新块）：分割线**之后**再补一个空段落并把光标移过去。
+           * 这样光标不在分割线上 → 行内工具栏不弹；同时输入位置符合"我刚插了一条线，
+           * 接着要在下面写"的直觉。
+           *
+           * ⚠️ 插入的是**普通空段落**而非官方 TrailingNode 那样的"占位隐式块"：
+           * 本项目 markdown 转换里空段落 = 空行，`isBlankBodyParagraph` / 尾部裁剪会
+           * 如实处理，不会在往返中凭空多出内容，也不必与 Compose 版的占位符常量耦合同步。
+           */
           const ed = editorRef.current;
           if (ed) {
-            const cursor = ed.getTextCursorPosition();
-            ed.insertBlocks([{ type: "divider", props: { style: "solid" } }], cursor.block, "after");
+            try {
+              const cursor = ed.getTextCursorPosition();
+              const inserted = ed.insertBlocks(
+                [
+                  { type: "divider", props: { style: "solid" } },
+                  { type: "paragraph" },
+                ],
+                cursor.block,
+                "after"
+              ) as any[];
+              /** 末尾那个空段落 = 光标新落点（`insertBlocks` 返回按插入顺序排列的块数组） */
+              const tail = inserted?.[inserted.length - 1];
+              if (tail) ed.setTextCursorPosition(tail, "start");
+            } catch (e: any) {
+              // 静默失败会让"点了没反应"零线索，统一上行诊断
+              sendUp({ type: "error", message: `insertDivider: ${e.message}` });
+            }
           }
           break;
         }

@@ -1,5 +1,5 @@
 import { createReactBlockSpec } from "@blocknote/react";
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 
 /**
  * 三样式分割线（迁移 P1-S10 定稿）：
@@ -39,7 +39,37 @@ const DIVIDER_ROW_STYLE: CSSProperties = {
   minWidth: 0,
 };
 
-/** 分割线浮动工具条（样式三选 + 删除；点击分割线弹出，点外部关闭） */
+/**
+ * 工具条与视口边缘的最小安全间距（px）。
+ *
+ * 工具条 `position: fixed` 挂在**编辑器文档**里，而 Android WebView 里
+ * 该文档坐标系 = 屏幕可视区，因此"视口边缘"就是"编辑器可视边缘"。
+ * 原实现只写了 `transform: translate(-50%, -120%)` 而不做任何夹取，
+ * 于是点击分割线偏上时工具条整个跑到编辑区上边缘之外被裁掉；
+ * 点击偏左/偏右时左右两端也被裁掉。此处统一预留 8px 呼吸位。
+ */
+const TOOLBAR_SAFE_GAP = 8;
+
+/**
+ * 分割线浮动工具条（样式三选 + 删除；点击分割线弹出，点外部关闭）
+ *
+ * **定位策略（v2026-09-23 修复被编辑器边缘裁剪）**：理想位置是"点击处正上方居中"
+ * （水平居中于点击点、垂直抬到点击点上方 120% 处）。但真机上分割线常常贴近
+ * 编辑区顶部，或点击点落在左右两端，理想位置会越出编辑区被裁掉。
+ * 因此改为**两步**：
+ *
+ * 1. **渲染前先用理想位置挂上**（`visibility:hidden`），
+ * 2. `useLayoutEffect` 里量出真实尺寸后夹取到视口安全区内，再显示。
+ *
+ * 之所以不能"用固定尺寸直接算"：按钮内容含 `┈ ╌ 〰` 等**本地字体可能缺失**的字形，
+ * 以及"删除"两个汉字，工具条宽度会随设备字体变化——最准的办法就是**实测**。
+ * 放在 `useLayoutEffect`（而非 `useEffect`）是因为它在浏览器绘制前同步执行，
+ * 用户看不到"先错位再跳回来"的一帧闪烁。
+ *
+ * 夹取规则：
+ * - 水平：先按点击点居中，若左/右越界则水平滑动到安全区内（**不**越界时保持居中）；
+ * - 垂直：默认抬到点击点上方；上方空间不足时翻转到**下方**（仍优先贴住点击点）。
+ */
 function DividerToolbar(props: {
   x: number;
   y: number;
@@ -48,6 +78,10 @@ function DividerToolbar(props: {
   onDelete: () => void;
   onClose: () => void;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  /** 夹取后的最终位置；null = 尚未量取（此帧以隐藏态渲染在理想位置） */
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
   // 点外部关闭（capture 在冒泡前拦截，避免先触发样式按钮的 onClick 又立即关闭）
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -65,6 +99,30 @@ function DividerToolbar(props: {
     };
   });
 
+  /** 量取真实尺寸后计算安全位置（绘制前同步执行，避免跳位闪烁） */
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    // 水平：居中于点击点 → 越界则滑动进安全区
+    let left = props.x - rect.width / 2;
+    left = Math.min(left, vw - TOOLBAR_SAFE_GAP - rect.width);
+    left = Math.max(left, TOOLBAR_SAFE_GAP);
+
+    // 垂直：优先置于点击点上方（留 4px 间隙）；上方放不下则翻转到底部
+    const above = props.y - rect.height - 4;
+    const flipGap = 4; // 翻转后与点击点的间隙
+    const top =
+      above >= TOOLBAR_SAFE_GAP
+        ? above
+        : Math.min(props.y + flipGap, vh - TOOLBAR_SAFE_GAP - rect.height);
+
+    setPos({ left, top });
+  }, [props.x, props.y]);
+
   const styles: Array<{ key: DividerStyle; label: string }> = [
     { key: "solid", label: "─────" },
     { key: "dashed", label: "╌ ╌ ╌" },
@@ -73,12 +131,15 @@ function DividerToolbar(props: {
 
   return (
     <div
+      ref={ref}
       className="probe-divider-toolbar"
       style={{
         position: "fixed",
-        left: props.x,
-        top: props.y,
-        transform: "translate(-50%, -120%)",
+        // 未量取前先按理想位置挂载（隐藏态），量取后立即切到夹取结果
+        left: pos ? pos.left : props.x,
+        top: pos ? pos.top : props.y,
+        transform: pos ? undefined : "translate(-50%, -120%)",
+        visibility: pos ? "visible" : "hidden",
         background: "#ffffff",
         border: "1px solid #ddd",
         borderRadius: 10,
