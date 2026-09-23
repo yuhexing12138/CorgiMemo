@@ -604,8 +604,12 @@ class BlockNoteBridgeController {
     }
 
     private fun enqueueCommand(msg: JSONObject) {
+        val type = msg.optString("type")
         if (ready && !initSent) {
-            // ready 前的命令无编辑器可作用，直接丢弃（init 会在 ready 后重放内容）
+            // ready 前的命令无编辑器可作用，直接丢弃（init 会在 ready 后重放内容）。
+            // v2026-09-23 补 WARN：这是唯一的无日志静默丢弃点，出问题（如撤销"点了没反应"）
+            // 时 logcat 零痕迹无从排查——异常路径至少留一行证据。
+            Log.w(TAG, "enqueueCommand DROPPED (ready && !initSent): $type")
             return
         }
         if (ready) {
@@ -941,7 +945,15 @@ private fun primaryColorHex(key: String): String = when (key) {
 
 /** 下行：Kotlin → JS（evaluateJavascript 调 Bridge 宿主） */
 private fun sendDown(webView: WebView?, msg: JSONObject) {
-    val wv = webView ?: return
+    /**
+     * v2026-09-23 诊断（撤销失效排查）：原 `?: return` 是**无日志静默丢弃**——
+     * webView 引用丢失（onRelease 置 null / 时序竞态）时所有下行命令凭空消失，
+     * 表现为"点了没反应"且日志零痕迹。至少打一行 WARN 留证据。
+     */
+    val wv = webView ?: run {
+        Log.w(TAG, "sendDown SKIPPED (webView==null): ${msg.optString("type")}")
+        return
+    }
     /**
      * v2026-09-21 诊断增强：down 日志补参数值。原先只打 type，排查
      * 「setFontFamily 下发了什么值 / init 携带几个字体」时是盲区。

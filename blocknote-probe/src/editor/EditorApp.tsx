@@ -86,6 +86,54 @@ function linkHrefAt(ed: any, pos: number | undefined): string | undefined {
 }
 
 /**
+ * 就地改块类型，并保住原有的行内文本（v2026-09-23）
+ *
+ * **为什么必须包这一层**：官方 `updateBlock` 在调用方**没有显式传 content** 时，
+ * 只按 ProseMirror 的 content 表达式**字符串**判断能否沿用旧内容
+ * （`@blocknote/core` 的 `api/blockManipulation/commands/updateBlock/updateBlock.ts:200-214`）：
+ *
+ *   - 段落 / 标题 / 引用 / 列表 / 折叠列表 → `content: "inline"` → `"inline*"`
+ *     （`schema/blocks/createSpec.ts:185-186` 编译而来）
+ *   - **代码块** → `content: "plain"` → `"text*"`（`blocks/Code/block.ts:65`）
+ *
+ * 两者字符串不等即 `content = []`，**旧文本被主动清空**。真机现象：在代码块上点
+ * 标题/引用/列表等任何"块类型"按钮，代码文本直接消失（Code Block 按钮上已实测复现）。
+ * 反向（段落 → 代码块）同理，只是方向相反。凡"跨内容类型"的改型都必须走本函数。
+ *
+ * **回传口径**：只回传 **inline 内容形态**（StyledText 数组 / 字符串）。
+ * 表格（`tableContent`）与无内容块（divider / pageBreak 等）原样放行 ——
+ * 它们本就没有行内文本可保留，而 tableContent 也不能当 inline content 交给
+ * `inlineContentToNodes`（会走到 `UnreachableCaseError` 抛错）。
+ *
+ * @param ed    编辑器实例
+ * @param block 目标块（按 id 就地改类型，不改变块的位置）
+ * @param type  目标块类型（paragraph / heading / quote / toggleListItem / codeBlock …）
+ * @param props 需要一并写入的块 props（如 heading 的 `level`）；未列出的 props 由官方保留
+ * @returns 官方 `updateBlock` 返回的新块对象（可再交给 `setTextCursorPosition`）
+ */
+function retypeBlockSafely(
+  ed: any,
+  block: any,
+  type: string,
+  props?: Record<string, unknown>,
+): any {
+  /**
+   * ⚠️ 用 `unknown` 中转再判类型：`Block["content"]` 的声明类型不含 string，
+   * 直接 `typeof block.content === "string"` 会被 TS 判为"类型不相交"（TS2367）。
+   */
+  const rawContent: unknown = block?.content;
+  const keepContent =
+    Array.isArray(rawContent) || typeof rawContent === "string"
+      ? (rawContent as any)
+      : undefined;
+  return ed.updateBlock(block, {
+    type,
+    ...(props ? { props } : {}),
+    ...(keepContent !== undefined ? { content: keepContent } : {}),
+  });
+}
+
+/**
  * 当前光标 / 选区的「链接锚点位置」（v2026-09-22）
  *
  * - **光标态**（选区折叠）取 `anchor`——与官方 LinkToolbar 的 `getLinkAtSelection`
@@ -172,7 +220,10 @@ function writeLinkAtRange(
 function toggleBlockType(ed: any, type: string): void {
   const { block } = ed.getTextCursorPosition();
   const target = block.type === type ? "paragraph" : type;
-  ed.updateBlock(block, { type: target });
+  // ⚠️ v2026-09-23：必须走 [retypeBlockSafely] 保住行内文本 ——
+  // 当前块若是代码块（content 表达式 "text*"，与其它块的 "inline*" 不同），
+  // 官方 updateBlock 会因"内容类型变了"把原文本清空
+  retypeBlockSafely(ed, block, target);
 }
 
 /** 字号循环序列（S8）：点击依次加大，末档点击清除 */
@@ -1171,10 +1222,9 @@ export default function EditorApp() {
                     (block.props as any).level === level
                       ? "paragraph"
                       : "heading";
-                  ed.updateBlock(block, {
-                    type: targetType,
-                    props: { level },
-                  } as any);
+                  // 走 retypeBlockSafely 保住行内文本（当前块可能是代码块 "text*"，
+                  // 直接 updateBlock 会因跨内容类型而清空）
+                  retypeBlockSafely(ed, block, targetType, { level });
                   break;
                 }
                 /**
@@ -1209,10 +1259,11 @@ export default function EditorApp() {
                     block.type === "heading" &&
                     curProps.level === level &&
                     curProps.isToggleable === true;
-                  ed.updateBlock(block, {
-                    type: already ? "paragraph" : "heading",
-                    props: { level, isToggleable: !already },
-                  } as any);
+                  // 走 retypeBlockSafely 保住行内文本（当前块可能是代码块 "text*"）
+                  retypeBlockSafely(ed, block, already ? "paragraph" : "heading", {
+                    level,
+                    isToggleable: !already,
+                  });
                   break;
                 }
                 /**
@@ -1227,26 +1278,100 @@ export default function EditorApp() {
                   const { block } = ed.getTextCursorPosition();
                   const targetType =
                     block.type === "toggleListItem" ? "paragraph" : "toggleListItem";
-                  ed.updateBlock(block, { type: targetType } as any);
+                  // 走 retypeBlockSafely 保住行内文本：当前块可能是代码块（"text*"），
+                  // 直接 updateBlock 会因跨内容类型而清空文本
+                  retypeBlockSafely(ed, block, targetType);
                   break;
                 }
                 case "quote": {
                   const { block } = ed.getTextCursorPosition();
                   const targetType = block.type === "quote" ? "paragraph" : "quote";
-                  ed.updateBlock(block, { type: targetType } as any);
+                  // 走 retypeBlockSafely 保住行内文本：当前块可能是代码块（"text*"），
+                  // 直接 updateBlock 会因跨内容类型而清空文本
+                  retypeBlockSafely(ed, block, targetType);
                   break;
                 }
+                /**
+                 * + 菜单 Paragraph：光标块转普通段落
+                 *
+                 * ⚠️ v2026-09-23：统一走 [retypeBlockSafely]。
+                 * 原实现直接 `updateBlock(block, { type: "paragraph" })` 不传 content，
+                 * 在代码块上点本按钮会因跨内容类型（`"text*"` → `"inline*"`）清空代码文本
+                 * —— 与 Code Block 按钮同一根因，详见该函数与 codeBlock 分支的注释。
+                 */
                 case "paragraph": {
-                  // + 菜单 Paragraph：光标块转普通段落（toggle 语义）
                   const { block } = ed.getTextCursorPosition();
-                  ed.updateBlock(block, { type: "paragraph" } as any);
+                  retypeBlockSafely(ed, block, "paragraph");
                   break;
                 }
+                /**
+                 * 代码块（v2026-09-23 修复：文字被吞 + 插入位置）
+                 *
+                 * ⚠️ 症状：光标放在非空段落上（如"测试二"）点宿主工具栏的 Code Block 按钮，
+                 * 该行文字**直接消失**，只留下一个空代码块。
+                 *
+                 * ⚠️ 根因（官方 `@blocknote/core` 0.52.1）：原实现
+                 * `ed.updateBlock(block, { type: "codeBlock" })` **没有显式传 content**，
+                 * 于是走 `updateBlockTr` → `updateBlockContentNode` 的"沿用旧内容"分支，
+                 * 而该分支只按 **ProseMirror content 表达式字符串**判断能否沿用
+                 * （`api/blockManipulation/commands/updateBlock/updateBlock.ts:200-214`）：
+                 *   - paragraph / heading / quote / listItem … → `"inline*"`
+                 *     （`schema/blocks/createSpec.ts:185-186` 由 `content: "inline"` 编译而来）
+                 *   - codeBlock → `"text*"`
+                 *     （官方 code block config 是 `content: "plain"`，
+                 *      见 `blocks/Code/block.ts:65` → `createSpec.ts:187-188`）
+                 * 两者字符串不相等 → 命中 `content = []`，**旧文本被主动清空**。
+                 * 又因旧文本 `text("测试二")` 对 `text*` 恰好合法
+                 * （`newNodeType.validContent(...)` 为 true，同一文件 259-262 行），
+                 * 不会走"整体替换"兜底，而是 `replaceContentMinimal` 字符级 diff → 全删。
+                 * 这也是**只有 Code Block 会吞字**的原因：其余块类型与段落同为 `inline*`，
+                 * 走的都是"保留内容"分支。
+                 *
+                 * ⚠️ 位置语义：官方斜杠菜单的代码块项走
+                 * `insertOrUpdateBlockForSlashMenu`（`extensions/SuggestionMenu/
+                 * getDefaultSlashMenuItems.ts:46-83`），口径是：
+                 *   - 当前块为空 → 就地 `updateBlock` 转换；
+                 *   - 当前块有内容 → `insertBlocks(..., "after")` **插到下一块**，原文原样保留。
+                 * 本分支据此对齐，使宿主工具栏与官方行为一致（表格/分页早已是 insert 语义）。
+                 * 与官方唯一的差异：官方把"内容仅为一个 `/`"也视为空块（斜杠菜单触发字符），
+                 * 本按钮无触发字符，故不采纳，避免误吞用户真实输入的 `/`。
+                 */
                 case "codeBlock": {
-                  const { block } = ed.getTextCursorPosition();
-                  const targetType =
-                    block.type === "codeBlock" ? "paragraph" : "codeBlock";
-                  ed.updateBlock(block, { type: targetType } as any);
+                  try {
+                    const { block } = ed.getTextCursorPosition();
+                    /** 当前块的 inline 内容数组；非 inline 块（表格/分页等）取不到即空数组 */
+                    const content = Array.isArray(block.content)
+                      ? (block.content as any[])
+                      : [];
+
+                    if (block.type === "codeBlock") {
+                      // 已是代码块 → 再点一次退回普通段落（本项目 toggle 语义）
+                      // ⚠️ 走 retypeBlockSafely：codeBlock("text*") → paragraph("inline*")
+                      //    同样跨内容类型，不显式回传 content 就同样会被清空
+                      const updated = retypeBlockSafely(ed, block, "paragraph");
+                      ed.setTextCursorPosition(updated, "start");
+                      break;
+                    }
+
+                    if (content.length === 0) {
+                      // 空块：就地转换（官方口径；内容本为空故无损失）
+                      const updated = retypeBlockSafely(ed, block, "codeBlock");
+                      ed.setTextCursorPosition(updated, "start");
+                    } else {
+                      // 有内容：在下一行插入代码块，原文保持不动（官方 insertOrUpdateBlockForSlashMenu 口径）
+                      // ⚠️ insertBlocks 内部只做 tr.step，不移动光标，必须显式定位，
+                      //    否则光标停在原行、用户会误以为"没生效"
+                      const [newBlock] = ed.insertBlocks(
+                        [{ type: "codeBlock" }],
+                        block,
+                        "after",
+                      );
+                      ed.setTextCursorPosition(newBlock, "start");
+                    }
+                  } catch (e: any) {
+                    // 静默失败会让"点了没反应"零线索，统一上行诊断
+                    sendUp({ type: "error", message: `codeBlock: ${e.message}` });
+                  }
                   break;
                 }
                 case "table":

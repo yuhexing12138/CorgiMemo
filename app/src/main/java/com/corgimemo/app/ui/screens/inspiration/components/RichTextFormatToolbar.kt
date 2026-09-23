@@ -625,7 +625,17 @@ fun RichTextFormatToolbar(
                 contentDescription = "普通段落",
                 enabled = onTransformEnabled
             )
-            /** Code Block（整块代码，toggle 语义） */
+            /**
+             * Code Block（代码块）
+             *
+             * 行为对齐官方斜杠菜单 `insertOrUpdateBlockForSlashMenu`：
+             * - 当前块**为空** → 就地转为代码块；
+             * - 当前块**有文字** → 在下一行插入空代码块，原文原样保留。
+             *
+             * ⚠️ v2026-09-23 修复：此前是纯 toggle 转换（当前行 → 代码块），
+             * 且 JS 侧未显式回传 content，导致官方 updateBlock 跨内容类型
+             * （段落 "inline*" → 代码块 "text*"）时把当前行文字清空。
+             */
             RiFormatButton(
                 "RiCodeBlock",
                 onClick = { onTransform("codeBlock") },
