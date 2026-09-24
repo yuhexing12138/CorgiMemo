@@ -467,6 +467,49 @@ fun InspirationEditScreen(
     }
 
     /**
+     * 官方 Replace Image「Upload」标签的图片选择 Launcher（v2026-09-24 新增）
+     *
+     * **背景**：官方 Replace Image 弹层的「Upload」标签只有配置 `uploadFile` 才渲染；
+     * JS 侧 `uploadFile` 被调用前，WebView 会先经 `onShowFileChooser` 向宿主
+     * 要一次文件选择（`<input type="file">` 的原生通道）——本 Launcher 就是那个
+     * 通道的接收端：`onFileChooserRequested` 上抛 → 拉起系统图片选择。
+     *
+     * **次序约定（与桥协议强绑定）**：选中后先 `copyUriToInternalStorage`
+     * 把图拷进应用目录 → 写入 `pendingUploadPath` → 再 `deliverFileChooserResult`
+     * 交还 WebView。此后 WebView 才异步触发 input onChange → 官方 `uploadFile`
+     * → `uploadImage` 上行 → 宿主查槽下行路径 → JS 转 file:// 替换图片。
+     * 槽必须在交还**之前**就位，否则上行查不到路径会按失败结转。
+     *
+     * 取消 / 拷贝失败：`deliverFileChooserResult(null)` 收尾（WebView 侧不触发
+     * 上传；若 JS 侧已挂起则按官方 Upload error 结转）。
+     */
+    val replaceUploadLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri == null) {
+            blockNoteController.deliverFileChooserResult(null)
+            return@rememberLauncherForActivityResult
+        }
+        coroutineScope.launch {
+            val savedPath = ImageUtils.copyUriToInternalStorage(context, uri)
+            if (savedPath != null) {
+                /** 先写路径槽（上行查询就位），再交还 chooser 会话 */
+                blockNoteController.pendingUploadPath = savedPath
+                blockNoteController.deliverFileChooserResult(uri)
+            } else {
+                blockNoteController.deliverFileChooserResult(null)
+            }
+        }
+    }
+
+    /** 接线：`onShowFileChooser`（图片类）→ 拉起本 Launcher（组合期一次即可，lambda 引用稳定） */
+    LaunchedEffect(Unit) {
+        blockNoteController.onFileChooserRequested = {
+            replaceUploadLauncher.launch("image/*")
+        }
+    }
+
+    /**
      * BlockNote 迁移（P1.5）：视频/音频/文件选择 Launcher——
      * 选后拷贝到内部存储，经 Bridge 插入对应媒体块（file:// URL 由 JS 侧生成）。
      */

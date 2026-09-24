@@ -250,7 +250,21 @@ export type DownMessage =
    * 宿主无从得知，需 JS 主动通报，否则宿主会以为面板还开着。
    */
   | { type: "openLinkPanel" }
-  | { type: "closeLinkPanel" };
+  | { type: "closeLinkPanel" }
+  /**
+   * 图片上传结果（v2026-09-24 新增）：对上行 `uploadImage` 的应答。
+   *
+   * 官方 Replace Image 弹层的「Upload」标签只有在配置了 `editor.uploadFile`
+   * 时才渲染（FilePanel.tsx:44），而 JS 侧无法自行落盘——故 uploadFile 被调用
+   * 时上行 `uploadImage` 请求，宿主完成「选图 → 拷贝进应用目录」后把**应用内
+   * 绝对路径**经本消息回传，JS 转 file:// URL 更新块（与 insertImage 同构，
+   * 保存/重进持久化链路完全一致）。
+   *
+   * @param requestId 对应上行 `uploadImage` 携带的请求 id（原样带回）
+   * @param path 拷贝后的应用内绝对路径；**缺省 = 取消 / 失败**（JS 侧据此
+   *             reject，官方 UploadTab 会显示 "Upload error" 并复位 loading）
+   */
+  | { type: "uploadImageResult"; requestId: string; path?: string };
 
 /** 上行消息（JS → Kotlin） */
 export type UpMessage =
@@ -465,7 +479,21 @@ export type UpMessage =
    *
    * 故 JS 在 `onOpenChange(false)` 时无条件上行一次，宿主据此把本地状态对齐。
    */
-  | { type: "linkPanelClosed" };
+  | { type: "linkPanelClosed" }
+  /**
+   * 请求宿主选图并落盘（v2026-09-24 新增）：官方 `editor.uploadFile` 的宿主桥。
+   *
+   * 链路：官方 Replace Image 弹层「Upload」标签 → `<input type="file">` →
+   * 宿主 `onShowFileChooser`（拉起图片选择器）→ WebView 把选中文件递回 JS →
+   * 官方 UploadTab 调 `editor.uploadFile(file, blockId)` → **本消息上行** →
+   * 宿主把已选图拷贝进应用目录 → 下行 `uploadImageResult{requestId, path}`。
+   *
+   * ⚠️ File 的字节内容**不经过本消息**（不做 base64 大字符串往返）：选图阶段
+   * 宿主已把内容写进应用目录，这里只传 requestId 作会话匹配。
+   *
+   * @param requestId JS 侧生成的会话 id，宿主在 `uploadImageResult` 中原样带回
+   */
+  | { type: "uploadImage"; requestId: string };
 
 declare global {
   interface Window {

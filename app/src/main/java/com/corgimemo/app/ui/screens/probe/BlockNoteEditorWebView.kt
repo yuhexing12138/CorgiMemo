@@ -21,6 +21,7 @@ import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
+import android.webkit.ValueCallback
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -274,6 +275,38 @@ class BlockNoteBridgeController {
     var linkPanelOpen by mutableStateOf(false)
         private set
 
+    /**
+     * 最近一次「官方 Replace Image → Upload」会话拷贝出的图片路径（v2026-09-24）
+     *
+     * 链路：JS 侧官方 UploadTab → `<input type="file">` → 宿主 `onShowFileChooser`
+     * → Screen 拉起图片选择器 → 拷贝进应用目录 → **先写本槽** →
+     * [deliverFileChooserResult] 交还 WebView → input onChange → 官方调
+     * `editor.uploadFile` → JS 上行 `uploadImage` → [handleUpMessageOnMainThread]
+     * 查本槽并下行 `uploadImageResult{requestId, path}`（消费后置空）。
+     *
+     * ⚠️ 生命周期绑定「单次 chooser 会话」：会话开始（onShowFileChooser）即清槽、
+     * 上行消费即清槽——残留值不会串到后续会话。
+     */
+    internal var pendingUploadPath: String? = null
+
+    /**
+     * 当前挂起的 file chooser 回调（v2026-09-24）
+     *
+     * 由 `onShowFileChooser` 暂存、[deliverFileChooserResult] 消费。
+     * ⚠️ `onReceiveValue` **只能调用一次**（重复调用 Chromium 抛
+     * "Duplicate showFileChooser result"）——交付方法交付即置空防重入；
+     * 新会话开始时若仍有残留，先以 `null` 收尾再接管。
+     */
+    internal var pendingFileChooserCallback: ValueCallback<Array<Uri>>? = null
+
+    /**
+     * 文件选择请求上抛（v2026-09-24）：`onShowFileChooser` 触发时通知 Screen
+     * 拉起图片选择器（复用现有 GetContent 流程）。Screen 在选图/取消后调
+     * [deliverFileChooserResult] 收尾。null = Screen 未接线（此时 chooser 直接
+     * 以取消收场，Upload 标签表现为无反应，不崩溃）。
+     */
+    var onFileChooserRequested: (() -> Unit)? = null
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pendingInit: JSONObject? = null
     private var pendingCommands = mutableListOf<JSONObject>()
@@ -340,6 +373,27 @@ class BlockNoteBridgeController {
 
     /** 主动要一次 markdown 快照（返回键/切后台前） */
     fun requestSave() = enqueueCommand(JSONObject().put("type", "requestSave"))
+
+    /**
+     * 交付文件选择结果（v2026-09-24 新增）：Screen 选图（或取消）后调用。
+     *
+     * **次序约定（调用方必须遵守）**：先 `pendingUploadPath = 拷贝后的路径`
+     * 再调本方法——WebView 收到结果后才会异步触发 input onChange → 官方
+     * `uploadFile` → `uploadImage` 上行，路径槽必须先于该上行就位。
+     * 用户取消 / 拷贝失败时传 `uri = null` 且**不写路径槽**。
+     *
+     * ⚠️ 必须在**主线程**调用（ActivityResult 回调本就主线程；`onReceiveValue`
+     * 要求主线程）。交付即置空回调，杜绝 `onReceiveValue` 二次调用崩溃。
+     *
+     * @param uri 选中图片的 content Uri；null = 用户取消（WebView 侧不会触发上传）
+     */
+    fun deliverFileChooserResult(uri: Uri?) {
+        val callback = pendingFileChooserCallback
+        pendingFileChooserCallback = null
+        /** 传 null = 用户取消（onReceiveValue 接受可空数组，与官方取消语义一致） */
+        callback?.onReceiveValue(uri?.let { arrayOf(it) })
+        Log.d(TAG, "file chooser delivered: ${uri != null}")
+    }
 
     /**
      * requestSave 的即时快照等待信号（v2026-09-23 保存竞态修复）。
@@ -938,6 +992,32 @@ class BlockNoteBridgeController {
                     linkPanelOpen = false
                     Log.d(TAG, "diag | linkPanelClosed")
                 }
+                /**
+                 * 图片上传桥（v2026-09-24 新增）：官方 `editor.uploadFile` 的宿主应答。
+                 *
+                 * 全链路：官方 Replace Image「Upload」标签 → `<input type="file">`
+                 * → 宿主 `onShowFileChooser`（[onFileChooserRequested] 通知 Screen
+                 * 拉起选择器）→ Screen 拷贝选中图进应用目录并写入 [pendingUploadPath]
+                 * → [deliverFileChooserResult] 交还 WebView → input onChange →
+                 * 官方调 `editor.uploadFile` → JS 上行**本消息** → 此处查槽下行
+                 * `uploadImageResult{requestId, path}`，JS resolve file:// URL 后
+                 * 官方自动 updateBlock 替换图片（保存/重进与 insertImage 同构）。
+                 *
+                 * 槽为空 = 取消/拷贝失败（Screen 未写槽就 deliver null）→ 下行不带
+                 * path 字段，JS reject → 官方 UploadTab 显示 "Upload error"。
+                 * 消费即清槽：路径槽绑定单次会话，残留值不得串入下一次。
+                 */
+                "uploadImage" -> {
+                    val requestId = msg.optString("requestId")
+                    val path = pendingUploadPath
+                    pendingUploadPath = null
+                    val down = JSONObject()
+                        .put("type", "uploadImageResult")
+                        .put("requestId", requestId)
+                    if (path != null) down.put("path", path)
+                    Log.d(TAG, "uploadImage -> requestId=$requestId path=${path ?: "<none>"}")
+                    enqueueCommand(down)
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "bad up message", e)
@@ -1443,6 +1523,50 @@ private fun createEditorWebView(
                 }
                 transport.webView = holder
                 resultMsg.sendToTarget()
+                return true
+            }
+
+            /**
+             * 文件选择通道（v2026-09-24 新增）：官方 Replace Image「Upload」标签的
+             * 宿主半边。**Android WebView 的 `<input type="file">` 必须由宿主实现
+             * 本回调才能弹出选择器**——不实现时点击"Upload image"毫无反应
+             * （又一个"点了没反应"的哑按钮）。
+             *
+             * **本项目只接图片类请求**（`accept` 含 image 或为空；图片块官方固定传
+             * `image/*`）：暂存回调 + 上抛 [BlockNoteBridgeController.onFileChooserRequested]
+             * 让 Screen 拉起现有图片选择流程，选完经
+             * [BlockNoteBridgeController.deliverFileChooserResult] 交还。
+             * 其余类型（视频/音频/文件块的 Upload 标签）返回 false 明确不支持——
+             * 官方控件按"宿主无能力"收场，不崩溃；后续需要时按同模式扩展。
+             *
+             * ⚠️ `onReceiveValue` 只能调用一次：接管前若上一会话回调有残留，
+             * 先以 `null` 收尾再接管；同时清空路径槽（会话语义重新开始）。
+             *
+             * @return true = 宿主接管（结果异步经 deliverFileChooserResult 回给 WebView）
+             */
+            override fun onShowFileChooser(
+                webView: WebView?,
+                filePathCallback: ValueCallback<Array<Uri>>,
+                fileChooserParams: WebChromeClient.FileChooserParams
+            ): Boolean {
+                val acceptTypes = fileChooserParams.acceptTypes ?: emptyArray()
+                val acceptsImage = acceptTypes.isEmpty() || acceptTypes.any { it.contains("image") }
+                if (!acceptsImage) {
+                    Log.d(TAG, "file chooser unsupported accept: ${acceptTypes.joinToString()}")
+                    return false
+                }
+                pendingFileChooserCallback?.onReceiveValue(null)
+                pendingUploadPath = null
+                pendingFileChooserCallback = filePathCallback
+                Log.d(TAG, "file chooser requested (image)")
+                val handler = onFileChooserRequested
+                if (handler == null) {
+                    /** Screen 未接线：立即取消收场，WebView 不挂起等待 */
+                    pendingFileChooserCallback = null
+                    filePathCallback.onReceiveValue(null)
+                } else {
+                    handler()
+                }
                 return true
             }
 

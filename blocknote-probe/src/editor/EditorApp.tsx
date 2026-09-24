@@ -1163,6 +1163,25 @@ export default function EditorApp() {
          * - `url`：`ed.getSelectedLinkUrl?.()` 与官方 `CreateLinkButton` 同款判据，
          *   光标落在已有链接上时预填出来，用户可直接改。
          */
+        case "uploadImageResult": {
+          /**
+           * 图片上传桥的结转（v2026-09-24）：对上行 `uploadImage` 的应答。
+           * 按 requestId 查 {@link pendingUploads} 等待表：path 有值 →
+           * resolve `toWebImageUrl(path)`（file:// URL，官方 UploadTab 随即
+           * updateBlock 替换图片）；缺省（取消/失败）→ reject → 官方显示
+           * "Upload error"。查不到表项（超时已清 / 重复应答）静默忽略。
+           */
+          const entry = pendingUploads.get(msg.requestId);
+          pendingUploads.delete(msg.requestId);
+          if (entry) {
+            if (msg.path) entry.resolve(toWebImageUrl(msg.path));
+            else entry.reject(new Error("uploadImage cancelled or failed"));
+          } else {
+            // eslint-disable-next-line no-console
+            console.log("[editor] uploadImageResult: no pending entry for", msg.requestId);
+          }
+          break;
+        }
         case "openLinkPanel": {
           /** ⚠️ `ed` 在本 case 内单独取：上方 `case "format"` 里的 `ed` 是块级作用域，出不来 */
           const ed = editorRef.current;
@@ -1903,6 +1922,37 @@ export default function EditorApp() {
  */
 const EDITOR_CONTENT_GUTTER = 20;
 
+/**
+ * Replace Image「Upload」标签的宿主桥等待表（v2026-09-24 新增）
+ *
+ * **为什么需要**：官方 Replace Image 弹层的「Upload」标签只有在配置了
+ * `editor.uploadFile` 时才渲染（@blocknote/react 0.52.1 的
+ * `FilePanel.tsx:44`——`editor.uploadFile !== undefined` 才加入 Upload 页）。
+ * 而 JS 侧拿到的 File 无法自行落盘（WebView 沙盒没有写应用私有目录的能力），
+ * 故 {@link EditorCore} 的 `uploadFile` 被调用时生成 requestId 挂入本表并上行
+ * `uploadImage`，宿主完成「选图 → 拷贝进应用目录」后下行
+ * `uploadImageResult{requestId, path}`，在此查表结转（resolve / reject）。
+ *
+ * **为什么是模块级而不是组件状态**：上行（useCreateBlockNote 的 uploadFile 闭包）
+ * 与下行（bindDown 的消息 switch）分属两个作用域，且 Promise 的生命周期跨越
+ * React 渲染周期——模块级 Map 天然稳定，本项目编辑器单实例，无并发冲突。
+ *
+ * 结转语义：`path` 有值 → `toWebImageUrl(path)`（file://，与 insertImage 同构，
+ * 保存/重进持久化链路一致）；缺省（取消/失败）→ reject，官方 UploadTab 会
+ * 显示 "Upload error" 并复位 loading（UploadTab.tsx 的 catch 分支）。
+ */
+const pendingUploads = new Map<
+  string,
+  { resolve: (url: string) => void; reject: (e: Error) => void }
+>();
+
+/** requestId 自增序号（配合时间戳保证唯一；不依赖 crypto.randomUUID 的安全上下文） */
+let uploadSeq = 0;
+
+/** uploadImage 结转超时（ms）：宿主拉起选择器后用户选完才会走到上行，
+ * 正常链路毫秒级即回；15s 仍无应答视为宿主异常（未接线/崩溃），防 loading 永挂 */
+const UPLOAD_TIMEOUT_MS = 15000;
+
 /** 编辑器核心（initialBlocks 就绪后挂载，useCreateBlockNote 仅执行一次） */
 function EditorCore(props: {
   initialBlocks: any[];
@@ -2002,6 +2052,46 @@ function EditorCore(props: {
      */
     links: {
       onClick: handleLinkClick,
+    },
+    /**
+     * 图片上传桥（v2026-09-24 新增）
+     *
+     * **直接动因**：官方 Replace Image 弹层的「Upload」标签只在配置了本回调
+     * 时才渲染（`FilePanel.tsx:44`），否则只剩「Embed」一页——真机上点击
+     * Replace Image 只见 Embed 输入框，与官方 demo（Upload/Embed 双页）不一致。
+     *
+     * **实现**：官方流程是 `<input type="file">` → 宿主 `onShowFileChooser`
+     * 拉起图片选择器 → WebView 把选中文件递回 → 本回调被调用。JS 没有落盘
+     * 能力，故此处**忽略 File 字节**（宿主在选择阶段已把图拷贝进应用目录），
+     * 只生成 requestId 挂 {@link pendingUploads} 等待表并上行 `uploadImage`；
+     * 宿主下行 `uploadImageResult{requestId, path}` 后按 path 结转——
+     * resolve `toWebImageUrl(path)`（file:// URL），官方 UploadTab 随即
+     * `updateBlock` 替换图片 URL。保存/重进的持久化与 insertImage 完全同构。
+     *
+     * @param _file 选中的文件（字节不用；名字由官方 UploadTab 自己写进 props.name）
+     * @param _blockId 被替换的图片块 id（官方在上传完成时自行 updateBlock，无需使用）
+     * @returns Promise<file:// URL>；取消/失败/超时 reject → 官方显示 Upload error
+     */
+    uploadFile: async (_file: File, _blockId?: string) => {
+      const requestId = `upload-${Date.now()}-${++uploadSeq}`;
+      return new Promise<string>((resolve, reject) => {
+        /** 超时兜底：宿主未接线 / 进程异常时防 loading 永挂（见 UPLOAD_TIMEOUT_MS 注释） */
+        const timer = window.setTimeout(() => {
+          pendingUploads.delete(requestId);
+          reject(new Error("uploadImage timeout"));
+        }, UPLOAD_TIMEOUT_MS);
+        pendingUploads.set(requestId, {
+          resolve: (url) => {
+            window.clearTimeout(timer);
+            resolve(url);
+          },
+          reject: (e) => {
+            window.clearTimeout(timer);
+            reject(e);
+          },
+        });
+        sendUp({ type: "uploadImage", requestId });
+      });
     },
   });
 
