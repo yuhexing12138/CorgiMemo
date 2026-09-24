@@ -622,8 +622,20 @@ function trimUrlTail(raw: string): string {
 /**
  * 把单个 text 片段里的裸 URL 拆成 text / link 交替序列。
  *
- * 前置边界对齐 tiptap autolink 的触发条件：URL 必须在片段开头，
- * 或前一个字符是空白——`foohttps://a.com` 这类粘连文本不会误判。
+ * 前置边界（v2026-09-24 终版）：**无**——URL 无论粘在什么字符后面都拆。
+ *
+ * **三次演进**：最初「开头或空白后」（v2026-09-22）→ 放宽 CJK → 放宽标点
+ * → **本次按用户决策彻底取消前置判定**。动机：前置边界的本意是防「英文单词
+ * 粘连误判」（`foohttps://a.com`），但代价是「插入位置粘在标点（`链接1:` 后）
+ * 等场景整段丢链」——真机连续两轮暴露（CJK、冒号）。权衡下**宁可多成链、
+ * 不可丢链**：链接误判的代价极低（用户点开即知、可一键编辑/移除），链接丢失
+ * 的代价是内容静默降级且用户毫无感知。
+ *
+ * 保留的防线（不受本次改动影响）：
+ * - URL **内部**仍排除 CJK/空白/引号（`https://a.com，很有用` 不会把中文吞进 URL）；
+ * - `trimUrlTail` 仍剥尾部标点与不平衡括号（`https://a.com。` / `https://a.com）`）；
+ * - 官方 parser 的结构化语法（`[text](url)`、`<url>`、代码块、行内代码）先于
+ *   本处理消化，天然不会被误拆。
  *
  * @returns 拆分后的片段数组；无匹配时原样返回单元素数组（不做无谓拷贝）
  */
@@ -638,7 +650,6 @@ function splitBareUrls(item: any): any[] {
     const url = trimUrlTail(m[0]);
     if (!url) continue;
     const start = m.index ?? 0;
-    if (start > 0 && !/\s/.test(text[start - 1])) continue;
     const end = start + url.length;
     if (end <= start) continue;
     if (start > cursor) {
