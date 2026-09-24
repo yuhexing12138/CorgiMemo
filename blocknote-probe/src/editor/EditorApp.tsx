@@ -1053,6 +1053,29 @@ export default function EditorApp() {
               cursor.block,
               "after"
             );
+            /**
+             * v2026-09-24：插入后立即把焦点还给 WebView（官方 `editor.focus()`）。
+             *
+             * **为什么必须**：官方悬浮格式工具栏由 `FormattingToolbarExtension`
+             * 驱动（@blocknote/core/extensions），其显示状态重算机制是——
+             * ① `pointerdown` 时强制隐藏（`store.setState(false)`）并把
+             *    `preventShowWhileMouseDown` 置真，此期间 onChange /
+             *    onSelectionChange 的重算**全部跳过**；
+             * ② `pointerup`（root capture）时仅在 **`editor.isFocused()` 为真**
+             *    的前提下才重算 `shouldShow()`。
+             * 而本命令由宿主 Compose 底部栏触发：点按钮那一刻 WebView 已失焦，
+             * JS 侧 `insertBlocks` 又不恢复焦点 → 用户 tap 图片时 pointerup 的
+             * `isFocused()=false` → 不重算；选区（NodeSelection）此后不再变化，
+             * 再无重算时机 → 点击图片官方工具栏**永不出现**。
+             * 文字工具栏正常，是因为 tap 正文先把焦点还给了编辑器。
+             *
+             * **修法**：插入即 `focus()`（= `prosemirrorView.focus()`，与
+             * `isFocused()` 同源），此后 tap 图片 pointerup 时编辑器已持有
+             * 焦点 → `shouldShow()` 对 NodeSelection(image) 放行 → 工具栏
+             * 正常弹出。副作用：焦点回归可能让软键盘随之前弹（与宿主
+             * `focusEditor` 命令同路径，属预期行为）。
+             */
+            ed.focus();
           }
           break;
         }
