@@ -21,6 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { editorSchema } from "./schema";
 import { bindDown, sendUp, BUILD_FINGERPRINT, SRC_HASH, type ThemePayload } from "./bridge";
 import { mdToBlocks, blocksToMd, toWebImageUrl } from "./markdown/converter";
+import { linkHrefSyncExtension } from "./linkHrefSync";
 import "../probe.css";
 import "./editor.css";
 
@@ -1965,6 +1966,14 @@ function EditorCore(props: {
     initialContent: props.initialBlocks,
     editable: !props.readOnly,
     /**
+     * 自链接文字编辑同步（v2026-09-24 新增）
+     *
+     * 注册 {@link linkHrefSyncExtension}：「只填 URL」插入的自链接
+     * （显示文本 == href）被用户在编辑器里直接改文字时，href 同步跟随——
+     * 改文字即改链接本身，保存/重进后链接指向新地址。详见扩展文件头注释。
+     */
+    extensions: [linkHrefSyncExtension],
+    /**
      * 链接点击接管（v2026-09-24）
      *
      * 配置本回调即**关闭官方默认的 `window.open`**（官方源码注释原文：
@@ -1976,6 +1985,33 @@ function EditorCore(props: {
       onClick: handleLinkClick,
     },
   });
+
+  /**
+   * 禁用官方 autolink / 粘贴成链（v2026-09-24 新增，用户决策）。
+   *
+   * **口径**：手打的任何链接（`https://…`、`www.…`）都不应被识别成可点击
+   * 链接——**只有链接编辑器（链接面板）写的才识别**。
+   *
+   * BlockNote 的 Link tiptap 扩展内置两个自动成链插件：
+   * - `autolink`：输入时把 URL 文字实时转成 link mark；
+   * - `handlePasteLink`：粘贴 URL 文本时成链。
+   * 两者都在编辑期自动把"手打文本"升级为链接，与本口径冲突。
+   *
+   * **为什么不用官方 `links.isValidLink` 钩子**：它同时被 mark 的
+   * `renderHTML` 消费——返回 false 时渲染出的 `<a>` 的 `href` 会被置空
+   * （link.ts 的 false 分支 `mergeAttributes({ href: "" }, …)`），**面板链接
+   * 的点击回调会拿到空地址**，副作用不可接受。
+   *
+   * **做法**：编辑器创建后用 tiptap 公开 API `unregisterPlugin` 按插件 key
+   * 注销两个插件（幂等；只影响"自动成链"，link mark 本身与面板
+   * createLink/editLink 完全不受影响）。
+   */
+  useEffect(() => {
+    const tiptapEditor = (editor as any)?._tiptapEditor;
+    if (!tiptapEditor) return;
+    tiptapEditor.unregisterPlugin("autolink");
+    tiptapEditor.unregisterPlugin("handlePasteLink");
+  }, [editor]);
 
     /**
      * v1.11.7 诊断：回传编辑区的真实几何，用于排查"点击正文下方空白不聚焦"。

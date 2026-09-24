@@ -569,100 +569,50 @@ function normalizeImageUrls(blocks: any[]): void {
   }
 }
 
-/* ===== 裸 URL 的块模型级 autolink（v2026-09-22 新增，修复"链接重进失效"）===== */
+/* ===== 自链接 CORGI_LINK token 契约（v2026-09-24 终版，按用户决策）===== */
 
 /**
- * 裸 URL 识别（载入端）。只认 `http(s)://` 前缀——与编辑器内 autolink 插件
- * （`@blocknote/core` Link 扩展的 `autolink.ts`）和详情页 markdown 解析
- * （compose-rich-editor 认 `GFM_AUTOLINK`）的覆盖面保持一致；不带协议的
- * `www.` 不处理，避免把普通文本误判成链接。
+ * 自链接 token 前缀/后缀（导出端写入、载入端消费）：
+ * `@@@CORGI_LINK_<url>@@@`——与空行（BLANK）/分割线（DIVIDER）token 同家族。
  *
- * ⚠️ 字符集**必须排除 CJK**（汉字 U+4E00-9FFF、CJK 标点 U+3000-303F、
- * 全角字符 U+FF00-FFEF）：中文笔记里 URL 后面紧跟着中文极常见
- * （`https://a.com/b，很有用`），若不排除，`[^\s]+` 会把整句中文吞进 URL。
- * 排除空白与 `< > " \`` 则保证不吞 HTML 属性的引号（结构化 text 里本就
- * 没有标签，此处属双保险）。
+ * **为什么不用「」**（v2026-09-24 当日第三次迭代）：「」是普通键盘可输入字符，
+ * 用户手打 `「https://www.baidu.com」` 与导出写的「」**字面完全相同**，载入端
+ * 无法区分（真机复现）——**标记必须是键盘打不出来的序列才能根除歧义**。
+ * `@@@CORGI_LINK_` 前缀 + 尾部 `@@@` 无法手打（且项目内部 token 通配剥除
+ * `@@@CORGI_[A-Za-z0-9_#]*@@@` 因 URL 含 `:`/`/` 不匹配，天然免疫误剥）。
  */
-const BARE_URL_GLOBAL_RE =
-  /https?:\/\/[^\s<>"`\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]+/g;
-
-/** URL 尾部要剥掉的标点（URL 不以这些收尾；中英文一并处理） */
-const URL_TRAILING_PUNCT_RE = /[.,;:!?"'，。；：！？、）】」》…]+$/;
-
-/**
- * 剥掉 URL 尾部标点与**不平衡**的右括号 / 方括号。
- * 按配对处理：`https://a.com/b_(c)` 平衡 → 保留；`https://a.com/b)` 多一个
- * 右括号 → 剥掉（否则链接文字会拖上正文里的括号）。
- */
-function trimUrlTail(raw: string): string {
-  let url = raw.replace(URL_TRAILING_PUNCT_RE, "");
-  for (;;) {
-    const last = url[url.length - 1];
-    if (last === ")") {
-      const open = (url.match(/\(/g) ?? []).length;
-      const close = (url.match(/\)/g) ?? []).length;
-      if (close > open) {
-        url = url.slice(0, -1);
-        continue;
-      }
-    }
-    if (last === "]") {
-      const open = (url.match(/\[/g) ?? []).length;
-      const close = (url.match(/\]/g) ?? []).length;
-      if (close > open) {
-        url = url.slice(0, -1);
-        continue;
-      }
-    }
-    break;
-  }
-  return url;
-}
+const LINK_TOKEN_PREFIX = "@@@CORGI_LINK_";
+const LINK_TOKEN_SUFFIX = "@@@";
+/** 载入端 token 匹配：非贪婪到最近的尾部 @@@（URL 含单个 @ 不影响，连续 @@
+ * 会截断——自担的极端场景） */
+const LINK_TOKEN_RE = /@@@CORGI_LINK_([\s\S]*?)@@@/g;
 
 /**
- * 把单个 text 片段里的裸 URL 拆成 text / link 交替序列。
+ * 载入端：把 text 片段里的 `@@@CORGI_LINK_url@@@` token 还原成 link 行内内容。
  *
- * 前置边界（v2026-09-24 终版）：**无**——URL 无论粘在什么字符后面都拆。
- *
- * **三次演进**：最初「开头或空白后」（v2026-09-22）→ 放宽 CJK → 放宽标点
- * → **本次按用户决策彻底取消前置判定**。动机：前置边界的本意是防「英文单词
- * 粘连误判」（`foohttps://a.com`），但代价是「插入位置粘在标点（`链接1:` 后）
- * 等场景整段丢链」——真机连续两轮暴露（CJK、冒号）。权衡下**宁可多成链、
- * 不可丢链**：链接误判的代价极低（用户点开即知、可一键编辑/移除），链接丢失
- * 的代价是内容静默降级且用户毫无感知。
- *
- * 保留的防线（不受本次改动影响）：
- * - URL **内部**仍排除 CJK/空白/引号（`https://a.com，很有用` 不会把中文吞进 URL）；
- * - `trimUrlTail` 仍剥尾部标点与不平衡括号（`https://a.com。` / `https://a.com）`）；
- * - 官方 parser 的结构化语法（`[text](url)`、`<url>`、代码块、行内代码）先于
- *   本处理消化，天然不会被误拆。
+ * 精确边界（token 是导出时写下的），包裹内容（含中文、含标点）原样即链接，
+ * **无任何 URL 形态判定**——手打的 `「https://…」` 等一切字面文本不再是标记，
+ * 天然保持纯文本（用户决策：「手打的任何链接都不识别」）。
  *
  * @returns 拆分后的片段数组；无匹配时原样返回单元素数组（不做无谓拷贝）
  */
-function splitBareUrls(item: any): any[] {
+function splitLinkTokens(item: any): any[] {
   const text = item.text as string;
-  /** 原片段样式：拆出的每个片段（前缀 / 链接内文字 / 后缀）都必须继承，
-   *  否则"带色文字里的裸 URL"拆完前后会掉色 */
   const baseStyles = { ...((item.styles ?? {}) as Record<string, unknown>) };
   const out: any[] = [];
   let cursor = 0;
-  for (const m of text.matchAll(BARE_URL_GLOBAL_RE)) {
-    const url = trimUrlTail(m[0]);
-    if (!url) continue;
+  for (const m of text.matchAll(LINK_TOKEN_RE)) {
+    const inner = m[1];
+    if (!inner) continue;
     const start = m.index ?? 0;
-    const end = start + url.length;
-    if (end <= start) continue;
+    const end = start + m[0].length;
     if (start > cursor) {
       out.push({ type: "text", text: text.slice(cursor, start), styles: { ...baseStyles } });
     }
-    /**
-     * link 行内内容与官方 `nodeToBlock` 产出的形态完全一致：
-     * `{ type: "link", href, content: [{ type: "text", text, styles }] }`
-     */
     out.push({
       type: "link",
-      href: url,
-      content: [{ type: "text", text: text.slice(start, end), styles: { ...baseStyles } }],
+      href: inner,
+      content: [{ type: "text", text: inner, styles: { ...baseStyles } }],
     });
     cursor = end;
   }
@@ -674,47 +624,72 @@ function splitBareUrls(item: any): any[] {
 }
 
 /**
- * 载入后处理：把解析结果里 text 片段中的裸 URL 还原成链接（块模型级 autolink）。
+ * 导出端：把**自链接**（显示文本拼接 == href）的 link 行内内容塌成
+ * `@@@CORGI_LINK_<href>@@@` token 片段——官方 `formatLink` 的「显示文本 == URL
+ * 退化为裸 URL」行为随之失效，markdown 里留下的是**键盘打不出来的精确边界**。
  *
- * ⚠️ **为什么必须做**（修复"插入链接保存重进后编辑页失效"）：
- * BlockNote 导出时，`htmlToMarkdown.ts` 的 `formatLink` 对「显示文本 == URL」的
- * 链接**有意导出为裸 URL**（`if (!text || text === href) return href`，BlockNote#2661：
- * 裸 URL 粘到别的输入框能被目标自动识别，避免 `<url>` 尖括号或冗余的 `[url](url)`）。
- * 而"未选中文字插入链接"正是显示文本 = URL 原文 → 保存后 markdown 里只剩裸 URL。
- * 但官方 markdown **解析器没有 autolink**（`markdownToHtml.ts` 的 inline tokenizers
- * 只认 `[text](url)`），于是重进时裸 URL 被当纯文本，链接丢失。
- * （详情页不受影响：compose-rich-editor 的 markdown 解析认 `GFM_AUTOLINK`。）
+ * **仅自链接**：显示文本 ≠ href 的链接保持官方 `[text](url)` 路径（显示文字
+ * 是用户选的，重进由官方 parser 还原）。**href 含 `@@@`** 的不 token 化
+ * （载入会截断，保持官方路径降级）。
  *
- * **为什么在块模型层面做而不是给 markdown 加正则**：解析完成后数据已结构化，
- * 代码块、行内代码、HTML 标记、已有链接都各归其位——在这里拆分天然不会误伤它们；
- * 若在 markdown 文本上跑正则，就得逐个排除 `<a href="…">` 属性、``` 围栏、
- * `](…)` 链接目标等一堆上下文，极易出漏。
- *
- * 幂等：载入拆成 link → 导出又退化为裸 URL（官方行为）→ 再载入再拆回 link，
- * 数据形态稳定，不会越循环越乱。
- *
- * @param blocks 解析得到的块数组（原地修改；递归 children，quote/列表项等容器一并覆盖）
+ * @param blocks 块数组（原地修改；递归 children，quote/列表项等容器一并覆盖）
  */
-function autolinkBareUrls(blocks: any[]): void {
+function tokenizeSelfLinks(blocks: any[]): void {
+  for (const b of blocks) {
+    if (Array.isArray(b.content)) {
+      b.content = b.content.flatMap((item: any) => {
+        if (item?.type !== "link") return [item];
+        const href = item.href as string;
+        if (typeof href !== "string" || href === "") return [item];
+        if (href.includes("@@@")) return [item];
+        const parts = Array.isArray(item.content) ? item.content : [];
+        const fullText = parts.map((p: any) => p?.text ?? "").join("");
+        if (fullText !== href) return [item];
+        const styles = { ...((parts[0]?.styles ?? {}) as Record<string, unknown>) };
+        return [
+          { type: "text", text: `${LINK_TOKEN_PREFIX}${href}${LINK_TOKEN_SUFFIX}`, styles },
+        ];
+      });
+    }
+    if (Array.isArray(b.children) && b.children.length > 0) {
+      tokenizeSelfLinks(b.children);
+    }
+  }
+}
+
+/**
+ * 载入后处理：把解析结果里 text 片段中的 `「URL」` 显式标记还原成链接
+ * （块模型级，递归 children，quote/列表项等容器一并覆盖）。
+ *
+ * **v2026-09-24 终版（用户决策）**：裸 URL autolink（用正则猜 URL 形态）已
+ * **整体移除**——正则猜不完复杂链接（CJK 前缀、冒号前缀、协议后紧跟 CJK
+ * 连续三轮漏判），且口径收敛为「**手打的任何链接都不识别，只有链接编辑器
+ * 写的才识别**」：面板链接由「」显式标记承载，手打文本保持纯文本。
+ *
+ * @param blocks 解析得到的块数组（原地修改）
+ */
+function restoreLinkTokens(blocks: any[]): void {
   for (const b of blocks) {
     if (!b || typeof b !== "object") continue;
     if (Array.isArray(b.content)) {
       const next: any[] = [];
       for (const item of b.content) {
         if (item?.type === "text" && typeof item.text === "string") {
-          next.push(...splitBareUrls(item));
+          next.push(...splitLinkTokens(item));
         } else {
-          /** 已是 link（显式标题链接）/ 其它行内内容原样保留，不重复处理 */
+          /** 已是 link（显式/面板链接）/ 其它行内内容原样保留 */
           next.push(item);
         }
       }
       b.content = next;
     }
     if (Array.isArray(b.children) && b.children.length > 0) {
-      autolinkBareUrls(b.children);
+      restoreLinkTokens(b.children);
     }
   }
 }
+
+
 
 /** 图片块 URL 还原（保存前处理）：file:// 剥离回本地原始路径（幂等） */
 function restoreImageUrls(blocks: any[]): void {
@@ -806,9 +781,10 @@ export async function mdToBlocks(editor: any, markdown: string): Promise<any[]> 
   // ④ 后处理：块级色行首 token → 块 props（必须在装载编辑器前完成，否则 token 会闪现）
   const colored = decodeBlockColorTokens(result);
 
-  // ⑤ 后处理：裸 URL → link 行内内容（官方 markdown 解析器无 autolink，
-  //    而"显示文本==URL"的链接导出时会被官方退化为裸 URL，见 autolinkBareUrls 注释）
-  autolinkBareUrls(colored);
+  // ⑤ 后处理：CORGI_LINK token → link 行内内容（自链接 token 契约的载入端，
+  //    见 [restoreLinkTokens] 与 [tokenizeSelfLinks]；手打的任何链接（含「」
+  //    字面文本）都不成链——token 是键盘打不出来的序列，歧义根除）
+  restoreLinkTokens(colored);
 
   // ⑥ 后处理：图片 URL 规范化（本地路径 → file://，WebView 可加载）
   normalizeImageUrls(colored);
@@ -838,6 +814,12 @@ export function blocksToMd(editor: any, blocks: any[]): string {
     }
     return b;
   });
+
+  // ①a 自链接「」化（v2026-09-24 终版，按用户决策）：显示文本 == href 的链接
+  //    塌成 `「href」` 普通 text——官方 formatLink 的「退化为裸 URL」行为随之
+  //    失效，markdown 里留下我们自己写的精确边界（载入端 [splitLinkTokens]
+  //    对接）。必须在颜色 token 编码（②）之前：link 已不存在，其 text 参与编码。
+  tokenizeSelfLinks(mapped);
 
   // ①b 空段落块（编辑页"空行"）→ token 占位段落（CommonMark 不可表示空段，
   //    官方导出的连续空行在载入方向必丢，见 [BLANK_LINE_TOKEN] / [encodeBlankParagraphs]）

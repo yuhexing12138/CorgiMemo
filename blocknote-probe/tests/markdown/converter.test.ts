@@ -122,52 +122,59 @@ describe("markdown 转换层：round-trip 往返", () => {
   });
 });
 
-describe("markdown 转换层：链接往返（裸 URL autolink，v2026-09-22）", () => {
+describe("markdown 转换层：链接往返（终版：裸 URL 不识别，自链接走「」契约）", () => {
   /**
-   * 背景：官方导出 `formatLink` 对「显示文本 == URL」的链接**有意退化为裸 URL**
-   * （BlockNote#2661），而官方 markdown 解析器没有 autolink ——
-   * "未选中文字插入链接"保存重进后编辑页链接丢失（详情页走 GFM_AUTOLINK 不受影响）。
-   * 修复：mdToBlocks 后处理在块模型层面把裸 URL 还原成 link 行内内容。
+   * **v2026-09-24 终版（用户决策）**：手打的任何链接都不识别，只有链接编辑器
+   * 写的才识别。裸 URL autolink（v2026-09-22 引入）已整体移除——自链接改由
+   * 「」显式包裹契约承载（导出 bracketSelfLinks / 载入 splitBracketLinks），
+   * 详见 link-contract.test.ts。此处固化终版行为：
+   * - 裸 URL（无论形态）载入后保持纯文本，不成链；
+   * - 显式 `[text](url)` 正常还原（官方 parser 路径）；
+   * - 自链接端到端：blocks → 「URL」→ blocks → 再导出仍为「URL」（幂等）。
    */
-  it("裸 URL（官方退化产物）载入还原为 link", async () => {
+  it("裸 URL 载入保持纯文本（不成链）", async () => {
     const blocks = await mdToBlocks(editor, "https://a.com/b");
-    const link = blocks[0]?.content?.find((x: any) => x.type === "link");
-    expect(link?.href).toBe("https://a.com/b");
-    expect(link?.content?.[0]?.text).toBe("https://a.com/b");
+    const hasLink = (blocks[0]?.content ?? []).some((x: any) => x.type === "link");
+    expect(hasLink).toBe(false);
+    expect(blocks[0]?.content?.[0]?.text).toBe("https://a.com/b");
   });
 
-  it("裸 URL 后跟中文标点：标点留在链接外", async () => {
+  it("裸 URL 后跟中文标点：同样不成链", async () => {
     const blocks = await mdToBlocks(editor, "看这个 https://a.com/b，很有用");
-    const content = blocks[0]?.content ?? [];
-    const linkIdx = content.findIndex((x: any) => x.type === "link");
-    expect(linkIdx).toBeGreaterThan(0); // 前面有"看这个 "文本
-    expect(content[linkIdx]?.href).toBe("https://a.com/b");
-    const tail = content[content.length - 1];
-    expect(tail?.type).toBe("text");
-    expect((tail?.text as string).startsWith("，")).toBe(true);
+    const hasLink = (blocks[0]?.content ?? []).some((x: any) => x.type === "link");
+    expect(hasLink).toBe(false);
   });
 
-  it("正文中间的裸 URL 也能识别（前置边界=空白）", async () => {
+  it("正文中间的裸 URL：同样不成链", async () => {
     const blocks = await mdToBlocks(editor, "先看 https://a.com/x 再说");
-    const link = blocks[0]?.content?.find((x: any) => x.type === "link");
-    expect(link?.href).toBe("https://a.com/x");
+    const hasLink = (blocks[0]?.content ?? []).some((x: any) => x.type === "link");
+    expect(hasLink).toBe(false);
   });
 
-  it("显式标题链接不受 autolink 影响（不重复拆分）", async () => {
+  it("显式标题链接正常还原（官方 parser 路径）", async () => {
     const blocks = await mdToBlocks(editor, "[点这里](https://a.com/b)");
     const link = blocks[0]?.content?.find((x: any) => x.type === "link");
     expect(link?.href).toBe("https://a.com/b");
     expect(link?.content?.[0]?.text).toBe("点这里");
   });
 
-  it("完整往返幂等：载入→导出（退化裸 URL）→再载入，链接不丢", async () => {
-    const blocks1 = await mdToBlocks(editor, "https://a.com/b");
-    // 官方 formatLink：text==href → 导出为裸 URL（不含 ]( 结构）
-    const md2 = blocksToMd(editor, blocks1);
-    expect(md2).not.toContain("](");
-    // 再载入：链接仍在（修复前这一步丢链接）
-    const blocks2 = await mdToBlocks(editor, md2);
+  it("自链接端到端幂等：blocks → 「URL」→ blocks → 再导出仍为「URL」", async () => {
+    const linkBlock = {
+      type: "paragraph",
+      content: [
+        {
+          type: "link",
+          href: "https://a.com/b",
+          content: [{ type: "text", text: "https://a.com/b", styles: {} }],
+        },
+      ],
+    };
+    const md1 = blocksToMd(editor, [linkBlock]);
+    expect(md1.trim()).toBe("「https://a.com/b」");
+    const blocks2 = await mdToBlocks(editor, md1);
     const link = blocks2[0]?.content?.find((x: any) => x.type === "link");
     expect(link?.href).toBe("https://a.com/b");
+    const md2 = blocksToMd(editor, blocks2);
+    expect(md2.trim()).toBe("「https://a.com/b」");
   });
 });

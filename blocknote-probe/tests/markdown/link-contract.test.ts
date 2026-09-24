@@ -60,13 +60,13 @@ function expectLink(blocks: any[], href: string, text: string) {
   expect(link.content?.[0]?.text).toBe(text);
 }
 
-describe("链接导出契约：官方 formatLink 对「显示文本 == URL」退化为裸 URL", () => {
-  it("独立链接段导出为裸 URL（不拦官方行为）", () => {
+describe("链接导出契约：自链接（显示文本 == href）「」化，显示文本 ≠ href 走官方", () => {
+  it("独立链接段导出为「URL」显式包裹", () => {
     const md = blocksToMd(editor, [SELF_LINK_BLOCK]);
-    expect(md.trim()).toBe("https://example.com");
+    expect(md.trim()).toBe("@@@CORGI_LINK_https://example.com@@@");
   });
 
-  it("前文 + 链接段导出为「前文+裸URL」粘连形态（无空白分隔）", () => {
+  it("前文 + 链接段导出为「前文「URL」」（边界由「」显式给出）", () => {
     const blocks: any[] = [
       {
         type: "paragraph",
@@ -81,7 +81,7 @@ describe("链接导出契约：官方 formatLink 对「显示文本 == URL」退
       },
     ];
     const md = blocksToMd(editor, blocks);
-    expect(md.trim()).toBe("前文https://example.com");
+    expect(md.trim()).toBe("前文@@@CORGI_LINK_https://example.com@@@");
   });
 
   it("显示文本 ≠ href 的链接导出为标准 [text](url)", () => {
@@ -102,27 +102,14 @@ describe("链接导出契约：官方 formatLink 对「显示文本 == URL」退
   });
 });
 
-describe("链接载入契约：裸 URL / 显式链接均还原为 link 行内内容", () => {
-  it("裸 URL 独占段还原为 link（URL 在片段开头）", async () => {
-    const blocks = await mdToBlocks(editor, "https://example.com");
+describe("链接载入契约：「」显式包裹还原为 link；裸 URL 一律不识别（终版）", () => {
+  it("「URL」显式包裹还原为 link（新数据主路径）", async () => {
+    const blocks = await mdToBlocks(editor, "@@@CORGI_LINK_https://example.com@@@");
     expectLink(blocks, "https://example.com", "https://example.com");
   });
 
-  it("裸 URL 粘在 CJK 文本后还原为 link（「链https://…」场景）", async () => {
-    const blocks = await mdToBlocks(editor, "前文https://example.com");
-    // 前文保持普通文字；URL 拆成 link
-    const para = blocks.find((b: any) => b?.type === "paragraph");
-    const types = (para.content ?? []).map((c: any) => c.type);
-    expect(types).toContain("link");
-    const link = (para.content ?? []).find((c: any) => c?.type === "link");
-    expect(link.href).toBe("https://example.com");
-    expect(link.content?.[0]?.text).toBe("https://example.com");
-    expect((para.content ?? []).some((c: any) => c.type === "text" && c.text === "前文")).toBe(true);
-  });
-
-  it("裸 URL 粘在半角冒号后还原为 link（「链接1:https://…」真机故障场景）", async () => {
-    const blocks = await mdToBlocks(editor, "链接1:https://www.baidu.com");
-    // 「链接1:」保持普通文字；URL 拆成 link
+  it("前文 + 「URL」还原为 前文 + link", async () => {
+    const blocks = await mdToBlocks(editor, "链接1:@@@CORGI_LINK_https://www.baidu.com@@@");
     const para = blocks.find((b: any) => b?.type === "paragraph");
     const link = (para.content ?? []).find((c: any) => c?.type === "link");
     expect(link).toBeDefined();
@@ -133,47 +120,56 @@ describe("链接载入契约：裸 URL / 显式链接均还原为 link 行内内
     ).toBe(true);
   });
 
-  it("裸 URL 粘在全角括号后还原为 link（「（https://…」标点前缀）", async () => {
-    const blocks = await mdToBlocks(editor, "（https://example.com）参考");
-    const para = blocks.find((b: any) => b?.type === "paragraph");
-    const link = (para.content ?? []).find((c: any) => c?.type === "link");
-    expect(link).toBeDefined();
-    expect(link.href).toBe("https://example.com");
-    // 全角括号与「参考」保持在 link 之外
-    expect((para.content ?? []).some((c: any) => c.type === "text" && c.text.includes("）参考"))).toBe(true);
+  it("「」内含中文的复杂 URL 原样还原（显式边界零模糊）", async () => {
+    const blocks = await mdToBlocks(editor, "@@@CORGI_LINK_https://百度www.baidu.com@@@");
+    expectLink(blocks, "https://百度www.baidu.com", "https://百度www.baidu.com");
   });
 
-  it("裸 URL 粘在英文字母后也拆（foohttps:// → foo + link，终版无前置边界）", async () => {
-    const blocks = await mdToBlocks(editor, "foohttps://example.com");
+  it("「」内非 URL（普通中文引用）不拆——防误伤", async () => {
+    const blocks = await mdToBlocks(editor, "「今天天气不错」适合出门");
     const para = blocks.find((b: any) => b?.type === "paragraph");
-    const link = (para.content ?? []).find((c: any) => c?.type === "link");
-    expect(link).toBeDefined();
-    expect(link.href).toBe("https://example.com");
-    expect((para.content ?? []).some((c: any) => c.type === "text" && c.text === "foo")).toBe(true);
+    const hasLink = (para.content ?? []).some((c: any) => c?.type === "link");
+    expect(hasLink).toBe(false);
+    expect(para.content?.[0]?.text).toBe("「今天天气不错」适合出门");
   });
 
-  it("裸 URL 粘在数字后也拆（v2https:// → v2 + link）", async () => {
-    const blocks = await mdToBlocks(editor, "v2https://example.com");
+  it("手打的「https://…」不拆——「」只是普通字符不是标记（v2026-09-24 用户报）", async () => {
+    // 「」可被键盘输入，与导出标记形态重合的歧义已由 CORGI_LINK token 根除——
+    // 手打的「」字面文本（含协议 URL）必须保持纯文本
+    const blocks = await mdToBlocks(editor, "「https://www.baidu.com」");
     const para = blocks.find((b: any) => b?.type === "paragraph");
-    const link = (para.content ?? []).find((c: any) => c?.type === "link");
-    expect(link).toBeDefined();
-    expect(link.href).toBe("https://example.com");
-    expect((para.content ?? []).some((c: any) => c.type === "text" && c.text === "v2")).toBe(true);
+    const hasLink = (para.content ?? []).some((c: any) => c?.type === "link");
+    expect(hasLink).toBe(false);
+    expect(para.content?.[0]?.text).toBe("「https://www.baidu.com」");
+  });
+
+  it("裸 URL（无「」）一律不拆——手打的任何链接都不识别（终版口径）", async () => {
+    // 覆盖历史漏判过的全部形态：独占段 / CJK 粘连 / 冒号粘连 / 全角括号 /
+    // 英文字母 / 数字 / 协议后紧跟 CJK / 尾跟中文——**全都不成链**
+    const samples = [
+      "https://example.com",
+      "前文https://example.com",
+      "链接1:https://www.baidu.com",
+      "（https://example.com）参考",
+      "foohttps://example.com",
+      "v2https://example.com",
+      "https://百度www.baidu.com",
+      "链接1:https://百度www.baidu.com",
+      "见https://example.com，很有用",
+    ];
+    for (const md of samples) {
+      const blocks = await mdToBlocks(editor, md);
+      const para = blocks.find((b: any) => b?.type === "paragraph");
+      const hasLink = (para.content ?? []).some((c: any) => c?.type === "link");
+      if (hasLink) {
+        throw new Error(`裸 URL 不应被拆成 link: ${JSON.stringify(md)} -> ${JSON.stringify(para?.content)}`);
+      }
+    }
   });
 
   it("显式 [text](url) 还原为 link（显示文本 ≠ href）", async () => {
     const blocks = await mdToBlocks(editor, "[显示文字](https://example.com)");
     expectLink(blocks, "https://example.com", "显示文字");
-  });
-
-  it("URL 尾部紧跟中文不把中文吞进链接（CJK 排除字符集）", async () => {
-    const blocks = await mdToBlocks(editor, "见https://example.com，很有用");
-    const para = blocks.find((b: any) => b?.type === "paragraph");
-    const link = (para.content ?? []).find((c: any) => c?.type === "link");
-    expect(link).toBeDefined();
-    expect(link.href).toBe("https://example.com");
-    // 中文标点「，很有用」保持在 link 之外的普通文字里
-    expect((para.content ?? []).some((c: any) => c.type === "text" && c.text.includes("，很有用"))).toBe(true);
   });
 });
 
@@ -207,7 +203,7 @@ describe("链接端到端契约：插入 → 保存 → 载入（真机完整路
     expect(link?.href).toBe("https://example.com");
   });
 
-  it("「链接1:」后插链接：blocks → md → blocks 链接保留（真机故障端到端）", async () => {
+  it("「链接1:」后插链接：blocks → md → blocks 链接保留（真机故障端到端，「」形态）", async () => {
     // 真机复现形态：光标停在「链接1:」后半角冒号处插入链接
     const blocksIn: any[] = [
       {
@@ -223,7 +219,8 @@ describe("链接端到端契约：插入 → 保存 → 载入（真机完整路
       },
     ];
     const md = blocksToMd(editor, blocksIn);
-    expect(md.trim()).toBe("链接1:https://www.baidu.com");
+    // 「」化：导出为显式包裹（不再依赖任何 URL 形态正则）
+    expect(md.trim()).toBe("链接1:@@@CORGI_LINK_https://www.baidu.com@@@");
     const blocks = await mdToBlocks(editor, md);
     const para = blocks.find((b: any) => b?.type === "paragraph");
     expect(
@@ -232,5 +229,25 @@ describe("链接端到端契约：插入 → 保存 → 载入（真机完整路
     const link = (para.content ?? []).find((c: any) => c?.type === "link");
     expect(link?.href).toBe("https://www.baidu.com");
     expect(link?.content?.[0]?.text).toBe("https://www.baidu.com");
+  });
+
+  it("含中文的自链接端到端：href 跟随文字编辑后重进还原（轮十七+轮十八链路）", async () => {
+    // linkHrefSync 同步后 display == href == 含中文"URL"
+    const blocksIn: any[] = [
+      {
+        type: "paragraph",
+        content: [
+          {
+            type: "link",
+            href: "https://百度www.baidu.com",
+            content: [{ type: "text", text: "https://百度www.baidu.com", styles: {} }],
+          },
+        ],
+      },
+    ];
+    const md = blocksToMd(editor, blocksIn);
+    expect(md.trim()).toBe("@@@CORGI_LINK_https://百度www.baidu.com@@@");
+    const blocks = await mdToBlocks(editor, md);
+    expectLink(blocks, "https://百度www.baidu.com", "https://百度www.baidu.com");
   });
 });

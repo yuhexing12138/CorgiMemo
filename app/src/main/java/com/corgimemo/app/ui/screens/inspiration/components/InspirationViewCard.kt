@@ -477,7 +477,19 @@ private fun InspirationBodyRichText(
      * ⚠️ 剥标记不会改变 `\n\n` 段落边界，故本序列与 [paragraphs] **索引一一对应**。
      */
     val renderParagraphs = remember(paragraphs) {
-        paragraphs.map { MarkdownParser.stripStructuralMarkers(it) }
+        paragraphs.map {
+            /**
+             * 两步预处理（顺序有讲究）：
+             * 1. [MarkdownParser.stripStructuralMarkers]：剥 `@@@CORGI_…@@@` 旧家族
+             *    token 与折叠标题 `<details>` 标记行（库不认识，会原样渲染）；
+             *    ⚠️ 自链接 CORGI_LINK token 因 url 段含 `:`/`/` 不被其通配匹配，
+             *    天然保留到下一步；
+             * 2. [MarkdownParser.normalizeLinkTokens]：自链接 CORGI_LINK token 归一
+             *    为库认识的标准 `[URL](URL)`（v2026-09-24 新增；不归一则 token
+             *    原样显示、链接不可点）。
+             */
+            MarkdownParser.normalizeLinkTokens(MarkdownParser.stripStructuralMarkers(it))
+        }
     }
 
     /**

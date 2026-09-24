@@ -499,6 +499,16 @@ object MarkdownParser {
         text = text.replace(Regex("""\[[^\]]*\]\(trigger:image:[^)]*\)"""), " ")
         // 3) 普通链接 [文字](url) → 保留「文字」
         text = text.replace(Regex("""\[([^\]]*)\]\([^)]*\)"""), "$1")
+        // 3b) 自链接 CORGI_LINK token（v2026-09-24 更新）：token → url 文字
+        //     （剥 token 壳、保留 url 本体；与渲染侧 [normalizeLinkTokens] 同源）。
+        //     ⚠️ 必须在 stripStructuralMarkers/stripMarkdown 之前——LINK token 的
+        //     url 段含 `:`/`/`，INTERNAL_TOKEN_REGEX 通配剥不掉它（ immunity），
+        //     漏处理会把 `@@@CORGI_LINK_…@@@` 原样漏进摘要。
+        text = text.replace(Regex("""@@@CORGI_LINK_([\s\S]*?)@@@"""), "$1")
+        // 3b) 自链接「」契约（v2026-09-24 新增）：「URL」→ URL（剥括号、保留文字）
+        //     与渲染侧 [normalizeBracketLinks] 同源（WebView 导出的显式链接标记）；
+        //     仅认协议前缀，普通中文「」引用不受影响。摘要显示为纯 URL 文字。
+        text = text.replace(Regex("""「(https?://[^」]*)」"""), "$1")
         // 4) 引用符（stripMarkdown 不处理，单独去除）
         text = text.replace(Regex("""(?m)^\s*>\s?"""), "")
         // 5) 标题（覆盖 stripMarkdown 仅支持 1~4 级的限制，深标题 5~6 级也去除）
@@ -538,6 +548,38 @@ object MarkdownParser {
     }
 
     /* ===== 项目内部标记的识别（单点真相，v2026-09-22 新增）===== */
+
+    /** 自链接 CORGI_LINK token 前缀（v2026-09-24，WebView 侧 converter.ts 写入） */
+    private const val LINK_TOKEN_PREFIX = "@@@CORGI_LINK_"
+
+    /**
+     * 自链接 CORGI_LINK token 的归一（v2026-09-24 新增，与 WebView 侧
+     * `converter.ts` 的自链接 token 契约**配对**）。
+     *
+     * **背景**：链接面板「只填 URL」插入的自链接（显示文本 == href）由 WebView
+     * 导出为 `@@@CORGI_LINK_<url>@@@` token（**键盘打不出来的精确边界**——此前
+     * 用「URL」包裹，「」是可输入字符、手打与导出字面相同无法区分，真机复现：
+     * 手打 `「https://www.baidu.com」` 被识别成链接）。Compose 侧库
+     * （compose-rich-editor）的 markdown 解析器不认识该 token——会原样当文字
+     * 渲染。
+     *
+     * **归一**：token → `[URL](URL)`——库认识标准 markdown 链接语法，渲染为
+     * 完整链接 span（无 token 残留、可点击跳转）。
+     *
+     * ⚠️ **token 对 INTERNAL_TOKEN_REGEX 通配免疫**：`@@@CORGI_[A-Za-z0-9_#]*@@@`
+     * 因 URL 含 `:`/`/` 不匹配 LINK token，不会被 [stripStructuralMarkers]
+     * 误剥——但语义上本归一仍应在结构剥离后、喂库前完成。
+     *
+     * @param markdown 正文 markdown（整篇或单段均可）
+     * @return LINK token 已归一为 [URL](URL) 的 markdown
+     */
+    fun normalizeLinkTokens(markdown: String): String {
+        if (!markdown.contains(LINK_TOKEN_PREFIX)) return markdown
+        return Regex("""@@@CORGI_LINK_([\s\S]*?)@@@""").replace(markdown) { match ->
+            val url = match.groupValues[1]
+            "[${url}](${url})"
+        }
+    }
 
     /**
      * 项目自编码的占位 token（由 WebView 侧 `converter.ts` 写入正文 markdown）
