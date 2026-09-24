@@ -194,7 +194,7 @@ fun InspirationEditBottomBar(
     onInsertDivider: () -> Unit = {},
     /** 复选框回调（v2026-09-07）：透传给 [RichTextFormatToolbar]，聚焦块切换复选框属性 */
     onToggleCheckbox: () -> Unit = {},
-    /** BlockNote 迁移（P1-S10）：块类型转换/插入（heading1-3/quote/codeBlock/table/pageBreak/paragraph），透传格式工具栏 */
+    /** BlockNote 迁移（P1-S10）：块类型转换/插入（heading1-3/quote/codeBlock/table/paragraph），透传格式工具栏（pageBreak 已于 v2026-09-24 移除） */
     onTransform: (String) -> Unit = {},
     /** 普通段落转换（BlockNote 模式专用） */
     onTransformParagraph: () -> Unit = {},

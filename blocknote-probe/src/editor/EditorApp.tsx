@@ -1642,13 +1642,9 @@ export default function EditorApp() {
                     "after"
                   );
                   break;
-                case "pageBreak":
-                  ed.insertBlocks(
-                    [{ type: "pageBreak" }],
-                    ed.getTextCursorPosition().block,
-                    "after"
-                  );
-                  break;
+                // v2026-09-24 移除 case "pageBreak"（分页插入）：宿主工具栏入口已删，
+                // 与 Media 组「文件」按钮共用 RiFile2Line 图标、视觉无法区分。
+                // 已有文档中的分页符块仍正常渲染（下方 content:"none" 放行逻辑保留）。
                 /**
                  * 未知 transform 值的兜底诊断（v2026-09-22 新增）
                  *

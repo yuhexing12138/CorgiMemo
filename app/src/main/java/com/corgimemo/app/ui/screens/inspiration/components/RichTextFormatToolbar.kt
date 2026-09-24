@@ -88,7 +88,8 @@ import compose.icons.lucideicons.Type
  *    S(RiStrikethrough)、对齐×3(RiAlignLeft/Center/Right)、Nest(RiIndentIncrease)、
  *    UnNest(RiIndentDecrease)、Link(RiLink)
  *    （原 Aa(字号与颜色面板) 及其按钮已整体删除：字号迁入 H 面板，颜色并入 A 面板）
- * 2. **Basic blocks**: 有序/无序/任务列表、段落、代码块、分割线、引用、折叠列表、分页
+ * 2. **Basic blocks**: 有序/无序/任务列表、段落、代码块、分割线、引用、折叠列表
+ *    （分页 v2026-09-24 移除：图标与 Media 组「文件」按钮相同、易混淆）
  * 3. **Advanced / Media / Others**: 表格；图片/视频/音频/文件；表情
  *
  * ⚠️ v2026-09-21 移除「Headings（RiH1–RiH6）」与「Subheadings（可折叠标题 ▸1–▸3）」两组：
@@ -227,7 +228,8 @@ fun RichTextFormatToolbar(
      * 块类型转换/插入（BlockNote 迁移 P1-S10 补充）：
      * action = heading1–heading6 / toggleHeading / toggleHeading2 / toggleHeading3
      * （这三组标题 action 现由「标题面板」[HeadingPanel] 调用，共用本通道）
-     * / quote / codeBlock / table / pageBreak / paragraph / toggleList。
+     * / quote / codeBlock / table / paragraph / toggleList。
+     * （pageBreak v2026-09-24 移除，见组五处说明）
      * Compose 模式（useBlockNote=false）传空实现即可——按钮由调用方置灰。
      */
     onTransform: (String) -> Unit = {},
@@ -666,8 +668,12 @@ fun RichTextFormatToolbar(
             RiFormatButton("RiQuoteText", onClick = { onTransform("quote") }, contentDescription = "引用", enabled = onTransformEnabled)
             /** Toggle List（+ 菜单 Toggle List） */
             RiFormatButton("RiPlayList2Fill", onClick = { onTransform("toggleList") }, contentDescription = "折叠列表", enabled = onTransformEnabled)
-            /** Page Break（+ 菜单 Page Break） */
-            RiFormatButton("RiFile2Line", onClick = { onTransform("pageBreak") }, contentDescription = "分页", enabled = onTransformEnabled)
+            /**
+             * ⚠️ v2026-09-24：「分页（Page Break）」按钮已移除。
+             * 原因：其图标 RiFile2Line 与 Media 组「文件」按钮完全相同，视觉无法区分、易误触。
+             * JS 侧 pageBreak 插入 case 同步删除；已有文档中的分页符块不受影响
+             * （content:"none" 放行渲染逻辑保留，历史数据兼容）。
+             */
         }
 
         ToolbarDivider()

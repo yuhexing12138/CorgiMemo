@@ -84,7 +84,9 @@ export type DownMessage =
    * - indent / outdent（嵌套层级 ±1）
    * - alignLeft / alignCenter / alignRight（光标块对齐）
    * - transform（value = heading1–heading6、toggleHeading / toggleHeading2 / toggleHeading3、
-   *   toggleList、quote、paragraph、codeBlock、table、pageBreak——块类型转换/插入）
+   *   toggleList、quote、paragraph、codeBlock、table——块类型转换/插入；
+   *   pageBreak v2026-09-24 移除：工具栏入口已删，与「文件」按钮图标重复；
+   *   宿主若误发此值将走 default 兜底上行 error）
    *
    * ⚠️ transform 的 value 是**动作名**，不等于块类型名（v2026-09-22 踩坑）：
    * - `toggleHeading*` → 实为 `heading` + `props.isToggleable = true`（无 toggleHeading 类型）
