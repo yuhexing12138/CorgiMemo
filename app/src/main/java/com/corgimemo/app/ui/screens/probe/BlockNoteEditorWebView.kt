@@ -1532,8 +1532,9 @@ private fun createEditorWebView(
              * 本回调才能弹出选择器**——不实现时点击"Upload image"毫无反应
              * （又一个"点了没反应"的哑按钮）。
              *
-             * **本项目只接图片类请求**（`accept` 含 image 或为空；图片块官方固定传
-             * `image/*`）：暂存回调 + 上抛 [BlockNoteBridgeController.onFileChooserRequested]
+             * **本项目只接图片类请求**（`accept` 含 image 前缀或为空；图片块官方
+             * 固定传 image 系 MIME）：暂存回调 + 上抛
+             * [BlockNoteBridgeController.onFileChooserRequested]
              * 让 Screen 拉起现有图片选择流程，选完经
              * [BlockNoteBridgeController.deliverFileChooserResult] 交还。
              * 其余类型（视频/音频/文件块的 Upload 标签）返回 false 明确不支持——
@@ -1541,6 +1542,11 @@ private fun createEditorWebView(
              *
              * ⚠️ `onReceiveValue` 只能调用一次：接管前若上一会话回调有残留，
              * 先以 `null` 收尾再接管；同时清空路径槽（会话语义重新开始）。
+             *
+             * ⚠️ **KDoc 里严禁出现字面 MIME 通配符**（image + 斜杠星号连写）：
+             * Kotlin 块注释支持嵌套，注释文本里的该序列会被当成嵌套注释开启，
+             * 本注释的结尾符号只能闭合内层，后面所有代码被吞进注释——报错却是
+             * 全文件雪崩的 Unresolved + 文件尾 Unclosed comment，极难定位。
              *
              * @return true = 宿主接管（结果异步经 deliverFileChooserResult 回给 WebView）
              */
@@ -1555,14 +1561,14 @@ private fun createEditorWebView(
                     Log.d(TAG, "file chooser unsupported accept: ${acceptTypes.joinToString()}")
                     return false
                 }
-                pendingFileChooserCallback?.onReceiveValue(null)
-                pendingUploadPath = null
-                pendingFileChooserCallback = filePathCallback
+                controller.pendingFileChooserCallback?.onReceiveValue(null)
+                controller.pendingUploadPath = null
+                controller.pendingFileChooserCallback = filePathCallback
                 Log.d(TAG, "file chooser requested (image)")
-                val handler = onFileChooserRequested
+                val handler = controller.onFileChooserRequested
                 if (handler == null) {
                     /** Screen 未接线：立即取消收场，WebView 不挂起等待 */
-                    pendingFileChooserCallback = null
+                    controller.pendingFileChooserCallback = null
                     filePathCallback.onReceiveValue(null)
                 } else {
                     handler()
