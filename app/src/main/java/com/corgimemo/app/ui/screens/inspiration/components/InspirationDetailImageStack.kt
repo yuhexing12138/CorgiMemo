@@ -66,6 +66,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
@@ -180,6 +181,18 @@ private val ButtonFg = Color(0xFF4F5660)
 
 /** 过渡规格（与 SwipeableImageStack.kt TRANSITION_400_SPEC 一致） */
 private val TRANSITION_400 = tween<Float>(
+    durationMillis = 400,
+    easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
+)
+
+/**
+ * 过渡规格的 **IntSize 泛型变体**（与 [TRANSITION_400] 同节奏）
+ *
+ * `expandVertically` / `shrinkVertically` 动画的是尺寸（IntSize）而非透明度（Float），
+ * 传 Float 规格会编译报错（Argument type mismatch）——AnimatedVisibility 的
+ * enter/exit 组合中 fadeIn/fadeOut 用 [TRANSITION_400]，expand/shrink 用本规格。
+ */
+private val TRANSITION_400_SIZE = tween<IntSize>(
     durationMillis = 400,
     easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
 )
@@ -652,8 +665,10 @@ fun InspirationDetailImageStack(
         val hasAnyNote = imageNotes.any { !it.isNullOrBlank() }
         AnimatedVisibility(
             visible = !isExpanded && hasAnyNote,
-            enter = fadeIn(TRANSITION_400) + expandVertically(TRANSITION_400),
-            exit = fadeOut(TRANSITION_400) + shrinkVertically(TRANSITION_400)
+            // fadeIn/fadeOut 动画 Float、expand/shrink 动画 IntSize——两者泛型不同，
+            // 尺寸规格必须用 TRANSITION_400_SIZE（Float 规格编译报 type mismatch）
+            enter = fadeIn(TRANSITION_400) + expandVertically(TRANSITION_400_SIZE),
+            exit = fadeOut(TRANSITION_400) + shrinkVertically(TRANSITION_400_SIZE)
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                 Text(
