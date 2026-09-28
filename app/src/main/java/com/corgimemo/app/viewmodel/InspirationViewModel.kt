@@ -163,6 +163,19 @@ class InspirationViewModel @Inject constructor(
     val imagePathsMap: StateFlow<Map<Long, List<String>>> = _imagePathsMap.asStateFlow()
 
     /**
+     * 灵感图片备注映射（v2026-09-28 图片备注接线新增）
+     *
+     * key = inspirationId，value = 该灵感各图片的备注文字列表（无备注为 null）。
+     * **与 [_imagePathsMap] 平行构建**：同一次 content_blocks 查询、同一 groupBy、
+     * 同一 orderIndex 排序 → 两张 map 对同一 key 的列表**长度与索引严格一一对应**
+     * （imageNotesMap[id][i] 即 imagePathsMap[id][i] 的备注）。
+     * 堆叠组件（时间线 SwipeableImageStack / 详情页 InspirationDetailImageStack）
+     * 通过本 map 在图片下方渲染备注文字。
+     */
+    private val _imageNotesMap = MutableStateFlow<Map<Long, List<String?>>>(emptyMap())
+    val imageNotesMap: StateFlow<Map<Long, List<String?>>> = _imageNotesMap.asStateFlow()
+
+    /**
      * 按 inspirationId 读取图片路径列表（v2026-08-24 修复灵感图片不可见 bug 新增）
      *
      * 供 UI 层（首页 TimelineInspirationItem / 详情页 InspirationViewCard /
@@ -665,7 +678,9 @@ class InspirationViewModel @Inject constructor(
      * 灵感图片在 v2026-07-25 三写存储重构后仅存储在 `content_blocks` 表
      * （ownerType="inspiration"，type="image"）。本方法批量查询所有灵感的
      * Image 块，按 `todoId` (= inspirationId) group，再按 orderIndex 升序
-     * 映射为 `List<filePath>` 写入 [_imagePathsMap]。
+     * 映射为 `List<filePath>` 写入 [_imagePathsMap]；同时按**同一次分组与
+     * 排序**构建 `List<note>` 写入 [_imageNotesMap]（v2026-09-28 备注接线），
+     * 保证两张 map 对同一灵感 id 的列表长度与索引严格一一对应。
      *
      * **调用时机**：灵感列表加载/刷新时（[startCollect] 内）
      *
@@ -675,22 +690,24 @@ class InspirationViewModel @Inject constructor(
     private suspend fun refreshImagePathsMap(allInspirations: List<Inspiration>) {
         if (allInspirations.isEmpty()) {
             _imagePathsMap.value = emptyMap()
+            _imageNotesMap.value = emptyMap()
             return
         }
         val ids = allInspirations.map { it.id }.filter { it > 0L }
         if (ids.isEmpty()) {
             _imagePathsMap.value = emptyMap()
+            _imageNotesMap.value = emptyMap()
             return
         }
         // 一次性查询所有灵感的 Image 块（ownerType="inspiration"）
         val blocks = contentBlockDao.getBlocksByTodoIds(ids, ownerType = "inspiration")
             .filter { it.type == "image" }
-        // 按 inspirationId group，再按 orderIndex 升序
-        val map = blocks.groupBy { it.todoId }
-            .mapValues { entry ->
-                entry.value.sortedBy { it.orderIndex }.map { it.filePath }
-            }
-        _imagePathsMap.value = map
+        // 按 inspirationId group，组内再按 orderIndex 升序（只 group/排序一次，
+        // 路径与备注两张 map 复用同一分组结果，索引天然对齐）
+        val grouped = blocks.groupBy { it.todoId }
+            .mapValues { entry -> entry.value.sortedBy { it.orderIndex } }
+        _imagePathsMap.value = grouped.mapValues { (_, sorted) -> sorted.map { it.filePath } }
+        _imageNotesMap.value = grouped.mapValues { (_, sorted) -> sorted.map { it.note } }
     }
 
     /**

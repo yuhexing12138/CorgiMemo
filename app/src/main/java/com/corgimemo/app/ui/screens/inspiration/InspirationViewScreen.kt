@@ -132,6 +132,14 @@ fun InspirationViewScreen(
      */
     val imagePathsMap by viewModel.imagePathsMap.collectAsState()
 
+    /**
+     * 各灵感的图片备注映射（v2026-09-28 备注接线新增）
+     *
+     * 与 [imagePathsMap] 平行构建（同一次查询、同一分组排序，索引一一对应），
+     * 透传给 [InspirationViewCard] → [InspirationDetailImageStack] 渲染图片备注。
+     */
+    val imageNotesMap by viewModel.imageNotesMap.collectAsState()
+
     // v2026-07-22 新增：关联管理状态
     /** 关联列表（按当前灵感 id 加载） */
     val relations by viewModel.relations.collectAsState()
@@ -305,6 +313,8 @@ fun InspirationViewScreen(
                         // 改从 imagePathsMap 读，替代原 org.json.JSONArray(ins.imagePaths)
                         // （原方式永远返回空，因为 saveInspiration() 已将 imagePaths 字段置空）
                         val insImagePaths = imagePathsMap[ins.id] ?: emptyList()
+                        // v2026-09-28 备注接线：与 insImagePaths 索引一一对应的备注列表
+                        val insImageNotes = imageNotesMap[ins.id] ?: emptyList()
                         // 每个 page 独立创建 GraphicsLayer
                         // 关键：不能共享同一个 layer，否则多个 page 的 record() 会互相覆盖，导致所有 Card 都渲染最后绘制的 page 内容
                         val pageLayer = rememberGraphicsLayer()
@@ -315,6 +325,8 @@ fun InspirationViewScreen(
                         InspirationViewCard(
                             inspiration = ins,
                             imagePaths = insImagePaths,
+                            // v2026-09-28 备注接线：透传图片备注（详情页堆叠组件渲染）
+                            imageNotes = insImageNotes,
                             onImageClick = { index ->
                                 // 打开图片全屏预览
                                 imageGalleryPaths = insImagePaths

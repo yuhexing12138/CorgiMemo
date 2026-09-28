@@ -106,6 +106,15 @@ fun InspirationViewCard(
      * 旧实现中本组件从 [Inspiration.imagePaths] 字段解析，但该字段在保存时被置空。
      */
     imagePaths: List<String> = emptyList(),
+    /**
+     * 图片备注列表（v2026-09-28 备注接线新增）
+     *
+     * 与 [imagePaths] 索引一一对应（无备注为 null），由父级从
+     * [com.corgimemo.app.viewmodel.InspirationViewModel.imageNotesMap] 读取，
+     * 透传给 [InspirationDetailImageStack]：堆叠态下方跟随顶卡、展开态每图下方
+     * 显示各自备注。全部无备注时不渲染、不占位。
+     */
+    imageNotes: List<String?> = emptyList(),
     graphicsLayer: GraphicsLayer? = null,
     relations: List<CardRelation> = emptyList(),
     relationTitles: Map<Long, String> = emptyMap(),
@@ -275,6 +284,8 @@ fun InspirationViewCard(
                         Spacer(modifier = Modifier.height(12.dp))
                         InspirationDetailImageStack(
                             imagePaths = imagePaths,
+                            // v2026-09-28 备注接线：透传备注（索引与 imagePaths 一一对应）
+                            imageNotes = imageNotes,
                             onImageClick = onImageClick,
                             onDragStateChange = onImageStackDragStateChange
                         )

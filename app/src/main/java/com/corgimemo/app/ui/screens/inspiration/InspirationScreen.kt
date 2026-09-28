@@ -101,6 +101,8 @@ fun InspirationScreen(
     val relationCountMap by viewModel.relationCountMap.collectAsState()
     /** v2026-08-24 新增：各灵感的图片路径映射（供首页卡片 + 日期时间修改弹窗预览显示） */
     val imagePathsMap by viewModel.imagePathsMap.collectAsState()
+    /** v2026-09-28 备注接线：与 imagePathsMap 平行的备注映射（索引一一对应，供时间线堆叠组件渲染） */
+    val imageNotesMap by viewModel.imageNotesMap.collectAsState()
     /** 灵感删除撤销状态（用于触发 Snackbar 提示） */
     val pendingDeletedInspiration by viewModel.pendingDeletedInspiration.collectAsState()
     val pendingBatchDeletedInspirations by viewModel.pendingBatchDeletedInspirations.collectAsState()
@@ -329,6 +331,9 @@ fun InspirationScreen(
                                 // 改从 imagePathsMap 读，替代原 viewModel.decodePaths(inspiration.imagePaths)
                                 // （原方式永远返回空，因为 saveInspiration() 已将 imagePaths 字段置空）
                                 val imagePaths = imagePathsMap[inspiration.id] ?: emptyList()
+                                // v2026-09-28 备注接线：与 imagePaths 索引一一对应的备注列表
+                                // （来自 ViewModel.imageNotesMap，同一次查询构建，对齐保证见其 KDoc）
+                                val imageNotes = imageNotesMap[inspiration.id] ?: emptyList()
                                 val formattedTime = viewModel.formatTime(inspiration.createdAt)
 
                                 // V6.0 修复：item 内部加 padding(start=18.dp)，还原视觉位置
@@ -346,6 +351,8 @@ fun InspirationScreen(
                                         inspiration = inspiration,
                                         tags = tags,
                                         imagePaths = imagePaths,
+                                        // v2026-09-28 备注接线：透传图片备注（堆叠组件渲染）
+                                        imageNotes = imageNotes,
                                         formattedTime = formattedTime,
                                         showDate = item.showDate,
                                         isPinnedItem = item.isPinned,

@@ -2,12 +2,17 @@
 package com.corgimemo.app.ui.screens.inspiration.components
 
 import android.graphics.BitmapFactory
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,6 +31,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -56,6 +62,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -119,6 +127,31 @@ private val StageBottomPadStack = 24.dp
 
 /** 展开态 Stage 底部留白 */
 private val StageBottomPadExpanded = 4.dp
+
+// ============================================================================
+// v2026-09-28 图片备注接线（详情页堆叠组件侧）
+// ============================================================================
+
+/** 展开态备注文字与图片底边的垂直间距 */
+private val DetailNoteGapTop = 6.dp
+
+/**
+ * 展开态备注块几何预留高度（每张有备注的图在展开态纵向列中额外占位）
+ *
+ * 预留值略大于 12sp 单行实际渲染高：用户系统字体放大（fontScale > 1）时
+ * 实际行高随 sp 膨胀，超预算部分由相邻图片间的 [CardGap]（8dp）缓冲，
+ * 极端放大也不会与下一张图重叠。
+ */
+private val DetailNoteLineHeight = 18.dp
+
+/** 备注字号（单行省略小字，与时间线备注行视觉层级一致） */
+private val DetailNoteTextSize = 12.sp
+
+/** 备注文字行高（TextUnit，实际渲染行高；几何预留 [DetailNoteLineHeight] 略大于此值） */
+private val DetailNoteTextLineHeight = 16.sp
+
+/** 备注文字颜色（次要信息灰，与时间线备注行一致） */
+private val DetailNoteTextColor = Color(0xFF8A9099)
 
 /**
  * 布局空间预借量（左右各扩这么多 dp）
@@ -223,7 +256,10 @@ private data class StackGeom(
 /**
  * 计算图片区几何
  *
- * 展开态：宽 = 内容宽，高 = 宽 / 原图宽高比，纵向间距 [CardGap]。
+ * 展开态：宽 = 内容宽，高 = 宽 / 原图宽高比，纵向间距 [CardGap]；
+ * **v2026-09-28 备注接线**：每张有备注的图在展开态纵向列中额外预留
+ * [DetailNoteGapTop] + [DetailNoteLineHeight] 的备注块（渲染在图正下方），
+ * 备注块参与 expTops 累加与 expandedHeight 计算，保证备注不与下一张图重叠。
  * 堆叠态：卡片 [StackCardSize] 见方，逐层上移 [StackOffsetY]、缩小 [ScaleStep]、
  * 旋转 fanAngle × (ei / (visibleDepth − 1))（分母用 visibleDepth 参数，逐层步进恒 15°）。
  * Stage 高度按扇形旋转包围盒 + 阴影余量推导，保证任何张数下都不裁剪。
@@ -233,8 +269,14 @@ private data class StackGeom(
  * - [expandedTops] 按**显示顺序**（[order]）累加纵向位置
  *
  * @param order 当前堆叠顺序（displayIndex → 原图索引）
+ * @param notes 与 imagePaths 索引一一对应的备注列表（无备注为 null，长度须 ≥ order.size）
  */
-private fun computeGeom(contentWidth: Dp, order: List<Int>, ratios: List<Float>): StackGeom {
+private fun computeGeom(
+    contentWidth: Dp,
+    order: List<Int>,
+    ratios: List<Float>,
+    notes: List<String?>
+): StackGeom {
     val cardCount = order.size
     val stackSize = minOf(StackCardSize, contentWidth)
     val denom = max(VisibleDepth - 1, 1)
@@ -243,12 +285,18 @@ private fun computeGeom(contentWidth: Dp, order: List<Int>, ratios: List<Float>)
     val expHeights = ratios.map { ar ->
         contentWidth / ar.coerceAtLeast(0.01f)
     }
-    // 纵向位置必须按显示顺序累加：翻牌后第 displayIndex 张的高度是 expHeights[order[displayIndex]]
+    // 每张图下方的备注块高度（按原图索引；无备注 = 0，不占几何空间）
+    val noteBlocks = ratios.indices.map { i ->
+        if (!notes.getOrNull(i).isNullOrBlank()) DetailNoteGapTop + DetailNoteLineHeight
+        else 0.dp
+    }
+    // 纵向位置必须按显示顺序累加：翻牌后第 displayIndex 张的高度是 expHeights[order[displayIndex]]，
+    // 其下方备注块高度是 noteBlocks[order[displayIndex]]（同按原图索引取）
     val expTops = ArrayList<Dp>(cardCount)
     var y = 0.dp
     for (cardIdx in order) {
         expTops.add(y)
-        y += expHeights[cardIdx] + CardGap
+        y += expHeights[cardIdx] + noteBlocks[cardIdx] + CardGap
     }
     val expandedHeight = (y - CardGap).coerceAtLeast(0.dp) + StageBottomPadExpanded
 
@@ -395,7 +443,15 @@ fun InspirationDetailImageStack(
      * 避免卡片 pointerInput 与 Pager draggable 同时响应导致的「卡一下再回底」。
      * 默认空实现，不影响其他调用方。
      */
-    onDragStateChange: (Boolean) -> Unit = {}
+    onDragStateChange: (Boolean) -> Unit = {},
+    /**
+     * v2026-09-28 备注接线：与 [imagePaths] 索引一一对应的备注列表（无备注为 null）。
+     * - 堆叠态：Stage 下方单条备注跟随顶卡（order.first()，翻牌自动切换）；
+     * - 展开态：每张图正下方显示自己的备注（参与几何预留，见 [computeGeom]），
+     *   Stage 下方单条备注自动收缩隐藏（避免与图下方备注重复）。
+     * - 全部无备注时组件不渲染任何备注 UI、几何与旧版零差异。
+     */
+    imageNotes: List<String?> = emptyList()
 ) {
     val count = imagePaths.size
     if (count == 0) return
@@ -489,12 +545,13 @@ fun InspirationDetailImageStack(
                 .graphicsLayer { this.clip = false }
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                val geom = computeGeom(maxWidth, order, ratios)
+                val geom = computeGeom(maxWidth, order, ratios, imageNotes)
                 GalleryStage(
                 progress = progress,
                 geom = geom,
                 order = order,
                 painters = painters,
+                notes = imageNotes,
                 onImageClick = onImageClick,
                 badgeVisible = !isExpanded && count >= 2,
                 count = count,
@@ -585,6 +642,37 @@ fun InspirationDetailImageStack(
             )
         }
         }  // 关闭外层 graphicsLayer{clip=false} 的 Box（与 464 行 Box( 对应）
+
+        // ============ v2026-09-28 堆叠态备注行（图片备注接线）============
+        // Stage 下方单条备注，内容跟随顶卡（order.first()，翻牌自动切换重组）。
+        // 展开时随 isExpanded 收缩隐藏（与 Stage 高度 lerp 同为 400ms 过渡，
+        // 总高度连续无跳变）——展开态每张图下方有各自备注，不再重复显示顶卡备注。
+        // 宽度 = 堆叠卡边长（min(200dp, 内容宽)，与 computeGeom.stackSize 同式）
+        // 且水平居中，与堆叠卡左右缘对齐。
+        val hasAnyNote = imageNotes.any { !it.isNullOrBlank() }
+        AnimatedVisibility(
+            visible = !isExpanded && hasAnyNote,
+            enter = fadeIn(TRANSITION_400) + expandVertically(TRANSITION_400),
+            exit = fadeOut(TRANSITION_400) + shrinkVertically(TRANSITION_400)
+        ) {
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    // 退出动画期间仍组合：order 在展开触发时不变（展开按钮不翻牌），
+                    // 内容稳定无闪烁
+                    text = imageNotes.getOrNull(order.first())
+                        ?.takeIf { it.isNotBlank() }.orEmpty(),
+                    fontSize = DetailNoteTextSize,
+                    lineHeight = DetailNoteTextLineHeight,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Start,
+                    color = DetailNoteTextColor,
+                    modifier = Modifier
+                        .width(minOf(StackCardSize, maxWidth))
+                        .align(Alignment.Center)
+                )
+            }
+        }
     }
 }
 
@@ -602,6 +690,11 @@ private fun GalleryStage(
     geom: StackGeom,
     order: List<Int>,
     painters: List<Painter>,
+    /**
+     * v2026-09-28 备注接线：与 imagePaths 索引对应的备注列表（无备注为 null）。
+     * 展开态在每张图正下方渲染自己的备注（alpha 随 progress 渐显）。
+     */
+    notes: List<String?> = emptyList(),
     onImageClick: (Int) -> Unit,
     badgeVisible: Boolean,
     count: Int,
@@ -801,6 +894,49 @@ private fun GalleryStage(
                             // 只裁图片到圆角，卡片平移超出 Layout bounds 不被裁（布局空间预借）
                             clip = true
                             shadowElevation = shadowPx[index]
+                        }
+                    }
+                }
+            }
+
+            // ============ v2026-09-28 展开态备注列（图片备注接线）============
+            // 与卡片 Layout 平行的独立 Layout（不与卡片 measurables 混用，
+            // 两者的 displayIndex→placeable 索引映射各自独立）。
+            // - 位置复用 geom：y = expandedTops[displayIndex] + expandedHeights[cardIdx]
+            //   + DetailNoteGapTop（图正下方；computeGeom 已为有备注的图预留几何）。
+            // - content 里每张卡都渲染一个 Text（空白备注渲染空 Text 占位），
+            //   保证 measurables[displayIndex] 与 order 顺序严格对齐。
+            // - alpha = progress：堆叠态完全隐藏（堆叠态备注由 Stage 下方单条行承担），
+            //   展开过程渐显，与卡片位置/尺寸插值同节奏。
+            Layout(
+                modifier = Modifier.fillMaxSize(),
+                content = {
+                    order.forEachIndexed { _, cardIdx ->
+                        Text(
+                            text = notes.getOrNull(cardIdx).orEmpty(),
+                            fontSize = DetailNoteTextSize,
+                            lineHeight = DetailNoteTextLineHeight,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = DetailNoteTextColor
+                        )
+                    }
+                }
+            ) { measurables, constraints ->
+                layout(constraints.maxWidth, constraints.maxHeight) {
+                    measurables.forEachIndexed { displayIndex, measurable ->
+                        val cardIdx = order[displayIndex]
+                        if (!notes.getOrNull(cardIdx).isNullOrBlank()) {
+                            // 宽 = 内容宽（constraints.maxWidth），高 wrap（单行）
+                            val placeable = measurable.measure(
+                                Constraints(maxWidth = constraints.maxWidth)
+                            )
+                            val noteYPx = (geom.expandedTops[displayIndex] +
+                                geom.expandedHeights[cardIdx] + DetailNoteGapTop)
+                                .roundToPx()
+                            placeable.placeWithLayer(x = 0, y = noteYPx) {
+                                alpha = progress
+                            }
                         }
                     }
                 }

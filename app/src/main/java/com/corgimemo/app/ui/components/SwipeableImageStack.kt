@@ -95,6 +95,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -197,6 +198,22 @@ private val TopCardShadowElevation = 8.dp
  * V8.11：与 [TopCardShadowElevation] 保持同步（阴影扩散 ≈ elevation）。
  */
 private val ExpandedRowShadowSlack = TopCardShadowElevation
+
+// ============================================================================
+// V2026-09-28 图片备注接线（时间线堆叠组件侧）
+// ============================================================================
+
+/** 备注行与图片（堆叠态卡底 / 展开态视觉底，取两者较低者）的垂直间距 */
+private val NoteRowGapTop = 6.dp
+
+/** 备注行固定高度：12sp 单行省略 + 上下各 3dp padding（常量化供几何预留精确计算） */
+private val NoteRowHeight = 20.dp
+
+/** 备注字号（与时间线次要信息层级一致的单行小字） */
+private val NoteTextSize = 12.sp
+
+/** 备注文字颜色（次要信息灰，与时间线时间/标签行视觉层级一致） */
+private val NoteTextColor = Color(0xFF8A9099)
 
 /**
  * 堆叠中的单张卡片槽位
@@ -488,6 +505,8 @@ fun SwipeableImageStack(
     showExpandButton: Boolean = false,
     cardGap: Dp = 8.dp,                                  // 透传：展开态卡片间距（堆叠态不使用）
     onExpandStateChange: ((Boolean) -> Unit)? = null,    // 透传：展开/收起状态变化回调
+    // v2026-09-28 备注接线：与 imageUris 平行的备注列表（索引一一对应，无备注为 null）
+    imageNotes: List<String?> = emptyList(),
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
     onCardClick: ((originalIndex: Int) -> Unit)? = null
 ) {
@@ -508,6 +527,7 @@ fun SwipeableImageStack(
         showExpandButton = showExpandButton,
         cardGap = cardGap,                                // 透传
         onExpandStateChange = onExpandStateChange,       // 透传
+        imageNotes = imageNotes,                          // 透传（v2026-09-28 备注接线）
         onCardSwiped = onCardSwiped,
         onCardClick = onCardClick,
         customContent = null
@@ -570,6 +590,12 @@ fun SwipeableImageStack(
      *  - 堆叠态不使用此值。默认 0.dp 向后兼容其他调用点。*/
     expandedViewportRightExtension: Dp = 0.dp,
     // ↑↑↑ 本次新增 ↑↑↑
+    /** v2026-09-28 备注接线：与 imageUris 索引一一对应的备注列表（无备注传 null/空列表）。
+     *  - 非空（任一条有备注）时组件在图片行下方渲染单条备注文字：
+     *    堆叠态跟随顶卡（order.first()，翻牌自动切换）；展开态跟随横向滚动
+     *    （按 rowScrollX 换算当前可见卡，映射 order 显示对应备注）。
+     *  - 全部无备注时组件完全不渲染备注行、不预留高度（视觉与旧版零差异）。*/
+    imageNotes: List<String?> = emptyList(),
     onCardSwiped: ((originalIndex: Int) -> Unit)? = null,
     onCardClick: ((originalIndex: Int) -> Unit)? = null,
     customContent: (@Composable BoxScope.(stackIndex: Int) -> Unit)? = null
@@ -1010,6 +1036,29 @@ fun SwipeableImageStack(
         cardCount.toFloat() * (expandedCardSizeDp + cardGap.value) - cardGap.value
     } else 0f
     val cardRowWidthDp: Dp = cardRowWidthPxFloat.dp
+
+    // ============================================================
+    // v2026-09-28 备注行几何（图片备注接线）
+    // ============================================================
+    // 备注行渲染在 Stage 高度需求之外（根 Box 高度 = Stage 高 + 备注预留），
+    // Stage 内部所有元素（卡片/角标/按钮）位置不受影响（均为 TopStart 定位）。
+    // 备注行 y 取「堆叠态卡底」与「展开态视觉底」的较低者（max）+ 间距：
+    // - 堆叠态卡底 = topCardAnchorY + cardHeight（卡片 120dp 布局底）
+    // - 展开态视觉底 = topCardAnchorY + cardHeight/2 + expandedCardSizeDp/2
+    //   （卡片以中心为基点放大到 S，视觉半高 = S/2，中心 y 不变）
+    // 取 max 保证展开态放大的图片底部不会被备注行覆盖。
+    val hasAnyNote = imageNotes.any { !it.isNullOrBlank() }
+    val stackedCardBottomDp = topCardAnchorY + cardHeight.value
+    val expandedVisualBottomDp = topCardAnchorY + cardHeight.value / 2f + expandedCardSizeDp / 2f
+    val noteRowTopDp = if (hasAnyNote) {
+        maxOf(stackedCardBottomDp, expandedVisualBottomDp) + NoteRowGapTop.value
+    } else 0f
+    // 备注预留高度 = 备注行底（top + 行高）超出现有 Stage 高的部分（无备注恒 0）
+    val noteReserveDp = if (hasAnyNote) {
+        (noteRowTopDp + NoteRowHeight.value - stageBoxHeightDpFloat).coerceAtLeast(0f)
+    } else 0f
+    // 根 Box 实际高度：Stage 需求 + 备注预留（全部无备注时与旧版完全一致）
+    val rootHeightDp: Dp = stageBoxHeightDp + noteReserveDp.dp
 
     // ============================================================
     // P2 新增：共享卡片渲染层（堆叠/展开共用，Positional Memoization 复用）
@@ -1919,12 +1968,14 @@ fun SwipeableImageStack(
                 if (isExpanded) {
                     Modifier
                         .fillMaxWidth()
-                        .height(stageBoxHeightDp)
+                        // v2026-09-28：高度 = Stage 需求 + 备注预留（无备注时与旧版一致）
+                        .height(rootHeightDp)
                 } else {
                     // V7.0：堆叠态宽度 + StackLeftCompensation（右缘保持不变）
                     Modifier.size(
                         width = stageBoxWidthDp + StackLeftCompensation,
-                        height = stageBoxHeightDp
+                        // v2026-09-28：高度 = Stage 需求 + 备注预留（无备注时与旧版一致）
+                        height = rootHeightDp
                     )
                 }
             )
@@ -2340,6 +2391,58 @@ fun SwipeableImageStack(
                         contentDescription = "收起图片堆叠",
                         tint = Color(0xFF4F5660),
                         modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+
+        // ============ v2026-09-28 备注行（图片备注接线）============
+        // 位置：x=0 占满根宽 + padding(start=stackStageOffsetX) 让文字左缘与
+        //      图片行内容左缘恒定对齐（包装层与 Stage 的水平补偿在所有进度下
+        //      互相抵消，内容左缘恒 = stackStageOffsetX，见 V7.0 注释）；
+        //      y = noteRowTop（堆叠卡底/展开视觉底取 max + 间距，见几何计算处）。
+        // 内容跟随：
+        // - 堆叠态（p<0.5，含过渡前半程）：order.first()（顶卡，翻牌自动切换）
+        // - 展开态（p≥0.5）：按 rowScrollX 换算当前最接近视口左缘的卡
+        //   displayIndex = round(-rowScrollX / (S+G))（rowScrollX ∈ [minScroll,0]，
+        //   每滚过一张卡换算索引 +1），映射 order 取原图索引。
+        // - derivedStateOf + remember(key)：只让备注文本相关的最小状态参与重组，
+        //   拖拽/滚动每帧变化不重组整个组件；key 含换算基数与卡数，增删图时闭包刷新。
+        // 命中安全：备注行自身无点击消费者，tap 穿透到 Stage 吞噬层（不冒泡进详情页）。
+        if (hasAnyNote) {
+            // 滚动量 → 可见卡索引的换算基数（px，组合期换算一次）
+            val noteStepPx = with(density) { (expandedCardSizeDp + cardGap.value).dp.toPx() }
+            val activeNoteOriginalIndex by remember(imageNotes, noteStepPx, cardCount) {
+                derivedStateOf {
+                    if (derivedIsExpanded) {
+                        val displayIndex = (-rowScrollX.value / noteStepPx).roundToInt()
+                            .coerceIn(0, cardCount - 1)
+                        order.getOrNull(displayIndex)?.originalIndex ?: 0
+                    } else {
+                        order.first().originalIndex
+                    }
+                }
+            }
+            val activeNote = imageNotes.getOrNull(activeNoteOriginalIndex)
+                ?.takeIf { it.isNotBlank() }
+            if (activeNote != null) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .offset(y = noteRowTopDp.dp)   // 仅垂直下移，x=0 占满根宽
+                        .fillMaxWidth()
+                        .height(NoteRowHeight)
+                        // 文字左缘 = 图片行内容左缘（stackStageOffsetX），右缘留 12dp 边距；
+                        // padding 同时收窄 Text 测量约束 → 单行省略在约束宽内生效
+                        .padding(start = stackStageOffsetX, end = 12.dp)
+                ) {
+                    Text(
+                        text = activeNote,
+                        fontSize = NoteTextSize,
+                        lineHeight = NoteTextSize,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = NoteTextColor
                     )
                 }
             }
