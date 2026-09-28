@@ -1337,8 +1337,9 @@ internal fun isExportableLocalMedia(url: String): Boolean =
  * （用户可见提示统一 AppSnackbarHost 的既有通道，ClipboardImageHelper 同款）。
  *
  * ⚠️ KDoc 与字符串字面量之外严禁书写形如「image/斜杠星号」的 MIME 通配符字面量
- * （Kotlin 块注释支持嵌套，`/*` 会吞掉后续代码——见项目 MEMORY 规约），注释一律
- * 用「image 系 MIME」等文字表述。
+ * （Kotlin 块注释支持嵌套，注释文本里出现「斜杠紧跟星号」的连写序列会被当成
+ * 嵌套注释开启——反引号也只是普通字符救不了，见项目 MEMORY 规约与本文件
+ * createEditorWebView 区的同款警示），注释一律用「image 系 MIME」等文字表述。
  *
  * @param context 任意 Context（MediaStore / 分享 Intent 均可用 Application 上下文）
  * @param url     file:// 形态的本地媒体 URL（`toWebImageUrl` 逐段编码过的形态，
