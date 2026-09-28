@@ -2,17 +2,12 @@
 package com.corgimemo.app.ui.screens.inspiration.components
 
 import android.graphics.BitmapFactory
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -31,7 +26,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -62,11 +56,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
@@ -185,17 +177,6 @@ private val TRANSITION_400 = tween<Float>(
     easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
 )
 
-/**
- * 过渡规格的 **IntSize 泛型变体**（与 [TRANSITION_400] 同节奏）
- *
- * `expandVertically` / `shrinkVertically` 动画的是尺寸（IntSize）而非透明度（Float），
- * 传 Float 规格会编译报错（Argument type mismatch）——AnimatedVisibility 的
- * enter/exit 组合中 fadeIn/fadeOut 用 [TRANSITION_400]，expand/shrink 用本规格。
- */
-private val TRANSITION_400_SIZE = tween<IntSize>(
-    durationMillis = 400,
-    easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
-)
 
 /** 角标 / 按钮淡入淡出规格（与 SwipeableImageStack.kt OPACITY_200_SPEC 一致） */
 private val OPACITY_200 = tween<Float>(durationMillis = 200)
@@ -655,39 +636,7 @@ fun InspirationDetailImageStack(
             )
         }
         }  // 关闭外层 graphicsLayer{clip=false} 的 Box（与 464 行 Box( 对应）
-
-        // ============ v2026-09-28 堆叠态备注行（图片备注接线）============
-        // Stage 下方单条备注，内容跟随顶卡（order.first()，翻牌自动切换重组）。
-        // 展开时随 isExpanded 收缩隐藏（与 Stage 高度 lerp 同为 400ms 过渡，
-        // 总高度连续无跳变）——展开态每张图下方有各自备注，不再重复显示顶卡备注。
-        // 宽度 = 堆叠卡边长（min(200dp, 内容宽)，与 computeGeom.stackSize 同式）
-        // 且水平居中，与堆叠卡左右缘对齐。
-        val hasAnyNote = imageNotes.any { !it.isNullOrBlank() }
-        AnimatedVisibility(
-            visible = !isExpanded && hasAnyNote,
-            // fadeIn/fadeOut 动画 Float、expand/shrink 动画 IntSize——两者泛型不同，
-            // 尺寸规格必须用 TRANSITION_400_SIZE（Float 规格编译报 type mismatch）
-            enter = fadeIn(TRANSITION_400) + expandVertically(TRANSITION_400_SIZE),
-            exit = fadeOut(TRANSITION_400) + shrinkVertically(TRANSITION_400_SIZE)
-        ) {
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    // 退出动画期间仍组合：order 在展开触发时不变（展开按钮不翻牌），
-                    // 内容稳定无闪烁
-                    text = imageNotes.getOrNull(order.first())
-                        ?.takeIf { it.isNotBlank() }.orEmpty(),
-                    fontSize = DetailNoteTextSize,
-                    lineHeight = DetailNoteTextLineHeight,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Start,
-                    color = DetailNoteTextColor,
-                    modifier = Modifier
-                        .width(minOf(StackCardSize, maxWidth))
-                        .align(Alignment.Center)
-                )
-            }
-        }
+        // v2026-09-28 口径调整（用户确认）：备注只在展开态显示（每张图正下方，见 GalleryStage 备注列）；堆叠态不再显示 Stage 下方单条备注行。
     }
 }
 

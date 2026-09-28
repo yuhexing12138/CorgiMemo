@@ -128,12 +128,6 @@ fun TimelineInspirationItem(
     inspiration: Inspiration,
     tags: List<String>,
     imagePaths: List<String>,
-    /**
-     * v2026-09-28 备注接线：与 [imagePaths] 索引一一对应的备注列表（无备注为 null）。
-     * 透传给 [SwipeableImageStack]：堆叠态跟随顶卡、展开态跟随横向滚动，
-     * 在图片行下方渲染当前卡的备注文字。全部无备注时不渲染、不占位。
-     */
-    imageNotes: List<String?> = emptyList(),
     formattedTime: String,
     showDate: Boolean = true,
     isPinnedItem: Boolean = false,
@@ -611,8 +605,6 @@ fun TimelineInspirationItem(
                         // 不延伸则展开行右缘比外层容器短 18dp。
                         expandedViewportRightExtension = 18.dp,
                         imageUris = imagePaths,
-                        // v2026-09-28 备注接线：透传备注（索引与 imageUris 一一对应）
-                        imageNotes = imageNotes,
                         cardWidth = 120.dp,
                         cardHeight = 120.dp,
                         // cardRadius 是 0-20 滑块（Float，非 Dp），与 SwipeableImageStack.kt 默认值一致
