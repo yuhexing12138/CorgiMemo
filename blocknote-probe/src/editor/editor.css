@@ -181,51 +181,63 @@
 }
 
 /**
- * 视频块：画面点击穿透 + 原生控件保留（v2026-09-28 修复·第四轮：细粒度恢复）
+ * 视频块：画面点击穿透 + 原生控件保留（v2026-09-28 修复·第六轮：长按接管定稿）
  *
  * **需求冲突**（两个能力都要）：
- * 1. tap 视频块要能唤出官方工具条——`<video>` 是原生媒体元素，Android
+ * 1. 视频块需要编辑入口（工具条）——`<video>` 是原生媒体元素，Android
  *    WebView 里 Chromium 把落在视频画面上的触摸交给媒体手势层处理，不像
- *    `<img>` 把 click 冒泡给 ProseMirror → 不穿透则点画面弹不出工具条；
+ *    `<img>` 把 click 冒泡给 ProseMirror → 不穿透则画面区域无法参与编辑；
  * 2. 官方 video render 显式设了 `video.controls = true`（blocks dist
  *    `a.controls = !0`，audio 分支同款）——播放键/暂停键/进度条是 Chromium
  *    UA shadow DOM 里的**原生媒体控件**，必须保持可点。
  *
- * **四轮演进（全记录，防再绕弯）**：
- * - 第二轮：video 整体 `pointer-events: none` → 工具条好使，但控件全灭
- *   （真机：播放/进度条点不动）；
- * - 第三轮：恢复 `::-webkit-media-controls-enclosure / -panel` → **失败**：
- *   enclosure 在 Android Chromium 上是**覆盖整个视频区域的容器**（进度条
- *   只在底部，容器 div 是全尺寸的），恢复它 = 点击画面命中 enclosure
- *   （retarget 成 video）→ 媒体手势层照旧吃掉 → 穿透被完全抵消，
- *   工具条又不弹了；
- * - **第四轮（本版）**：把恢复粒度缩到**具体控件伪元素**——播放键/进度条/
- *   静音/全屏按钮各自恢复命中，全尺寸容器（enclosure/panel/中央 overlay
- *   播放键）保持穿透。点击画面空白仍走 wrapper 路径弹工具条，点具体按钮
- *   则命中控件控制播放。第三轮真机结果（恢复 enclosure 后画面点击确实
- *   被它截获）已证明 shadow 伪元素的「父 none / 子 auto 恢复」机制在本机
- *   WebView 生效，只是恢复面积太大——本版只是把面积收窄。
+ * **六轮演进（全记录，防再绕弯）**：
+ * - 二轮：video 整体 `pointer-events: none` → 画面穿透，但控件全灭；
+ * - 三轮：恢复 `::-webkit-media-controls-enclosure / -panel` → 失败：容器
+ *   全尺寸覆盖画面，穿透被抵消；
+ * - 四轮：细粒度恢复具体控件伪元素 → 控件可点 ✅，但中央 overlay 播放键
+ *   与"点画面弹工具条"的产品语义仍然互斥（死按钮/误触问题）；
+ * - **六轮定稿（本版）**：工具条弹出改走 **JS 长按接管**（EditorApp.tsx 的
+ *   bindVideoBlockGestures：长按视频弹工具条、单击收起、其余点击一律不弹），
+ *   本 CSS 只承担两件事——① video 穿透（事件通道，target 落到包装层供
+ *   JS 分派）；② 细粒度恢复底部原生控件。
  *
- * ⚠️ 历史教训（第二轮注释的错误论断，在此以正视听）：曾断言「官方 video
- * 无 controls 属性，本无块内交互可损失」——**错**。官方明确设了
- * `controls = true`，当时的 pointer-events:none 把播放/进度条一并砍掉
- * （真机反馈"视频按键全部无法点击"）。
+ * **当前伪元素策略**：
+ * - `overlay-play-button`（暂停态视频中央的大按钮）：**display:none 整键
+ *   隐藏**——它覆盖画面、恢复命中必截胡穿透（三轮教训），留着又是
+ *   "看得见点不动"的死按钮（五轮真机反馈）；播放/暂停统一走底部面板。
+ * - `overflow-button`（右下角三点菜单）+ 底部播放键/进度条/静音/全屏：
+ *   细粒度恢复命中，小区域不影响画面穿透。
  *
- * ⚠️ 兼容性：这些伪元素是 Chromium 长期保留的 media controls 选择器
- * （Android System WebView 80+ 均支持）。若个别版本某按钮恢复失效，
- * 退化表现 = 该按钮不可点（画面工具条不受影响）；若整组失效，届时升级
- * 自绘控制层方案（项目有语音条/文件名自绘先例）。
+ * ⚠️ 历史教训（二轮注释的错误论断）：曾断言「官方 video 无 controls 属性」
+ * ——错。官方明确设了 `controls = true`；minify 长行 grep 截断看漏
+ * `.controls = !0`，教训：长行要用 Python 切片看完整上下文。
  */
 .bn-visual-media-wrapper video {
   pointer-events: none;
 }
 /**
- * 中央 overlay 播放键（tap 画面时浮现的大按钮）覆盖整个视频画面——
- * 显式钉在穿透态：若它默认带有效命中，会把"点画面弹工具条"再次截胡。
- * 播放/暂停走底部面板的具体按钮（上方已恢复命中）。
+ * 中央 overlay 播放键（暂停态浮现在视频中间的大按钮）：**整键隐藏**。
+ *
+ * 第五轮（v2026-09-28 真机反馈"中间播放键点了没反应"）：
+ * - 第四轮曾把它 `pointer-events: none`（它覆盖画面、恢复命中会截胡工具条
+ *   路径——第三轮 enclosure 的教训），但**视觉上仍然显示**，成了一个
+ *   "看得见点不动"的死按钮（用户困惑的根源）；点击它的落点虽会穿透到
+ *   wrapper，但用户预期是"播放"，弹出编辑工具条同样违背直觉。
+ * - **取舍**：隐藏整键。播放/暂停统一走底部面板的播放键（已恢复命中）；
+ *   点画面（含原中央键区域）统一 = 编辑手势（弹工具条）。交互语义不再有
+ *   歧义区，也不存在死按钮。代价是放弃 Android"点画面播放"的原生习惯，
+ *   由底部键承担播放控制。
  */
 .bn-visual-media-wrapper video::-webkit-media-controls-overlay-play-button {
-  pointer-events: none;
+  display: none;
+}
+/**
+ * 右下角三点（溢出菜单）按钮：第四轮细粒度清单遗漏，点击无反应
+ * （真机反馈），第五轮补上恢复。小区域按钮，不影响画面穿透。
+ */
+.bn-visual-media-wrapper video::-webkit-media-controls-overflow-button {
+  pointer-events: auto;
 }
 .bn-visual-media-wrapper video::-webkit-media-controls-play-button,
 .bn-visual-media-wrapper video::-webkit-media-controls-timeline,

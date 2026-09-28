@@ -5,15 +5,21 @@ import {
   EditLinkButton,
   EditLinkMenuItems,
   FormattingToolbar,
-  FormattingToolbarController,
   LinkToolbarController,
   PositionPopover,
   useBlockNoteEditor,
   useComponentsContext,
   useCreateBlockNote,
+  useEditorState,
+  useExtension,
+  useExtensionState,
+  type FloatingUIOptions,
   type LinkToolbarProps,
 } from "@blocknote/react";
-import { BlockNoteEditor, blockHasType } from "@blocknote/core";
+import { BlockNoteEditor, blockHasType, defaultProps } from "@blocknote/core";
+import { NodeSelection, TextSelection } from "prosemirror-state";
+import type { DefaultProps } from "@blocknote/core";
+import { FormattingToolbarExtension } from "@blocknote/core/extensions";
 // floating-ui 的防裁剪三件套：与官方 FormattingToolbarController 完全同款
 // （offset 离锚点 10px、shift 贴边回拉治右裁剪、flip 上放不下翻转治上裁剪）。
 import { flip, offset, shift } from "@floating-ui/react";
@@ -432,6 +438,115 @@ function TextColorButton() {
         A
       </span>
     </Components.FormattingToolbar.Button>
+  );
+}
+
+/** 块对齐 → 浮层 placement 映射（照抄官方 FormattingToolbarController） */
+const textAlignmentToPlacement = (
+  textAlignment: DefaultProps["textAlignment"],
+) => {
+  switch (textAlignment) {
+    case "left":
+      return "top-start";
+    case "center":
+      return "top";
+    case "right":
+      return "top-end";
+    default:
+      return "top-start";
+  }
+};
+
+/**
+ * v2026-09-28：媒体限定版格式工具栏控制器（替代官方 FormattingToolbarController 挂载）。
+ *
+ * **为什么自建**：0.52 架构里，点击图片/视频/分割线弹出的「媒体编辑条」与
+ * 文本格式条是**同一个** FormattingToolbar——官方 FormattingToolbarExtension
+ * 的 shouldShow 对 NodeSelection(媒体块) 放行，而官方 Controller 硬编码消费
+ * 该状态、不提供 shouldShow 过滤 prop。用户决策：**文本块上禁用此条**
+ * （行内样式统一走宿主底部栏入口），**媒体块上保留**（官方按钮集里的
+ * 下载/改名/删除等媒体按钮也在这套条上）。
+ *
+ * 实现：数据源与官方 Controller 完全同款（useExtension / useExtensionState /
+ * useEditorState），仅叠加一个块类型过滤——`canApplyInlineStyles` 为真
+ * （content==="inline" 的纯文本块）时强制不渲染，其余块保持官方原行为。
+ * 浮层配置（middleware 三件套 / focusManager disabled / zIndex 40 /
+ * placement 映射）照抄官方 FormattingToolbarController，不另发明。
+ */
+function MediaOnlyFormattingToolbarController() {
+  const editor = useBlockNoteEditor<any, any, any>();
+  const formattingToolbar = useExtension(FormattingToolbarExtension, { editor });
+  const show = useExtensionState(FormattingToolbarExtension, { editor });
+  // ★ 与官方唯一的差异点：纯文本块（可承载行内样式）上强制不显示；
+  //   媒体/分割线（content:"none"）与表格（content:"table"）保持官方放行。
+  const visible = show && !canApplyInlineStyles(editor);
+
+  // 选区快照锚点：extension 处于展示态时取 from/to（照抄官方 Controller）
+  const position = useEditorState({
+    editor,
+    selector: ({ editor: ed }) =>
+      formattingToolbar.store.state
+        ? {
+            from: ed.prosemirrorState.selection.from,
+            to: ed.prosemirrorState.selection.to,
+          }
+        : undefined,
+  });
+
+  // placement 按块 textAlignment 映射（照抄官方 Controller）
+  const placement = useEditorState({
+    editor,
+    selector: ({ editor: ed }) => {
+      const block = ed.getTextCursorPosition().block;
+      if (
+        !blockHasType(block, ed, block.type, {
+          textAlignment: defaultProps.textAlignment,
+        })
+      ) {
+        return "top-start";
+      } else {
+        return textAlignmentToPlacement(block.props.textAlignment);
+      }
+    },
+  });
+
+  const floatingUIOptions = useMemo<FloatingUIOptions>(
+    () => ({
+      useFloatingOptions: {
+        open: visible,
+        // 与官方一致：dismiss 触发的关闭要同步回 extension store，
+        // Esc 关闭后把焦点还回编辑器。
+        onOpenChange: (open, _event, reason) => {
+          formattingToolbar.store.setState(open);
+          if (reason === "escape-key") {
+            editor.focus();
+          }
+        },
+        placement,
+        middleware: [offset(10), shift(), flip()],
+      },
+      focusManagerProps: {
+        disabled: true,
+      },
+      elementProps: {
+        style: {
+          zIndex: 40,
+        },
+      },
+    }),
+    [visible, placement, formattingToolbar.store, editor],
+  );
+
+  return (
+    <PositionPopover position={position} {...floatingUIOptions}>
+      {visible && (
+        <>
+          <FormattingToolbar />
+          <FontSizeButton />
+          <TextColorButton />
+        </>
+      )}
+    </PositionPopover>
   );
 }
 
@@ -1997,6 +2112,156 @@ let uploadSeq = 0;
  * 正常链路毫秒级即回；15s 仍无应答视为宿主异常（未接线/崩溃），防 loading 永挂 */
 const UPLOAD_TIMEOUT_MS = 15000;
 
+/* ===== 视频块手势接管（v2026-09-28：长按弹工具条，点击收起） ===== */
+
+/** 长按判定时长（ms）：略长于 Android 系统长按阈值（400ms），避免抢在系统手势前过灵敏 */
+const VIDEO_LONG_PRESS_MS = 500;
+
+/** 长按期间允许的位移半径（px）：超过即视为滚动/拖拽意图，取消长按 */
+const VIDEO_LONG_PRESS_MOVE_TOLERANCE = 10;
+
+/**
+ * 视频块手势接管（v2026-09-28：长按弹工具条 / 点击收起 / 其余点击一律不弹）
+ *
+ * **背景**：官方工具条弹出 = 点击建立 NodeSelection + pointerup 重算
+ * shouldShow，与 Android 原生媒体手势（单击播放/双击 seek/中央键）在同一
+ * 物理区域互斥——四轮 CSS 博弈均无法两全（演进全记录见 editor.css）。
+ * 用户定稿交互：
+ * - **长按视频**（≥500ms、位移 ≤10px）→ 弹工具条；
+ * - 工具条开着时**单击视频** → 收起；
+ * - **单击视频本体 / 边缘 / 同行空白** → 一律不弹；
+ * - 底部原生控件（播放键/进度条/三点）照常可点（editor.css 细粒度恢复），
+ *   中央 overlay 播放键已隐藏。
+ *
+ * **实现**：在 ProseMirror 视图根上 **capture 阶段事件委托**。视频画面因
+ * `pointer-events: none`（editor.css）发生穿透——点击画面的 target 是
+ * 包装层/块内容，而原生控件点击经 UA shadow retarget 后 target=video
+ * 本身，两者可按 target 类型区分：
+ * - 命中 video 块画面区域（`[data-content-type="video"]`）且 target 非
+ *   video 元素、非 caption 文本 → `preventDefault + stopPropagation`：
+ *   ProseMirror 的 pointer 流程全无感 → **点击不会建立 NodeSelection**
+ *   （"一律不弹"的机关）；preventDefault 同时阻断合成 click 与 Android
+ *   原生长按文本选择 UI；
+ * - pointerdown 启动 500ms 计时；pointermove 超半径 / pointercancel 取消；
+ *   计时到点 = 长按成立 → `editor.focus()` + 手动 dispatch
+ *   NodeSelection(video) → 官方 onChange 重算 shouldShow → 工具条弹出
+ *   （PositionPopover 锚定视频块，与旧点击弹出位置一致）。官方
+ *   FormattingToolbarExtension 的 pointerdown 抑制监听在 view.dom 冒泡段，
+ *   已被我们的 capture 拦截隔断，dispatch 后的重算不会被
+ *   preventShowWhileMouseDown 抑制；
+ * - pointerup：长按已成立则跳过（防止刚弹出的工具条被同一次手势的抬起
+ *   立即收起）；否则若当前选区是 NodeSelection(video)（= 工具条开着）→
+ *   光标移到视频后方最近文本位（selection.empty → shouldShow 重算 false
+ *   → 收起）。
+ *
+ * @param ed BlockNote 编辑器实例
+ * @returns 解绑函数（React cleanup 时移除全部监听）
+ */
+function bindVideoBlockGestures(ed: any): () => void {
+  const view = ed.prosemirrorView;
+  const root: HTMLElement = view.dom;
+
+  let timer: number | null = null;
+  let longPressDone = false;
+  let startX = 0;
+  let startY = 0;
+
+  /** 判定事件是否落在 video 块"画面区域"（穿透点击）；控件/caption/其它块一律放行 */
+  const inVideoPictureArea = (t: EventTarget | null): boolean => {
+    if (!(t instanceof Element)) return false;
+    /** 原生控件点击：UA shadow retarget 后 target=video 本身 → 放行给 Chromium */
+    if (t instanceof HTMLVideoElement) return false;
+    /** caption 等 contenteditable 文本 → 放行（正常文本编辑/长按选择） */
+    if ((t as HTMLElement).isContentEditable) return false;
+    /** 只接管 video 块区域（image/audio 共用 wrapper 类，须按块类型 data 属性区分） */
+    return !!t.closest('[data-content-type="video"]');
+  };
+
+  /** 长按成立：手动建立 NodeSelection → 官方 onChange 重算 → 工具条弹出 */
+  const selectVideoBlock = (startEl: Element) => {
+    ed.focus();
+    const blockId = startEl.closest(".bn-block[data-id]")?.getAttribute("data-id") ?? null;
+    let targetPos = -1;
+    view.state.doc.descendants((node: any, pos: number) => {
+      if (targetPos >= 0) return false;
+      if (node.type.name === "video" && (!blockId || node.attrs.id === blockId)) {
+        targetPos = pos; /** descendants 回调的 pos 即节点前位置，NodeSelection.create 直接可用 */
+        return false;
+      }
+      return true;
+    });
+    if (targetPos >= 0) {
+      view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, targetPos)));
+    }
+  };
+
+  const onPointerMove = (e: PointerEvent) => {
+    if (Math.hypot(e.clientX - startX, e.clientY - startY) > VIDEO_LONG_PRESS_MOVE_TOLERANCE) {
+      cleanupTransient(); /** 位移超阈值 = 滚动意图 → 取消长按（本次拦截的点击就此吞掉） */
+    }
+  };
+
+  const onPointerUp = () => {
+    const wasLongPress = longPressDone;
+    cleanupTransient();
+    if (wasLongPress) return;
+    /** 单击：工具条开着（选区在 video 上）→ 收起（光标移到视频后方最近文本位） */
+    try {
+      const sel = view.state.selection;
+      if (sel instanceof NodeSelection && sel.node.type.name === "video") {
+        view.dispatch(
+          view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(sel.from)))
+        );
+      }
+    } catch (e: any) {
+      sendUp({ type: "error", message: `videoTapCollapse: ${e?.message ?? e}` });
+    }
+  };
+
+  const onPointerCancel = () => {
+    cleanupTransient();
+  };
+
+  const cleanupTransient = () => {
+    if (timer !== null) {
+      window.clearTimeout(timer);
+      timer = null;
+    }
+    root.removeEventListener("pointermove", onPointerMove, { capture: true });
+    root.removeEventListener("pointerup", onPointerUp, { capture: true });
+    root.removeEventListener("pointercancel", onPointerCancel, { capture: true });
+  };
+
+  const onPointerDown = (e: PointerEvent) => {
+    if (!e.isPrimary || !inVideoPictureArea(e.target)) return;
+    /** 拦截：ProseMirror 不收到 pointer 流 → 点击不建立 NodeSelection（一律不弹）；
+     * preventDefault 阻断合成 click（suppressNextClick 免了）与原生长按选择 UI */
+    e.preventDefault();
+    e.stopPropagation();
+    longPressDone = false;
+    startX = e.clientX;
+    startY = e.clientY;
+    timer = window.setTimeout(() => {
+      timer = null;
+      longPressDone = true;
+      try {
+        selectVideoBlock(e.target as Element);
+      } catch (err: any) {
+        sendUp({ type: "error", message: `videoLongPress: ${err?.message ?? err}` });
+      }
+    }, VIDEO_LONG_PRESS_MS);
+    root.addEventListener("pointermove", onPointerMove, { capture: true });
+    root.addEventListener("pointerup", onPointerUp, { capture: true });
+    root.addEventListener("pointercancel", onPointerCancel, { capture: true });
+  };
+
+  root.addEventListener("pointerdown", onPointerDown, { capture: true });
+  return () => {
+    cleanupTransient();
+    root.removeEventListener("pointerdown", onPointerDown, { capture: true });
+  };
+}
+
 /** 编辑器核心（initialBlocks 就绪后挂载，useCreateBlockNote 仅执行一次） */
 function EditorCore(props: {
   initialBlocks: any[];
@@ -2138,6 +2403,16 @@ function EditorCore(props: {
       });
     },
   });
+
+  /**
+   * 视频块手势接管（v2026-09-28）：长按弹工具条 / 点击收起 / 其余点击一律不弹。
+   * 用户定稿的交互（替代官方"点击弹"——与 Android 原生媒体手势区域互斥，
+   * 演进史见 editor.css 与 bindVideoBlockGestures 头注释）。
+   * editor 为单次创建的稳定实例，绑定/解绑各执行一次。
+   */
+  useEffect(() => {
+    return bindVideoBlockGestures(editor);
+  }, [editor]);
 
   /**
    * 禁用官方 autolink / 粘贴成链（v2026-09-24 新增，用户决策）。
@@ -2479,15 +2754,13 @@ function EditorCore(props: {
            */
           onSelectionChange={() => props.onBlockStateChange()}
         >
-          <FormattingToolbarController
-            formattingToolbar={() => (
-              <>
-                <FormattingToolbar />
-                <FontSizeButton />
-                <TextColorButton />
-              </>
-            )}
-          />
+          {/*
+            v2026-09-28：格式工具栏改为「媒体限定」挂载——用户决策。
+            文本块（可承载行内样式的块）上不再弹出；点击图片/视频/分割线等
+            媒体块时仍弹出（即「图片的编辑悬浮工具条」，官方按钮集含
+            下载/改名/删除等媒体按钮）。详见 {@link MediaOnlyFormattingToolbarController}。
+          */}
+          <MediaOnlyFormattingToolbarController />
           {/*
             覆盖官方链接工具栏（v2026-09-24）
             —— 只替换「打开」按钮的行为：官方那版调 `window.open(url, "_blank")`，
