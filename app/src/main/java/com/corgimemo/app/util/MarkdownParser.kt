@@ -467,6 +467,8 @@ object MarkdownParser {
      *
      * **剥离规则**（去除语法与结构标记、只留可见文字）：
      * - 图片 `![alt](path)` → 移除（图片不计入字数）
+     * - 带备注图片的 HTML 形态 `<figure><img src>…</figure>` → 移除（v2026-09-28 新增；
+     *   图片连同备注文字一起剥离，用户确认口径与 1) 一致）
      * - 内联媒体 / 标签 token：`#标签` / `@提及` / `🎤语音` / 旧图（`trigger:xxx`）→ 整段移除
      * - 普通链接 `[文字](url)` → 保留「文字」
      * - 引用符 `>`、ATX 标题 `#`、分割线 → 移除
@@ -492,6 +494,20 @@ object MarkdownParser {
         var text = markdown
         // 1) 图片（不计入字数）
         text = text.replace(Regex("""!\[[^\]]*\]\([^)]*\)"""), " ")
+        // 1b) 带备注（caption）图片的 HTML 形态（v2026-09-28 新增）：
+        //     BlockNote 官方导出器对 caption 非空的图片块输出
+        //     `<figure><img src="..."><figcaption>备注</figcaption></figure>`
+        //     （CommonMark raw HTML 块），而非 1) 的 markdown 图片语法 —— 此前无剥离
+        //     规则，标签原样漏进时间线摘要（真机复现）。口径（用户确认）：
+        //     **图片连同备注文字一起剥离**，与 1) 一致。
+        //     主形态**独占一段**（官方导出块间以 \n\n 连接），按块级元素口径**整行
+        //     连同行尾换行删除**（同 6b) 的理由：避免产生"只含一个空格的行"躲过
+        //     空行折叠，导致摘要上下行之间凭空多出一整行空白）；
+        //     兜底规则处理行内出现的罕见形态（空格占位，防相邻词粘连）。
+        //     ⚠️ `[\s\S]*?` 非贪婪跨行：防御 figcaption 内换行的非标准形态；
+        //     官方导出为单行，主路径不依赖跨行。
+        text = text.replace(Regex("""(?m)^[ \t]*<figure\b[\s\S]*?</figure>[ \t]*$\n?"""), "")
+        text = text.replace(Regex("""<figure\b[\s\S]*?</figure>"""), " ")
         // 2) 内联媒体 / 标签 token：整段移除
         text = text.replace(Regex("""\[#[^]]*\]\(trigger:hashtag:[^)]*\)"""), " ")
         text = text.replace(Regex("""\[@[^]]*\]\(trigger:mention:[^)]*\)"""), " ")

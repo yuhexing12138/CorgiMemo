@@ -1504,8 +1504,11 @@ class InspirationEditViewModel @Inject constructor(
      * 现在图片/语音以内联 atomic token 形式存在于正文 Markdown，
      * 不再依赖独立的内容块列表。
      *
-     * 正文 Markdown 中两种内联媒体的序列化格式：
-     * - 图片（现方案，块级）：`![alt](<绝对文件路径>)` —— RichSpanStyle.Image 的标准 Markdown 形式
+     * 正文 Markdown 中内联媒体的序列化格式：
+     * - 图片（块级，无备注）：`![alt](<绝对文件路径>)` —— RichSpanStyle.Image 的标准 Markdown 形式
+     * - 图片（块级，带备注，v2026-09-28 新增）：`<figure><img src="路径"><figcaption>备注</figcaption></figure>`
+     *   —— BlockNote 官方导出器对 caption 非空图片块的 HTML 形态（WebView 编辑页
+     *   图片工具条"备注"功能的落库载体）；figcaption 文字 = 备注本体，存入 note 列
      * - 图片（旧数据兼容）：`[🖼️](trigger:image:<路径>)` —— 曾用 atomic token 承载
      * - 语音：`[🎤00:12](trigger:voice:<路径>|<时长秒>)` —— 与 # 标签 / @ 关联同源的 token
      */
@@ -1534,6 +1537,35 @@ class InspirationEditViewModel @Inject constructor(
                         ContentBlock.Image(
                             path = path,
                             note = img?.note,
+                            displayWidthRatio = if (img?.shrunk == true) IMAGE_SHRUNK_WIDTH_RATIO else 1f,
+                        )
+                    )
+                }
+            }
+
+        /** 1c) 带备注（caption）图片的 HTML 形态（v2026-09-28 新增）：
+         *     `<figure><img src="路径"><figcaption>备注</figcaption></figure>`——
+         *     BlockNote 官方导出器对 caption 非空图片块的输出形态。此前只认 1) 的
+         *     标准形态，WebView 图片块一加备注就提取不到路径 → content_blocks 无
+         *     image 记录 → 时间线页/详情页图片堆叠区整体消失（真机复现）。
+         *     figcaption 文字即编辑页图片"备注"的落库形态：note 优先取
+         *     [imagePropsByPath]（BodyBlock 镜像语义更全），无镜像时兜底用
+         *     figcaption（经 [decodeHtmlText] 反转义）。figure 形态不含缩放信息，
+         *     displayWidthRatio 恒为 1f（WebView 图片块不参与 shrunk 机制）。*/
+        Regex(
+            """<figure\b[^>]*>\s*<img\b[^>]*\ssrc="([^"]*)"[^>]*>""" +
+                """(?:\s*<figcaption>([\s\S]*?)</figcaption>)?\s*</figure>"""
+        )
+            .findAll(markdown)
+            .forEach { m ->
+                val path = decodeHtmlText(m.groupValues[1].trim())
+                val captionNote = decodeHtmlText(m.groupValues[2]).trim()
+                if (path.isNotBlank() && seen.add("image:$path")) {
+                    val img = imagePropsByPath[path]
+                    blocks.add(
+                        ContentBlock.Image(
+                            path = path,
+                            note = img?.note ?: captionNote.ifBlank { null },
                             displayWidthRatio = if (img?.shrunk == true) IMAGE_SHRUNK_WIDTH_RATIO else 1f,
                         )
                     )
@@ -1596,6 +1628,27 @@ class InspirationEditViewModel @Inject constructor(
 
         saveContentBlocks(inspirationId, blocks)
     }
+
+    /**
+     * HTML 实体反转义（v2026-09-28 新增，配合 1c) figure 形态提取）
+     *
+     * BlockNote 官方导出器对 figure 内的 `src` 与 figcaption 文本做了实体转义
+     * （`&`→`&amp;`、`"`→`&quot;`、`<`→`&lt;`、`>`→`&gt;`），从 markdown 提取
+     * 路径 / 备注文字后须还原为原始字符，否则含 `&` 的路径无法命中物理文件、
+     * 备注里的特殊字符显示为实体字面量。
+     *
+     * ⚠️ 解码顺序与编码顺序相反：`&amp;` **最后**还原——它是其余实体的转义源头，
+     * 先还原会把 `&amp;lt;` 这类双重转义错误地解成 `<`。
+     *
+     * @param raw 转义后的字符串（src 属性值或 figcaption 文本）
+     * @return 还原后的原始字符串
+     */
+    private fun decodeHtmlText(raw: String): String =
+        raw
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&amp;", "&")
 
     /**
      * 删除灵感的所有内容块（从数据库和物理存储）

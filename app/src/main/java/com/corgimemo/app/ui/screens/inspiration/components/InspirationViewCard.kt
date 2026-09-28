@@ -551,7 +551,8 @@ private fun InspirationBodyRichText(
     val skipRenderIndexes: Set<Int> = remember(renderParagraphs) {
         /** 基于**渲染用**序列判定（v2026-09-22）：只带 token 的空彩色段剥完即空白段，应跳过 */
         val paras = renderParagraphs.map { it.trim('\n') }
-        val isImage = paras.map { InspirationImageSegmentRegex.matches(it) }
+        // v2026-09-28：图片段判定升级为 [isImageSegment]（新增 figure HTML 形态）
+        val isImage = paras.map { isImageSegment(it) }
         val isDivider = paras.map { isDividerMarkdown(it) }
         val isBlank = paras.map { isBlankBodyParagraph(it) }
         buildSet {
@@ -609,9 +610,12 @@ private fun InspirationBodyRichText(
                         )
                     }
                 }
-                /** 图片段（整段恰为 `![alt](path)`，与 parseMarkdownSegments 的图片
-                 *  正则同源）：由卡面独立图片区展示，此处跳过 */
-                InspirationImageSegmentRegex.matches(para) -> Unit
+                /**
+                 * 图片段（v2026-09-28 判定升级为 [isImageSegment]：标准 `![alt](path)`
+                 * 与官方带备注导出的 figure HTML 形态均命中）：由卡面独立图片区展示，
+                 * 此处跳过（figure 形态此前被当普通段落喂库，标签被剥、只剩备注文字）
+                 */
+                isImageSegment(para) -> Unit
                 isDividerMarkdown(para) -> {
                     /**
                      * 分割线段（"---" / "--- dashed" / "--- wavy"，v2026-09-07；
@@ -724,6 +728,27 @@ private fun InspirationBodyRichText(
  * 普通文本误跳过）。
  */
 private val InspirationImageSegmentRegex = Regex("""^!\[[^\]]*\]\([^)]+\)$""")
+
+/**
+ * figure HTML 形态图片段正则（v2026-09-28 新增）：整段恰为 BlockNote 官方导出的
+ * **带备注（caption）图片块** `<figure><img src="..."><figcaption>备注</figcaption></figure>`。
+ * 官方口径：caption 非空才输出该形态（caption 为空输出标准 `![](path)` 形态），
+ * 但 figcaption 仍按可选处理以防御非标准形态。此前该形态不命中
+ * [InspirationImageSegmentRegex]，被当普通段落喂给库渲染——标签被剥、只剩
+ * figcaption 里的备注文字（真机现象：详情卡只显示"备注1"、图片消失）。
+ */
+private val FigureImageSegmentRegex = Regex("""^<figure\b[\s\S]*</figure>$""")
+
+/**
+ * 图片段判定（v2026-09-28 升级）：标准 markdown 图片形态与 figure HTML 形态
+ * 任一命中即为图片段——图片由卡面独立图片区展示，正文跳过渲染。
+ * 判定收敛为单点，供 skipRenderIndexes 计算与正文渲染循环共用。
+ *
+ * @param para 段落文本（已 trim）
+ * @return true = 该段是图片段，正文不渲染
+ */
+private fun isImageSegment(para: String): Boolean =
+    InspirationImageSegmentRegex.matches(para) || FigureImageSegmentRegex.matches(para)
 
 /**
  * 正文段是否为"空白段"（v2026-09-09）：空、纯空白字符，或编辑页空块占位
