@@ -1,13 +1,17 @@
 package com.corgimemo.app.ui.screens.probe
 
 import android.annotation.SuppressLint
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.Message
+import android.provider.MediaStore
 import android.util.Log
 import android.view.ViewGroup
 /** 软键盘抑制（v2026-09-21）：WebView 子类拦截输入连接所需 */
@@ -38,12 +42,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.annotation.RequiresApi
+import androidx.core.content.FileProvider
+import com.corgimemo.app.ui.components.GlobalSnackbarController
 import com.corgimemo.app.ui.theme.FontCatalog
 import com.corgimemo.app.ui.theme.ThemeManager
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import kotlin.math.roundToInt
 
 private const val TAG = "BlockNoteEditor"
@@ -1285,6 +1296,205 @@ internal fun openInBrowser(context: Context, url: String) {
 }
 
 /**
+ * 判断一个 URL 是否为「可导出的本地媒体」（v2026-09-28 新增）
+ *
+ * 范围：file:// 形态的**应用私有媒体文件**（编辑器正文里的图片 / 语音 / 视频，
+ * 落在 `filesDir/pictures/` 等私有目录）。排除两类：
+ * - `file:///android_asset/...`：编辑器页面本体及其资源（官方从不会 open 它们，
+ *   防御性排除）；
+ * - `content://`：应用自有的 content URI（当前编辑器不会 open，保守不放行）。
+ *
+ * 配套使用方：`onCreateWindow` 一次性 WebView 的 `shouldOverrideUrlLoading`
+ * （window.open 专用通道）——只有用户主动点官方「下载」按钮才会走到这里。
+ *
+ * @param url 待判定的 URL
+ * @return true = 按用户「下载」意图导出到系统相册
+ */
+internal fun isExportableLocalMedia(url: String): Boolean =
+    url.startsWith("file://") && !url.startsWith("file:///android_asset/")
+
+/**
+ * 把本地媒体文件导出到**系统相册**（v2026-09-28 新增，官方图片工具条「下载」按钮的宿主落点）
+ *
+ * ## 官方行为与本项目接管
+ * 官方 FileDownloadButton 的下载实现 = `window.open(媒体 file:// URL)`，在本项目
+ * WebView 里该 URL 命中内部白名单被静默忽略（点按钮毫无反应）。接管链路见
+ * `onCreateWindow` 内一次性 WebView 的 `shouldOverrideUrlLoading`——本地媒体分支
+ * 调用本函数完成「下载」语义。
+ *
+ * ## 版本分支（minSdk 26）
+ * - **API 29+（Q+）**：`MediaStore` 插入（[MediaStore.Images] / [MediaStore.Audio] /
+ *   [MediaStore.Video] 按 MIME 前缀分流），写 `Pictures/CorgiMemo` 相对路径，
+ *   **无需任何存储权限**——主流设备的直存路径。
+ * - **API 26-28**：直写公共存储需要 `WRITE_EXTERNAL_STORAGE` 运行时权限（本应用
+ *   未声明，且 WebView 回调层无 Activity 撑不起权限请求链路）→ **降级为系统分享
+ *   面板**（FileProvider content URI + ACTION_SEND，全版本无权限可用），面板内
+ *   仍可「保存到相册/文件」。
+ *
+ * ## 线程与反馈
+ * 文件复制是磁盘 IO，走独立 IO 协程（fire-and-forget：导出是用户手动低频操作，
+ * 一次性 CoroutineScope 可接受）；成败经 [GlobalSnackbarController] 反馈
+ * （用户可见提示统一 AppSnackbarHost 的既有通道，ClipboardImageHelper 同款）。
+ *
+ * ⚠️ KDoc 与字符串字面量之外严禁书写形如「image/斜杠星号」的 MIME 通配符字面量
+ * （Kotlin 块注释支持嵌套，`/*` 会吞掉后续代码——见项目 MEMORY 规约），注释一律
+ * 用「image 系 MIME」等文字表述。
+ *
+ * @param context 任意 Context（MediaStore / 分享 Intent 均可用 Application 上下文）
+ * @param url     file:// 形态的本地媒体 URL（`toWebImageUrl` 逐段编码过的形态，
+ *                经 [Uri.parse] 取 path 时框架自动解码）
+ */
+internal fun exportLocalMediaToGallery(context: Context, url: String) {
+    /** Uri.parse(...).path 自动完成逐段 URI 解码，还原本地绝对路径 */
+    val filePath = try {
+        Uri.parse(url).path
+    } catch (e: Exception) {
+        Log.e(TAG, "exportLocalMedia: bad url $url", e)
+        null
+    }
+    if (filePath.isNullOrBlank()) {
+        GlobalSnackbarController.showMessage("无法识别文件路径，下载失败")
+        return
+    }
+    val file = File(filePath)
+    if (!file.exists()) {
+        /** 文件不存在（如已被清理）时明确提示，避免又一次「点了没反应」 */
+        GlobalSnackbarController.showMessage("图片文件不存在，下载失败")
+        return
+    }
+    val mime = mediaMimeOf(file.name)
+    if (mime == null) {
+        GlobalSnackbarController.showMessage("暂不支持该文件类型的下载")
+        return
+    }
+    CoroutineScope(Dispatchers.IO).launch {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val ok = saveToMediaStore(context, file, mime)
+            GlobalSnackbarController.showMessage(if (ok) "已保存到系统相册" else "下载失败，请重试")
+        } else {
+            /** API 26-28 降级：分享面板（面板内可保存到相册/文件） */
+            val ok = shareLocalMedia(context, file, mime)
+            GlobalSnackbarController.showMessage(
+                if (ok) "已唤起分享面板，可选择保存或发送" else "下载失败，请重试"
+            )
+        }
+    }
+}
+
+/**
+ * 把文件写入系统 MediaStore（API 29+，v2026-09-28 新增）
+ *
+ * 按 MIME 前缀（image 系 / audio 系 / video 系）选择对应的 MediaStore 集合插入；
+ * `RELATIVE_PATH` 固定 `Pictures/CorgiMemo`（音频/视频按系统约定目录），DISPLAY_NAME
+ * 沿用源文件名（重名由系统自动追加序号，无需自行去重）。写入失败的残留空记录
+ * （insert 成功但流写入抛异常）按 best-effort 删除。
+ *
+ * @return true = 完整写入成功
+ */
+@RequiresApi(Build.VERSION_CODES.Q)
+private fun saveToMediaStore(context: Context, file: File, mime: String): Boolean {
+    val collection = when {
+        mime.startsWith("image") -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        mime.startsWith("audio") -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        else -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+    }
+    val relativeDir = if (mime.startsWith("image")) {
+        Environment.DIRECTORY_PICTURES + "/CorgiMemo"
+    } else {
+        null /** 音视频走系统默认目录（由对应集合决定），不强行归类 */
+    }
+    val values = ContentValues().apply {
+        put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
+        put(MediaStore.MediaColumns.MIME_TYPE, mime)
+        relativeDir?.let { put(MediaStore.MediaColumns.RELATIVE_PATH, it) }
+    }
+    val uri = try {
+        context.contentResolver.insert(collection, values)
+    } catch (e: Exception) {
+        Log.e(TAG, "saveToMediaStore: insert failed for ${file.name}", e)
+        null
+    } ?: return false
+    val out = try {
+        context.contentResolver.openOutputStream(uri)
+    } catch (e: Exception) {
+        Log.e(TAG, "saveToMediaStore: openOutputStream failed for ${file.name}", e)
+        null
+    }
+    if (out == null) {
+        /** best-effort 清理残留的空记录，避免相册出现 0 字节坏图 */
+        runCatching { context.contentResolver.delete(uri, null, null) }
+        return false
+    }
+    return try {
+        out.use { stream ->
+            file.inputStream().use { input -> input.copyTo(stream) }
+        }
+        true
+    } catch (e: Exception) {
+        Log.e(TAG, "saveToMediaStore: write failed for ${file.name}", e)
+        /** best-effort 清理残留的空记录，避免相册出现 0 字节坏图 */
+        runCatching { context.contentResolver.delete(uri, null, null) }
+        false
+    }
+}
+
+/**
+ * 分享本地媒体文件（API 26-28 的降级通道，v2026-09-28 新增）
+ *
+ * FileProvider content URI（`filesDir/pictures/` 已在 file_paths.xml 映射）+
+ * ACTION_SEND + 临时读权限——系统分享面板内用户仍可完成「保存到相册/文件」。
+ * 无匹配应用（极老旧设备无分享目标）按正常分支处理，不崩宿主。
+ *
+ * @return true = 分享面板成功拉起（视为交付成功）；false = 拉起失败
+ */
+private fun shareLocalMedia(context: Context, file: File, mime: String): Boolean {
+    val uri = try {
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    } catch (e: Exception) {
+        Log.e(TAG, "shareLocalMedia: provider failed for ${file.name}", e)
+        return false
+    }
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = mime
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    return try {
+        context.startActivity(Intent.createChooser(intent, "保存或分享文件"))
+        true
+    } catch (e: Exception) {
+        Log.w(TAG, "shareLocalMedia: no chooser activity", e)
+        false
+    }
+}
+
+/**
+ * 扩展名 → MIME 映射（v2026-09-28 新增，下载导出用）
+ *
+ * 覆盖编辑器正文可能出现的媒体：图片（image 系）、语音（audio 系）、视频（video 系）。
+ * 返回 null = 不认识的扩展名，调用方按「不支持下载」提示（宁可拒绝也不猜 MIME，
+ * 猜错会让相册出现无法打开的条目）。
+ */
+private fun mediaMimeOf(fileName: String): String? = when (
+    fileName.substringAfterLast('.', "").lowercase()
+) {
+    "jpg", "jpeg" -> "image/jpeg"
+    "png" -> "image/png"
+    "gif" -> "image/gif"
+    "webp" -> "image/webp"
+    "bmp" -> "image/bmp"
+    "m4a" -> "audio/mp4"
+    "mp3" -> "audio/mpeg"
+    "wav" -> "audio/wav"
+    "aac" -> "audio/aac"
+    "ogg" -> "audio/ogg"
+    "mp4" -> "video/mp4"
+    "webm" -> "video/webm"
+    else -> null
+}
+
+/**
  * 创建编辑器 WebView：Bridge 注入 + 字体流拦截 + 错误日志
  *
  * @param backgroundColor 编辑区背景色（v1.9）：作为 WebView 自身底色，
@@ -1513,6 +1723,25 @@ private fun createEditorWebView(
                         if (!url.isNullOrEmpty() && !isEditorInternalUrl(url)) {
                             Log.d(TAG, "nav intercepted (window.open): $url")
                             openInBrowser(appContext, url)
+                        } else if (url != null && isExportableLocalMedia(url)) {
+                            /**
+                             * v2026-09-28 新增：本地媒体导出（官方「下载」按钮的落点）。
+                             *
+                             * **为什么在这里接管**：官方 FileDownloadButton 的下载实现就是
+                             * `window.open(媒体 file:// URL)`（@blocknote/react 的
+                             * FileDownloadButton.tsx:onClick，无 resolveFileUrl 时直开）。
+                             * 该 URL 会命中 [isEditorInternalUrl] 的「本地资源」白名单
+                             * （编辑器内图片/音视频本来就要在 WebView 里加载），旧逻辑
+                             * 在此静默忽略 → 用户点「下载」毫无反应。
+                             *
+                             * **为什么能安全接管**：本回调挂在 [onCreateWindow] 的**一次性
+                             * 临时 WebView** 上，只有 `window.open` 主动打开的 URL 才会走到
+                             * 这里——编辑器内 `<img>`/`<audio>` 等资源加载是子资源请求，
+                             * 走 `shouldInterceptRequest`，永不经过本回调。因此此处出现的
+                             * 本地媒体 URL 必然是用户主动点「下载」产生的，不存在误伤。
+                             */
+                            Log.d(TAG, "nav intercepted (window.open -> export media): $url")
+                            exportLocalMediaToGallery(appContext, url)
                         } else if (url != null) {
                             Log.d(TAG, "window.open to internal url ignored: $url")
                         }
