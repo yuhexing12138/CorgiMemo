@@ -511,14 +511,17 @@ fun InspirationEditScreen(
 
     /**
      * BlockNote 迁移（P1.5）：视频/音频/文件选择 Launcher——
-     * 选后拷贝到内部存储，经 Bridge 插入对应媒体块（file:// URL 由 JS 侧生成）。
+     * 选后**原样字节拷贝**到内部存储（v2026-09-28：三媒体统一改走
+     * [ImageUtils.copyUriToInternalStorageRaw]，不再走图片压缩链路——
+     * BitmapFactory 解码非图片媒体必失败返回 null，导致插入命令从未发出的根因），
+     * 经 Bridge 插入对应媒体块（file:// URL 由 JS 侧生成）。
      */
     val mediaVideoLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
             coroutineScope.launch {
-                ImageUtils.copyUriToInternalStorage(context, it)?.let { path ->
+                ImageUtils.copyUriToInternalStorageRaw(context, it)?.let { path ->
                     blockNoteController.insertVideo(path)
                 }
             }
@@ -529,7 +532,7 @@ fun InspirationEditScreen(
     ) { uri: Uri? ->
         uri?.let {
             coroutineScope.launch {
-                ImageUtils.copyUriToInternalStorage(context, it)?.let { path ->
+                ImageUtils.copyUriToInternalStorageRaw(context, it)?.let { path ->
                     blockNoteController.insertAudio(path)
                 }
             }
@@ -540,7 +543,7 @@ fun InspirationEditScreen(
     ) { uri: Uri? ->
         uri?.let {
             coroutineScope.launch {
-                ImageUtils.copyUriToInternalStorage(context, it)?.let { path ->
+                ImageUtils.copyUriToInternalStorageRaw(context, it)?.let { path ->
                     blockNoteController.insertFile(path)
                 }
             }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -410,5 +411,111 @@ object ImageUtils {
      */
     suspend fun copyUriToInternalStorage(context: Context, uri: Uri): String? {
         return compressAndSaveImage(context, uri)
+    }
+
+    /**
+     * 将任意类型 Uri **原样字节拷贝**到应用内部存储（v2026-09-28：媒体插入修复）
+     *
+     * 与 [copyUriToInternalStorage]（图片压缩专用）的区别：本方法不做 Bitmap 解码、
+     * 不做压缩、不转 JPEG，仅按字节流原样落盘——适用于视频/音频/文件等非图片媒体。
+     * 此前视频/音频/文件插入走图片压缩链路，BitmapFactory 解码必然失败返回 null，
+     * 导致 `insertVideo` 等命令从未发出（选完媒体后静默无反应）的根因。
+     *
+     * 存储目录与图片一致（files/pictures/），文件名格式：
+     * `MEDIA_yyyyMMdd_HHmmss_SSS.<扩展名>`，扩展名解析优先级：
+     * 1. ContentProvider 的 DISPLAY_NAME 后缀；
+     * 2. MIME 类型经 MimeTypeMap 推断；
+     * 3. 按 MIME 大类兜底（视频 mp4 / 音频 mp3 / 其余 bin）。
+     *
+     * @param context 应用上下文
+     * @param uri 源媒体 Content URI
+     * @return 保存后的绝对路径字符串，失败返回 null
+     */
+    suspend fun copyUriToInternalStorageRaw(context: Context, uri: Uri): String? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                    ?: return@withContext null
+
+                /** 确保目录存在（与图片共用 pictures 目录） */
+                val picturesDir = getPicturesDirectory(context)
+                if (!picturesDir.exists()) {
+                    picturesDir.mkdirs()
+                }
+
+                val fileName = "MEDIA_${generateTimestamp()}.${resolveUriExtension(context, uri)}"
+                val outputFile = File(picturesDir, fileName)
+
+                /** 8KB 缓冲原样字节拷贝，不触碰内容 */
+                FileOutputStream(outputFile).use { out ->
+                    inputStream.use { input ->
+                        val buffer = ByteArray(8 * 1024)
+                        var read: Int
+                        while (input.read(buffer).also { read = it } != -1) {
+                            out.write(buffer, 0, read)
+                        }
+                        out.flush()
+                    }
+                }
+
+                outputFile.absolutePath
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
+        }
+    }
+
+    /** 生成 `yyyyMMdd_HHmmss_SSS` 时间戳（毫秒精度防重名） */
+    private fun generateTimestamp(): String =
+        SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.getDefault()).format(Date())
+
+    /**
+     * 解析 Uri 对应的文件扩展名（不含点）
+     *
+     * 优先取 ContentProvider 提供的原始文件名后缀；取不到再按 MIME 类型推断；
+     * 最终按 MIME 大类兜底，保证扩展名永不为空。
+     *
+     * @param context 应用上下文
+     * @param uri 媒体 Content URI
+     * @return 扩展名字符串（如 "mp4"、"mp3"、"bin"）
+     */
+    private fun resolveUriExtension(context: Context, uri: Uri): String {
+        /** 第一优先：查询 DISPLAY_NAME 的真实后缀 */
+        try {
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (nameIndex >= 0 && cursor.moveToFirst()) {
+                    val displayName = cursor.getString(nameIndex)
+                    val dot = displayName?.lastIndexOf('.')
+                    if (dot != null && dot >= 0 && dot < displayName.length - 1) {
+                        return displayName.substring(dot + 1).lowercase(Locale.getDefault())
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            /** 查询失败则继续走 MIME 推断 */
+        }
+
+        /** 第二优先：MIME 类型 → 标准扩展名 */
+        val mime = try {
+            context.contentResolver.getType(uri)
+        } catch (_: Exception) {
+            null
+        }
+        if (!mime.isNullOrBlank()) {
+            MimeTypeMap.getSingleton()
+                .getExtensionFromMimeType(mime)
+                ?.let { return it }
+            /** MimeTypeMap 不认识的类型按大类兜底 */
+            return when {
+                mime.startsWith("video") -> "mp4"
+                mime.startsWith("audio") -> "mp3"
+                else -> "bin"
+            }
+        }
+
+        /** 最后兜底：无任何线索时给通用扩展名 */
+        return "bin"
     }
 }
