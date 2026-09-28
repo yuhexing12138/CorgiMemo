@@ -181,40 +181,56 @@
 }
 
 /**
- * 视频块：画面点击穿透 + 原生控件保留（v2026-09-28 修复·第三轮定稿）
+ * 视频块：画面点击穿透 + 原生控件保留（v2026-09-28 修复·第四轮：细粒度恢复）
  *
  * **需求冲突**（两个能力都要）：
- * 1. tap 视频块要能唤出官方工具条——第二轮已查明：`<video>` 是原生媒体元素，
- *    Android WebView 里 Chromium 把落在视频画面上的触摸交给媒体手势层处理，
- *    不像 `<img>` 把 click 冒泡给 ProseMirror → 不穿透则点画面弹不出工具条；
+ * 1. tap 视频块要能唤出官方工具条——`<video>` 是原生媒体元素，Android
+ *    WebView 里 Chromium 把落在视频画面上的触摸交给媒体手势层处理，不像
+ *    `<img>` 把 click 冒泡给 ProseMirror → 不穿透则点画面弹不出工具条；
  * 2. 官方 video render 显式设了 `video.controls = true`（blocks dist
  *    `a.controls = !0`，audio 分支同款）——播放键/暂停键/进度条是 Chromium
  *    UA shadow DOM 里的**原生媒体控件**，必须保持可点。
  *
- * **修法 = CSS pointer-events 的「父 none / 子 auto 恢复」机制分层**：
- * - 第一条：video 整体对命中测试"隐形"→ 点击画面穿透到官方视觉媒体包装层
- *   `.bn-visual-media-wrapper`（image/video/audio 共用）→ 与点边缘/空白同路径
- *   （NodeSelection → 工具条，已真机验证）；
- * - 第二条：UA shadow 内部的原生控件容器伪元素**显式恢复命中**——标准 CSS
- *   语义是"祖先为 none 时后代显式 auto 可恢复"，media controls 在 Chromium
- *   里是 shadow DOM 内真实元素，适用同规则。控件由 `controls = true` 常驻
- *   DOM（不是 tap 临时 overlay），恢复后始终可点。
+ * **四轮演进（全记录，防再绕弯）**：
+ * - 第二轮：video 整体 `pointer-events: none` → 工具条好使，但控件全灭
+ *   （真机：播放/进度条点不动）；
+ * - 第三轮：恢复 `::-webkit-media-controls-enclosure / -panel` → **失败**：
+ *   enclosure 在 Android Chromium 上是**覆盖整个视频区域的容器**（进度条
+ *   只在底部，容器 div 是全尺寸的），恢复它 = 点击画面命中 enclosure
+ *   （retarget 成 video）→ 媒体手势层照旧吃掉 → 穿透被完全抵消，
+ *   工具条又不弹了；
+ * - **第四轮（本版）**：把恢复粒度缩到**具体控件伪元素**——播放键/进度条/
+ *   静音/全屏按钮各自恢复命中，全尺寸容器（enclosure/panel/中央 overlay
+ *   播放键）保持穿透。点击画面空白仍走 wrapper 路径弹工具条，点具体按钮
+ *   则命中控件控制播放。第三轮真机结果（恢复 enclosure 后画面点击确实
+ *   被它截获）已证明 shadow 伪元素的「父 none / 子 auto 恢复」机制在本机
+ *   WebView 生效，只是恢复面积太大——本版只是把面积收窄。
  *
  * ⚠️ 历史教训（第二轮注释的错误论断，在此以正视听）：曾断言「官方 video
  * 无 controls 属性，本无块内交互可损失」——**错**。官方明确设了
  * `controls = true`，当时的 pointer-events:none 把播放/进度条一并砍掉
- * （真机反馈"视频按键全部无法点击"）。根因即本条修正。
+ * （真机反馈"视频按键全部无法点击"）。
  *
- * ⚠️ 兼容性：`::-webkit-media-controls-enclosure / -panel` 是 Chromium
- * 长期保留的 media controls 伪元素（Android System WebView 80+ 均支持）。
- * 若个别版本伪元素恢复失效，退化表现 = 控件不可点（与第二轮相同，不会更糟），
- * 工具条路径不受影响；届时再考虑自绘控制层方案。
+ * ⚠️ 兼容性：这些伪元素是 Chromium 长期保留的 media controls 选择器
+ * （Android System WebView 80+ 均支持）。若个别版本某按钮恢复失效，
+ * 退化表现 = 该按钮不可点（画面工具条不受影响）；若整组失效，届时升级
+ * 自绘控制层方案（项目有语音条/文件名自绘先例）。
  */
 .bn-visual-media-wrapper video {
   pointer-events: none;
 }
-.bn-visual-media-wrapper video::-webkit-media-controls-enclosure,
-.bn-visual-media-wrapper video::-webkit-media-controls-panel {
+/**
+ * 中央 overlay 播放键（tap 画面时浮现的大按钮）覆盖整个视频画面——
+ * 显式钉在穿透态：若它默认带有效命中，会把"点画面弹工具条"再次截胡。
+ * 播放/暂停走底部面板的具体按钮（上方已恢复命中）。
+ */
+.bn-visual-media-wrapper video::-webkit-media-controls-overlay-play-button {
+  pointer-events: none;
+}
+.bn-visual-media-wrapper video::-webkit-media-controls-play-button,
+.bn-visual-media-wrapper video::-webkit-media-controls-timeline,
+.bn-visual-media-wrapper video::-webkit-media-controls-mute-button,
+.bn-visual-media-wrapper video::-webkit-media-controls-fullscreen-button {
   pointer-events: auto;
 }
 
