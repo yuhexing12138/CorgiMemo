@@ -181,31 +181,41 @@
 }
 
 /**
- * 视频块触摸穿透（v2026-09-28：视频点击唤不出工具条修复·第二轮）
+ * 视频块：画面点击穿透 + 原生控件保留（v2026-09-28 修复·第三轮定稿）
  *
- * **现象**（真机实测）：tap 视频画面本体唤不出官方工具条；tap 视频边缘或
- * 缩小后的同行空白**可以**唤出——说明焦点链与 NodeSelection 路径已通
- * （上轮 insertVideo 补 `focus()` 已生效），唯独落在 `<video>` 元素上的
- * 点击全部丢失。
+ * **需求冲突**（两个能力都要）：
+ * 1. tap 视频块要能唤出官方工具条——第二轮已查明：`<video>` 是原生媒体元素，
+ *    Android WebView 里 Chromium 把落在视频画面上的触摸交给媒体手势层处理，
+ *    不像 `<img>` 把 click 冒泡给 ProseMirror → 不穿透则点画面弹不出工具条；
+ * 2. 官方 video render 显式设了 `video.controls = true`（blocks dist
+ *    `a.controls = !0`，audio 分支同款）——播放键/暂停键/进度条是 Chromium
+ *    UA shadow DOM 里的**原生媒体控件**，必须保持可点。
  *
- * **根因**：`<video>` 是原生媒体元素——Android WebView 里 Chromium 把落在
- * 视频画面上的触摸交给媒体手势层处理（tap 视频画面默认处于「播放/暂停」
- * 手势语境），不像 `<img>` 那样把 click 正常冒泡给 ProseMirror 的
- * handleClickOn → NodeSelection 无法在点视频本体时建立 → 工具条不弹。
+ * **修法 = CSS pointer-events 的「父 none / 子 auto 恢复」机制分层**：
+ * - 第一条：video 整体对命中测试"隐形"→ 点击画面穿透到官方视觉媒体包装层
+ *   `.bn-visual-media-wrapper`（image/video/audio 共用）→ 与点边缘/空白同路径
+ *   （NodeSelection → 工具条，已真机验证）；
+ * - 第二条：UA shadow 内部的原生控件容器伪元素**显式恢复命中**——标准 CSS
+ *   语义是"祖先为 none 时后代显式 auto 可恢复"，media controls 在 Chromium
+ *   里是 shadow DOM 内真实元素，适用同规则。控件由 `controls = true` 常驻
+ *   DOM（不是 tap 临时 overlay），恢复后始终可点。
  *
- * **修法**：`pointer-events: none` 让 video 元素对命中测试"隐形"，点击
- * 穿透到官方视觉媒体包装层 `.bn-visual-media-wrapper`（image/video/audio
- * 共用，blocks dist 双现）——与点边缘/空白**完全同一路径**（已被真机验证
- * 可弹）。
+ * ⚠️ 历史教训（第二轮注释的错误论断，在此以正视听）：曾断言「官方 video
+ * 无 controls 属性，本无块内交互可损失」——**错**。官方明确设了
+ * `controls = true`，当时的 pointer-events:none 把播放/进度条一并砍掉
+ * （真机反馈"视频按键全部无法点击"）。根因即本条修正。
  *
- * **为什么安全**：
- * - 官方 video render 无 `controls` 属性，本就没有块内交互可损失；
- * - `<img>` 不动（真机已验证点击正常）；`<audio>` 不动（无 controls 时无
- *   可见控件区，无触摸面积）；
- * - 未来若做块内自绘播放控制层，画在 wrapper 内、video 之外，不受本规则影响。
+ * ⚠️ 兼容性：`::-webkit-media-controls-enclosure / -panel` 是 Chromium
+ * 长期保留的 media controls 伪元素（Android System WebView 80+ 均支持）。
+ * 若个别版本伪元素恢复失效，退化表现 = 控件不可点（与第二轮相同，不会更糟），
+ * 工具条路径不受影响；届时再考虑自绘控制层方案。
  */
 .bn-visual-media-wrapper video {
   pointer-events: none;
+}
+.bn-visual-media-wrapper video::-webkit-media-controls-enclosure,
+.bn-visual-media-wrapper video::-webkit-media-controls-panel {
+  pointer-events: auto;
 }
 
 /* ⚠️ 不要加 `html { scroll-behavior: smooth }`（v1.11.9 两轮实测均已移除）：
