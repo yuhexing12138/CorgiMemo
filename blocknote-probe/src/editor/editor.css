@@ -180,6 +180,34 @@
   height: auto !important;
 }
 
+/**
+ * 视频块触摸穿透（v2026-09-28：视频点击唤不出工具条修复·第二轮）
+ *
+ * **现象**（真机实测）：tap 视频画面本体唤不出官方工具条；tap 视频边缘或
+ * 缩小后的同行空白**可以**唤出——说明焦点链与 NodeSelection 路径已通
+ * （上轮 insertVideo 补 `focus()` 已生效），唯独落在 `<video>` 元素上的
+ * 点击全部丢失。
+ *
+ * **根因**：`<video>` 是原生媒体元素——Android WebView 里 Chromium 把落在
+ * 视频画面上的触摸交给媒体手势层处理（tap 视频画面默认处于「播放/暂停」
+ * 手势语境），不像 `<img>` 那样把 click 正常冒泡给 ProseMirror 的
+ * handleClickOn → NodeSelection 无法在点视频本体时建立 → 工具条不弹。
+ *
+ * **修法**：`pointer-events: none` 让 video 元素对命中测试"隐形"，点击
+ * 穿透到官方视觉媒体包装层 `.bn-visual-media-wrapper`（image/video/audio
+ * 共用，blocks dist 双现）——与点边缘/空白**完全同一路径**（已被真机验证
+ * 可弹）。
+ *
+ * **为什么安全**：
+ * - 官方 video render 无 `controls` 属性，本就没有块内交互可损失；
+ * - `<img>` 不动（真机已验证点击正常）；`<audio>` 不动（无 controls 时无
+ *   可见控件区，无触摸面积）；
+ * - 未来若做块内自绘播放控制层，画在 wrapper 内、video 之外，不受本规则影响。
+ */
+.bn-visual-media-wrapper video {
+  pointer-events: none;
+}
+
 /* ⚠️ 不要加 `html { scroll-behavior: smooth }`（v1.11.9 两轮实测均已移除）：
    其动画时长固定（~500ms），键盘弹出时 visualViewport 的 resize 逐帧触发、
    每帧都重启动画——动画从未跑完即被取消，收敛不可预期（真机实测：滑到底
