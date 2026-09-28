@@ -1158,15 +1158,38 @@ export default function EditorApp() {
                   type: blockType,
                   props: {
                     url: toWebImageUrl(mediaPath),
-                    ...(blockType === "file"
-                      ? { name: mediaPath.split("/").pop() ?? "file" }
-                      : {}),
+                    /**
+                     * v2026-09-28：统一补 `name`（与上方 insertImage 分支同口径）。
+                     * 官方文件形态（工具条 Toggle preview 翻 showPreview=false）渲染
+                     * `createFileNameWithIcon` 直读 `block.props.name`——缺省恒为
+                     * 空串，文件形态只剩图标、无名字。file 分支此前已传，video/audio 补齐。
+                     */
+                    name: mediaPath.split("/").pop() ?? "",
                   },
                 },
               ],
               cursor.block,
               "after"
             );
+            /**
+             * v2026-09-28：插入后立即把焦点还给 WebView（官方 `editor.focus()`）
+             * ——与上方 insertImage 分支（v2026-09-24）完全同构的修复。
+             *
+             * **为什么必须**：官方悬浮工具栏由 `FormattingToolbarExtension` 驱动，
+             * `pointerup`（root capture）时仅在 **`editor.isFocused()` 为真**时才
+             * 重算 `shouldShow()`。本命令由宿主 Compose 底部栏触发：点按钮那一刻
+             * WebView 已失焦，`insertBlocks` 又不恢复焦点；且 tap 媒体块
+             * （video/audio 与 img 同理）不会像 tap 正文那样把焦点还给编辑器
+             * → 用户 tap 视频 pointerup 时 `isFocused()=false` → 不重算；
+             * 点击建立的 NodeSelection 此后不再变化，再无重算时机
+             * → 工具条永不出现（真机现象）。
+             *
+             * **修法**：插入即 `focus()`（= `prosemirrorView.focus()`，与
+             * `isFocused()` 同源），tap 视频 pointerup 时编辑器已持有焦点
+             * → `shouldShow()` 对 NodeSelection(video) 放行 → 工具条正常弹出。
+             * 副作用：焦点回归可能让软键盘随之前弹（与图片分支同款预期行为）。
+             */
+            mediaEd.focus();
           }
           break;
         }
