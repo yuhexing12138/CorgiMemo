@@ -2177,6 +2177,13 @@ function bindVideoBlockGestures(ed: any): () => void {
     return !!t.closest('[data-content-type="video"]');
   };
 
+  /** TEMP-DEBUG（长按弹条排错，验证后删除）：target 描述（tag+类名前 60 字符） */
+  const describeTarget = (t: EventTarget | null): string => {
+    if (!(t instanceof Element)) return String(t);
+    const cls = (t.className && typeof t.className === "string" ? t.className : "").split(/\s+/).slice(0, 2).join(".");
+    return `${t.tagName.toLowerCase()}${cls ? "." + cls : ""}`;
+  };
+
   /** 长按成立：手动建立 NodeSelection → 官方 onChange 重算 → 工具条弹出 */
   const selectVideoBlock = (startEl: Element) => {
     ed.focus();
@@ -2190,8 +2197,16 @@ function bindVideoBlockGestures(ed: any): () => void {
       }
       return true;
     });
+    /** TEMP-DEBUG（验证后删除） */
+    sendUp({ type: "diagnostic", message: `[vGesture] fire blockId=${blockId} targetPos=${targetPos}` });
     if (targetPos >= 0) {
       view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, targetPos)));
+      /** TEMP-DEBUG（验证后删除）：dispatch 后的选区与工具条 store 状态 */
+      const sel = view.state.selection;
+      sendUp({
+        type: "diagnostic",
+        message: `[vGesture] dispatched sel=${sel.constructor.name} empty=${sel.empty}`,
+      });
     }
   };
 
@@ -2209,6 +2224,8 @@ function bindVideoBlockGestures(ed: any): () => void {
     try {
       const sel = view.state.selection;
       if (sel instanceof NodeSelection && sel.node.type.name === "video") {
+        /** TEMP-DEBUG（验证后删除） */
+        sendUp({ type: "diagnostic", message: "[vGesture] up: collapse" });
         view.dispatch(
           view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(sel.from)))
         );
@@ -2233,7 +2250,13 @@ function bindVideoBlockGestures(ed: any): () => void {
   };
 
   const onPointerDown = (e: PointerEvent) => {
-    if (!e.isPrimary || !inVideoPictureArea(e.target)) return;
+    /** TEMP-DEBUG（验证后删除）：进入判定前先报 target 与判定结果 */
+    const areaHit = inVideoPictureArea(e.target);
+    sendUp({
+      type: "diagnostic",
+      message: `[vGesture] down tgt=${describeTarget(e.target)} inArea=${areaHit} primary=${e.isPrimary}`,
+    });
+    if (!e.isPrimary || !areaHit) return;
     /** 拦截：ProseMirror 不收到 pointer 流 → 点击不建立 NodeSelection（一律不弹）；
      * preventDefault 阻断合成 click（suppressNextClick 免了）与原生长按选择 UI */
     e.preventDefault();
