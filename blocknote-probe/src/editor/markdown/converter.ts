@@ -558,11 +558,23 @@ export function toLocalPath(url: string): string {
     .join("/");
 }
 
-/** 图片块 URL 规范化（载入后处理）：本地路径包装 file://（幂等） */
+/**
+ * 图片块载入后处理（幂等）：
+ * ① URL 规范化——本地路径包装 file://（WebView 可加载）；
+ * ② name 存量兜底（v2026-09-28）——历史插入的 image 块未设置 name prop（默认空串），
+ *    文件形态（Toggle preview 切 showPreview=false）的文件名区会渲染为空白。
+ *    从 url 解码后提取 basename 补齐（file:// 剥回本地路径再取段，URI 编码的中文
+ *    文件名同步还原）；name 已有值 / url 为空串（未上传）时不动。
+ *    兜底值在用户下次保存时随 markdown 写回（`![name](path)`），仅此一次、无损可逆。
+ */
 function normalizeImageUrls(blocks: any[]): void {
   for (const b of blocks) {
     if (b?.type === "image" && typeof b.props?.url === "string") {
       b.props.url = toWebImageUrl(b.props.url);
+      if (!b.props.name) {
+        const base = toLocalPath(b.props.url).split("/").pop() ?? "";
+        if (base) b.props.name = base;
+      }
     }
     // 嵌套子块同样处理
     if (Array.isArray(b?.children)) normalizeImageUrls(b.children);
@@ -810,7 +822,26 @@ export function blocksToMd(editor: any, blocks: any[]): string {
       return { type: "divider" };
     }
     if (b?.type === "image" && typeof b.props?.url === "string") {
-      return { ...b, props: { ...b.props, url: toLocalPath(b.props.url) } };
+      return {
+        ...b,
+        props: {
+          ...b.props,
+          url: toLocalPath(b.props.url),
+          /**
+           * v2026-09-28：showPreview 状态不持久化（统一按图片形态导出）。
+           *
+           * **为什么必须**：官方 imageToExternalHTML 对 showPreview=false（文件形态，
+           * 图片工具条 Toggle preview 的产物）输出 `<a href>` 而非 `<img>`，经
+           * HTML→markdown 管线落成 `[name](path)` 链接语法——vitest 往返实测
+           * （tests/markdown/toggle-preview-contract.test.ts）载入后块类型还原为
+           * paragraph，**图片块彻底丢失**。
+           * 统一置 true：预览态导出 `<img alt=name>` → `![name](path)`，载入还原
+           * image 块。语义取舍：Toggle preview 是编辑器内的**临时**预览切换，
+           * 保存后回到图片形态（本项目图片均为本地相册图，无持久化文件形态诉求）。
+           */
+          showPreview: true,
+        },
+      };
     }
     return b;
   });

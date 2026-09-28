@@ -158,7 +158,9 @@ describe("markdown 转换层：链接往返（终版：裸 URL 不识别，自�
     expect(link?.content?.[0]?.text).toBe("点这里");
   });
 
-  it("自链接端到端幂等：blocks → 「URL」→ blocks → 再导出仍为「URL」", async () => {
+  it("自链接端到端幂等：blocks → token → blocks → 再导出仍为 token", async () => {
+    // v2026-09-28 断言更新：「」显式包裹已升级为 @@@CORGI_LINK_ token 契约
+    // （v2026-09-24 终版，「」是键盘可输入字符无法根除歧义；见 link-contract.test.ts）
     const linkBlock = {
       type: "paragraph",
       content: [
@@ -170,11 +172,11 @@ describe("markdown 转换层：链接往返（终版：裸 URL 不识别，自�
       ],
     };
     const md1 = blocksToMd(editor, [linkBlock]);
-    expect(md1.trim()).toBe("「https://a.com/b」");
+    expect(md1.trim()).toBe("@@@CORGI_LINK_https://a.com/b@@@");
     const blocks2 = await mdToBlocks(editor, md1);
     const link = blocks2[0]?.content?.find((x: any) => x.type === "link");
     expect(link?.href).toBe("https://a.com/b");
     const md2 = blocksToMd(editor, blocks2);
-    expect(md2.trim()).toBe("「https://a.com/b」");
+    expect(md2.trim()).toBe("@@@CORGI_LINK_https://a.com/b@@@");
   });
 });

@@ -1049,7 +1049,28 @@ export default function EditorApp() {
           if (ed && path) {
             const cursor = ed.getTextCursorPosition();
             ed.insertBlocks(
-              [{ type: "image", props: { url: toWebImageUrl(path) } }],
+              [
+                {
+                  type: "image",
+                  props: {
+                    url: toWebImageUrl(path),
+                    /**
+                     * v2026-09-28：补 `name`（文件名含扩展名，与下方 insertFile 分支同口径）。
+                     *
+                     * **为什么必须**：官方文件形态渲染（图片工具条 Toggle preview 把
+                     * `showPreview` 翻成 false 后）走 `createFileBlockWrapper` →
+                     * `createFileNameWithIcon`，文件名直接读 `block.props.name`
+                     * ——不传时恒为 propSchema 默认空串，文件形态只剩图标、无名字无格式
+                     * （真机现象）。上传/替换链路的 name 由官方 UploadTab 自写（File.name），
+                     * 仅本命令链路漏配。
+                     *
+                     * **往返闭环**：预览态导出 `<img alt=name>` → markdown `![name](path)`；
+                     * 载入 `parseImageElement` 把 alt 还原回 name，无 converter 配套改动。
+                     */
+                    name: path.split("/").pop() ?? "",
+                  },
+                },
+              ],
               cursor.block,
               "after"
             );
