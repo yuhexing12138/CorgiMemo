@@ -1,5 +1,5 @@
 /**
- * 图片 Toggle preview 往返契约（v2026-09-28 新增）。
+ * 图片 Toggle preview 往返契约（v2026-09-28 新增；同日第二轮改为持久化契约）。
  *
  * **背景（真机故障）**：「图片编辑工具条点 Toggle preview 切到文件形态后，
  * 文件名与格式不显示（只剩图标）」。
@@ -10,20 +10,23 @@
  * ——空串即空白文件名。同文件 insertFile 分支早已带 name（`path.split("/").pop()`），
  * image 分支漏配。
  *
- * **修复**（两处 converter 配套 + 一处命令链）：
- * 1. insertImage 命令补 `name`（本地路径 basename，与 insertFile 同口径）；
- * 2. 载入侧 `normalizeImageUrls` 对 name 为空的**存量**块从 url 解码提取 basename 兜底；
- * 3. 导出侧 `blocksToMd` 统一 `showPreview: true`——官方对文件形态（showPreview=false）
- *    导出 `<a>` 链接语法（`[name](path)`），载入后图片块降级为 paragraph（**丢图**，
- *    本文件 v1 观察测试实测）。showPreview 状态不持久化：Toggle preview 是编辑器内
- *    临时预览切换，保存即回到图片形态。
+ * **修复演进**：
+ * - 第一轮：insertImage 补 name + 存量兜底；showPreview 统一置 true（不持久化）。
+ * - 第二轮（用户需求：文件形态保存后编辑页要保持）：showPreview=false **持久化**，
+ *   载体借用 figure 契约——导出侧 caption 尾部注入 `@@@CORGI_FILEVIEW@@@` token
+ *   （官方按「caption 非空」走 figure HTML，形态与 v2026-09-28 figure 契约同构，
+ *   下游 isImageSegment / saveInlineMediaBlocks / toPlainText 天然兼容）；
+ *   载入侧 [restoreImageFileView] 剥 token 还原 showPreview=false。
+ *   **禁止官方 `<a>` 形态**：showPreview=false 直接导出落成 `[name](path)` 链接
+ *   语法，载入降级 paragraph（丢块，v1 实测），且与手打链接无法区分。
  *
  * **契约**（本文件断言）：
  * - 预览态（showPreview=true）带 name：导出 `![name](path)`，载入还原 name
  *   （官方 parseImageElement: alt → name）；
  * - 存量形态（name 为空）：载入兜底出 basename，下次保存写回 `![name](path)`；
- * - 文件形态（showPreview=false）：导出与预览态同形（`![name](path)`），
- *   载入还原 image 块（丢图回归固化）。
+ * - 文件形态（showPreview=false）：导出 figure HTML + figcaption 尾随 token；
+ *   往返还原 image 块 + showPreview=false + caption 干净（纯 token → 空串；
+ *   备注尾随 token → 备注还原）；预览态 caption 不受 token 污染。
  */
 import { describe, it, expect, beforeAll } from "vitest";
 import { BlockNoteEditor } from "@blocknote/core";
@@ -60,14 +63,6 @@ describe("图片导出契约：name → markdown alt（Toggle preview 修复的�
     const md = blocksToMd(editor, [UNNAMED_IMAGE]);
     expect(md.trim()).toBe(`![](${LOCAL_PATH})`);
   });
-
-  it("文件形态（showPreview=false）导出与预览态同形——状态不持久化，不落链接语法", () => {
-    const md = blocksToMd(editor, [
-      { type: "image", props: { url: LOCAL_PATH, name: "IMG_0928.jpg", showPreview: false } },
-    ]);
-    // 修复前实测：官方 <a> 形态落成 [IMG_0928.jpg](path)（丢图源头）
-    expect(md.trim()).toBe(`![IMG_0928.jpg](${LOCAL_PATH})`);
-  });
 });
 
 describe("图片载入契约：markdown alt → name（往返闭环）", () => {
@@ -89,14 +84,52 @@ describe("图片载入契约：markdown alt → name（往返闭环）", () => {
   });
 });
 
-describe("丢图回归固化：文件形态保存 → 重进编辑页", () => {
-  it("showPreview=false 的块导出/载入往返后仍为 image 块（修复前还原为 paragraph）", async () => {
+describe("文件形态（showPreview=false）持久化契约（v2026-09-28 第二轮）", () => {
+  it("导出：文件形态转 figure HTML，figcaption 尾部携带 CORGI_FILEVIEW token", () => {
+    const md = blocksToMd(editor, [
+      { type: "image", props: { url: LOCAL_PATH, name: "IMG_0928.jpg", showPreview: false } },
+    ]);
+    // 载体 = figure 契约形态（下游 isImageSegment / saveInlineMediaBlocks 已认）；
+    // 禁止官方 <a> 形态（[name](path) 链接语法载入丢块，v1 实测）
+    expect(md).toContain("<figure");
+    expect(md).toContain(`alt="IMG_0928.jpg"`);
+    expect(md).toContain("@@@CORGI_FILEVIEW@@@");
+    expect(md).not.toContain("![");
+  });
+
+  it("往返：文件形态保存 → 重进编辑页还原 image 块 + showPreview=false + caption 干净", async () => {
     const md = blocksToMd(editor, [
       { type: "image", props: { url: LOCAL_PATH, name: "IMG_0928.jpg", showPreview: false } },
     ]);
     const blocks = await mdToBlocks(editor, md);
     const img = blocks.find((b: any) => b?.type === "image");
     expect(img).toBeDefined();
+    expect(img.props.showPreview).toBe(false);
     expect(img.props.name).toBe("IMG_0928.jpg");
+    // 纯 token figcaption → 剥离后 caption 为空（无备注的文件形态）
+    expect(img.props.caption).toBe("");
+  });
+
+  it("备注 + 文件形态并存：caption 尾随 token，载入剥离后备注还原", async () => {
+    const md = blocksToMd(editor, [
+      {
+        type: "image",
+        props: { url: LOCAL_PATH, name: "IMG_0928.jpg", caption: "备注1", showPreview: false },
+      },
+    ]);
+    expect(md).toContain("备注1@@@CORGI_FILEVIEW@@@");
+    const blocks = await mdToBlocks(editor, md);
+    const img = blocks.find((b: any) => b?.type === "image");
+    expect(img).toBeDefined();
+    expect(img.props.showPreview).toBe(false);
+    expect(img.props.caption).toBe("备注1");
+  });
+
+  it("预览态不受污染：caption 不注 token，往返 showPreview 恒非 false", async () => {
+    const md = blocksToMd(editor, [NAMED_IMAGE]);
+    expect(md).not.toContain("@@@CORGI_FILEVIEW@@@");
+    const blocks = await mdToBlocks(editor, md);
+    const img = blocks.find((b: any) => b?.type === "image");
+    expect(img.props.showPreview).not.toBe(false);
   });
 });

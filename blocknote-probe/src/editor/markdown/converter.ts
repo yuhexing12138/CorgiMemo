@@ -595,6 +595,17 @@ function normalizeImageUrls(blocks: any[]): void {
  */
 const LINK_TOKEN_PREFIX = "@@@CORGI_LINK_";
 const LINK_TOKEN_SUFFIX = "@@@";
+
+/**
+ * 文件形态标记 token（v2026-09-28 第二轮）：image 块 Toggle preview 切到文件形态
+ * （showPreview=false）后需要**持久化**该状态——官方对文件形态没有往返设计
+ * （导出 `<a>` 载入即丢块）。载体借用 figure 契约：导出侧把 token 追加进 caption
+ * （blocksToMd ① 预处理），官方按「caption 非空」走 figure HTML；载入侧
+ * [restoreImageFileView] 从 caption 剥 token 并还原 showPreview=false。
+ * token 为键盘打不出的 `@@@CORGI_` 家族序列（与 BLANK/DIVIDER/LINK 同家族，
+ * Compose 侧 INTERNAL_TOKEN_REGEX 通配剥除天然兼容）。
+ */
+const FILEVIEW_TOKEN = "@@@CORGI_FILEVIEW@@@";
 /** 载入端 token 匹配：非贪婪到最近的尾部 @@@（URL 含单个 @ 不影响，连续 @@
  * 会截断——自担的极端场景） */
 const LINK_TOKEN_RE = /@@@CORGI_LINK_([\s\S]*?)@@@/g;
@@ -800,7 +811,31 @@ export async function mdToBlocks(editor: any, markdown: string): Promise<any[]> 
 
   // ⑥ 后处理：图片 URL 规范化（本地路径 → file://，WebView 可加载）
   normalizeImageUrls(colored);
+  // ⑦ 后处理：文件形态标记还原（caption 剥 token → showPreview=false，见函数注释）
+  restoreImageFileView(colored);
   return colored;
+}
+
+/**
+ * 文件形态标记还原（载入后处理，v2026-09-28 第二轮）：
+ * 导出侧把 showPreview=false 的 image 块转成「caption 尾部携带
+ * `@@@CORGI_FILEVIEW@@@`」的 figure HTML（见 blocksToMd ① 预处理）；
+ * 官方 parser 解析 figure 后 caption 原样带 token，在此剥除并还原
+ * showPreview=false——编辑器随即按文件形态渲染（createFileNameWithIcon
+ * 读 name 显示「图标+文件名」）。caption 剥离后为空串 = 无备注的文件形态。
+ */
+function restoreImageFileView(blocks: any[]): void {
+  for (const b of blocks) {
+    if (
+      b?.type === "image" &&
+      typeof b.props?.caption === "string" &&
+      b.props.caption.includes(FILEVIEW_TOKEN)
+    ) {
+      b.props.caption = b.props.caption.split(FILEVIEW_TOKEN).join("").trim();
+      b.props.showPreview = false;
+    }
+    if (Array.isArray(b?.children)) restoreImageFileView(b.children);
+  }
 }
 
 /**
@@ -822,23 +857,29 @@ export function blocksToMd(editor: any, blocks: any[]): string {
       return { type: "divider" };
     }
     if (b?.type === "image" && typeof b.props?.url === "string") {
+      /**
+       * v2026-09-28（第二轮）：文件形态（showPreview=false）持久化——figure + token 载体。
+       *
+       * **为什么不能直接导出**：官方 imageToExternalHTML 对 showPreview=false 输出
+       * `<a href>` 而非 `<img>`，经 HTML→markdown 管线落成 `[name](path)` 链接语法，
+       * 载入后块类型还原为 paragraph——**图片块彻底丢失**（v1 实测，与用户手打链接
+       * 无法区分，同自链接契约的根因）。
+       *
+       * **载体**：置回 showPreview=true 并把 `@@@CORGI_FILEVIEW@@@` token 追加进
+       * caption（空 caption → 纯 token，有备注 → 备注尾随 token）→ 官方按
+       * 「caption 非空」走 figure HTML 导出（`<img alt=name>` + `<figcaption>`）。
+       * figure 形态下游全认（v2026-09-28 figure 契约：isImageSegment 双正则、
+       * saveInlineMediaBlocks、toPlainText 整行删除），仅备注提取需剥 token。
+       * 载入端还原见 [restoreImageFileView]。
+       */
+      const rawCaption = typeof b.props.caption === "string" ? b.props.caption : "";
+      const isFileView = b.props.showPreview === false;
       return {
         ...b,
         props: {
           ...b.props,
           url: toLocalPath(b.props.url),
-          /**
-           * v2026-09-28：showPreview 状态不持久化（统一按图片形态导出）。
-           *
-           * **为什么必须**：官方 imageToExternalHTML 对 showPreview=false（文件形态，
-           * 图片工具条 Toggle preview 的产物）输出 `<a href>` 而非 `<img>`，经
-           * HTML→markdown 管线落成 `[name](path)` 链接语法——vitest 往返实测
-           * （tests/markdown/toggle-preview-contract.test.ts）载入后块类型还原为
-           * paragraph，**图片块彻底丢失**。
-           * 统一置 true：预览态导出 `<img alt=name>` → `![name](path)`，载入还原
-           * image 块。语义取舍：Toggle preview 是编辑器内的**临时**预览切换，
-           * 保存后回到图片形态（本项目图片均为本地相册图，无持久化文件形态诉求）。
-           */
+          caption: isFileView ? rawCaption + FILEVIEW_TOKEN : rawCaption,
           showPreview: true,
         },
       };

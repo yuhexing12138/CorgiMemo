@@ -47,6 +47,20 @@ import com.corgimemo.app.ui.theme.ContentFontManager /** 内容字体（每条�
 import javax.inject.Inject
 
 /**
+ * 文件形态标记 token（v2026-09-28 第二轮）：与 blocknote-probe converter.ts 的
+ * `FILEVIEW_TOKEN` 严格一致。
+ *
+ * image 块经图片工具条 Toggle preview 切到文件形态（showPreview=false）后，编辑页
+ * 保存时导出侧（blocksToMd）把该 token 追加进 caption 借 figure HTML 持久化（官方
+ * 对文件形态直接导出 `<a>` 会丢块）；重进编辑页时载入侧（restoreImageFileView）
+ * 剥 token 还原 showPreview=false。本侧唯一消费点 = [saveInlineMediaBlocks] 1c)
+ * figure 提取的 figcaption → note：token 随 figcaption 落在 markdown 里，备注
+ * 落库前必须剥离，否则 content_blocks 的 note 列带 token、详情页备注列穿帮。
+ * 纯 token（无备注的文件形态）剥离后为空串，经 ifBlank 归 null。
+ */
+private const val FILEVIEW_TOKEN = "@@@CORGI_FILEVIEW@@@"
+
+/**
  * 灵感编辑 ViewModel
  * 管理灵感记录的编辑状态、保存/加载、撤销/重做等操作
  * 支持内容块（图片/语音）、子任务、标签、地理围栏等高级功能
@@ -1551,7 +1565,10 @@ class InspirationEditViewModel @Inject constructor(
          *     figcaption 文字即编辑页图片"备注"的落库形态：note 优先取
          *     [imagePropsByPath]（BodyBlock 镜像语义更全），无镜像时兜底用
          *     figcaption（经 [decodeHtmlText] 反转义）。figure 形态不含缩放信息，
-         *     displayWidthRatio 恒为 1f（WebView 图片块不参与 shrunk 机制）。*/
+         *     displayWidthRatio 恒为 1f（WebView 图片块不参与 shrunk 机制）。
+         *     v2026-09-28 第二轮：figcaption 尾部可能携带文件形态标记 token
+         *     （[FILEVIEW_TOKEN]，编辑页文件形态持久化的载体，见 [saveInlineMediaBlocks]
+         *     上方常量说明），提取时剥离。*/
         Regex(
             """<figure\b[^>]*>\s*<img\b[^>]*\ssrc="([^"]*)"[^>]*>""" +
                 """(?:\s*<figcaption>([\s\S]*?)</figcaption>)?\s*</figure>"""
@@ -1559,7 +1576,12 @@ class InspirationEditViewModel @Inject constructor(
             .findAll(markdown)
             .forEach { m ->
                 val path = decodeHtmlText(m.groupValues[1].trim())
-                val captionNote = decodeHtmlText(m.groupValues[2]).trim()
+                val captionNote = decodeHtmlText(m.groupValues[2])
+                    // v2026-09-28 第二轮：文件形态标记 token 借 figcaption 持久化（导出侧
+                    // blocksToMd 注入），备注落库前剥离——纯 token（无备注的文件形态）
+                    // 剥离后为空串，经下方 ifBlank 归 null，详情页备注列不穿帮
+                    .replace(FILEVIEW_TOKEN, "")
+                    .trim()
                 if (path.isNotBlank() && seen.add("image:$path")) {
                     val img = imagePropsByPath[path]
                     blocks.add(
