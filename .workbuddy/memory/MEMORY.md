@@ -20,6 +20,8 @@
 - ★ `content:"none"` 块（divider/图片/分页符）`block.content===undefined`；行内按钮可用判据 `schema.blockSpecs[type].config.content==="inline"`。
 - ★ 工具栏判据一律 JS 经 blockState 上行，宿主本地镜像不可信（已踩 5 次）。
 - ★ transform value=动作名≠块类型名（`toggleList`→`toggleListItem`）；updateBlock 换类型不显式传 content→表达式不同清空原文（代码块吞文字根因），换类型走 retypeBlockSafely；insertBlocks 不移光标。
+- ★★ PM 层匹配块**禁止用 node.type.name**（v2026-09-28 实证：spec 是 type:"video"，PM 层 `type.name==="video"` 匹配失败 targetPos=-1）→ 一律 `node.attrs.id === DOM data-id`（blockId）匹配；NodeSelection 的收起判定同理比 attrs.id。
+- ★★ **PM `handleDOMEvents` prop（view.setProps）返回 true = 跳过 PM 内置处理但事件传播不受影响**（≠ preventDefault/stopPropagation）；时序上 target 段先于冒泡段 → 是「PM 无感（不建选区不弹条）+ DOM target（video/媒体手势）照常收事件」能共存的唯一层。祖先 capture stopPropagation 必然屏蔽 target 收事件——媒体控件 tap 手势会死（穿透架构翻车实录）。官方 FormattingToolbar 的 pointerdown 抑制窗（preventShowWhileMouseDown）：按住期间 dispatch 被吞 → 手动选区 dispatch 挪到 pointerup 后 setTimeout(0)。
 - ★ 自定义块渲染必须显式 `flex:1` 撑满，否则宽度坍缩 0、样式在但不可见。
 - 行内样式渲染走 markView.render()；光标态 toggleStyles 只改 stored marks 须主动 pushBlockState；撤销可用态 `editor.canExec`。
 
@@ -41,7 +43,10 @@
 - ★★ 全屏 fixed Portal 宿主 `pointer-events:none` + 浮层经 elementProps style 恢复 auto（透明≠点击穿透）。
 - ★★ 官方 useDismiss 排除 domReference → 点正文永不关；命令驱动面板自补 document 级 click capture（EmojiGridPanel 先例）。FormattingToolbar 关闭靠选区变化。
 - ★ 渲染依赖的快照值用 useMemo（ref 不触发重渲→永远差一帧）。
-- ★★ 视频穿透（v2026-09-28 终态）：video `pointer-events:none` + UA shadow 具体伪元素恢复 auto（play-button/timeline/mute-button/fullscreen-button）、overlay-play-button 钉 none；enclosure/panel 是全尺寸容器**不可**恢复（会整体吃点击）。官方 video render 显式 `controls=true`（UA 原生控件非无交互）；若细分恢复失效→升级自绘控制层（divider 覆盖先例，约 200 行）。
+- ★★ 视频手势（v2026-09-28 v10 **穿透架构已退役**，勿再走 pointer-events 老路）：穿透让 hit-test target 落不到 video 本体，Chromium "tap 显示控件"手势架构性死亡（七轮实测无法救回）。终态：video 恢复默认命中 + **PM `view.setProps({handleDOMEvents})` 拦截**（mousedown/click 命中视频区返回 true=PM 跳过选区建立，事件传播不受影响——"PM 不弹"与"video 收到事件"共存的唯一层）；长按弹条 fire 挪 pointerup 后 setTimeout(0)（官方 preventShowWhileMouseDown 抑制窗按住期间吞 dispatch）；官方 onSelectionChange 弹出路径无 isFocused 门控（dispatch 弹条不需要焦点）。
+- ★★ ed.focus() 会弹软键盘→视口剧变→浮动工具条被顶走（"弹条不稳定"元凶）。**IME 门**：focus 前 contenteditable 根打 `inputmode="none"`、focus 后 setTimeout(0) 还原；备份存闭包，勿用 data-ime-prev 属性（与宿主 IME_SUPPRESS_SCRIPT 同名冲突）。**★必须条件式**（v10.2 实锤）：仅 `!view.hasFocus()` 时才打标——对**已聚焦**元素动 inputmode 触发 Chromium restartInput（焦点扰动）反而杀掉工具条（v10.1 无条件打标 → dispatch 成功但不弹，100% 回归）。
+- ★ BlockNote 工具条渲染链：官方 store（shouldShow 极宽松）→ 项目 MediaOnlyFormattingToolbarController 闸门 `visible = show && !canApplyInlineStyles(editor)`（canApplyInlineStyles 走 getTextCursorPosition，NodeSelection 下若解析错块则 show=true 也不渲染）。node_modules 里 @blocknote 带**未压缩 TS src**（core/src/…），排错直接读源码别切 minify。
+- ★ 长按手势的目标块 id 必须在 **pointerdown 时刻快照**：500ms 按住期间 React 重渲染替换 DOM，抬手后从 startEl 反查 closest() 在 detached 节点失效（fire skip 不弹）。
 
 ## WebView 链接与面板
 - `links:{onClick}` 唯一挂钩，配了即禁官方 window.open；`setSupportMultipleWindows` 默认 false → 带 target 的 window.open 静默丢。
