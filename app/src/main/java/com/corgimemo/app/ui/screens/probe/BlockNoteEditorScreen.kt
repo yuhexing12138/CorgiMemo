@@ -297,7 +297,8 @@ private fun createEditorWebView(
                             }
                             "diagnostic" -> {
                                 // v1.11.7：JS 回传的运行时观测值，仅供 logcat 排错
-                                Log.d(TAG, "diag | ${msg.optString("message")}")
+                                // （v2026-09-28 D→I：部分国产 ROM 吞 debug 级日志）
+                                Log.i(TAG, "diag | ${msg.optString("message")}")
                             }
                             /**
                              * 外部浏览器打开链接（v2026-09-24 新增）

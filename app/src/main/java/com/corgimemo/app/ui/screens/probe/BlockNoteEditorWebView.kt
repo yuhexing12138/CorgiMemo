@@ -842,7 +842,9 @@ class BlockNoteBridgeController {
                      * 即可判断产物是否需要重建（旧产物不下发该字段时为空串）。
                      */
                     val srcHash = msg.optString("srcHash", "")
-                    Log.d(TAG, "ready received | build=$build | src=$srcHash")
+                    // v2026-09-28：D → I——部分国产 ROM 默认吞掉 debug 级日志，指纹行
+                    // 是"产物版本"的唯一证据，必须保证在任何设备上都可见。
+                    Log.i(TAG, "ready received | build=$build | src=$srcHash")
                     ready = true
                     /**
                      * v2026-09-21：编辑器挂载完成后补一次「软键盘抑制」注入。
@@ -940,8 +942,10 @@ class BlockNoteBridgeController {
                      * 元素实际高度等）。**只打 log，不做任何 UI 反应**——
                      * WebView 内部的这些真值在 Kotlin 侧无法直接观测，以往只能靠猜。
                      * 排查命令用：`adb logcat -s BlockNoteEditor:V | grep -E "diag|down\("`
+                     * v2026-09-28：D → I——部分国产 ROM 默认吞 debug 级日志，
+                     * 诊断通道是排错生命线，提升到 info 级保证可见。
                      */
-                    Log.d(TAG, "diag | ${msg.optString("message")}")
+                    Log.i(TAG, "diag | ${msg.optString("message")}")
                 "baseFontSize" ->
                     /**
                      * v2026-09-21：JS「无选区点正文字号」改全局基础字号后上行，
@@ -955,7 +959,7 @@ class BlockNoteBridgeController {
                  */
                 "editorFocus" -> {
                     editorFocused = msg.optBoolean("focused", false)
-                    Log.d(TAG, "diag | editorFocus = $editorFocused")
+                    Log.i(TAG, "diag | editorFocus = $editorFocused")
                 }
                 /**
                  * v2026-09-22：`saveSelection` 的应答——选区区间上行。
@@ -1807,11 +1811,13 @@ private fun createEditorWebView(
             }
 
             override fun onConsoleMessage(message: ConsoleMessage): Boolean {
-                /** console 级别 → logcat 优先级（ERROR→E / WARNING→W / 其余→D） */
+                /** console 级别 → logcat 优先级（ERROR→E / WARNING→W / 其余→I；
+                 *  v2026-09-28 D→I：部分国产 ROM 吞 debug 级日志，排错时这两条
+                 *  通道（console 转发 / 桥 diagnostic）是唯一生命线） */
                 val priority = when (message.messageLevel()) {
                     ConsoleMessage.MessageLevel.ERROR -> Log.ERROR
                     ConsoleMessage.MessageLevel.WARNING -> Log.WARN
-                    else -> Log.DEBUG
+                    else -> Log.INFO
                 }
                 Log.println(priority, TAG, "console[${message.lineNumber()}] ${message.message()}")
                 return true

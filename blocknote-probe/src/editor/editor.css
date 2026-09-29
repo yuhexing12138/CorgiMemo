@@ -181,69 +181,55 @@
 }
 
 /**
- * 视频块：画面点击穿透 + 原生控件保留（v2026-09-28 修复·第六轮：长按接管定稿）
+ * 视频块手势（v2026-09-28 第八轮 v10：**穿透架构整体退役**——本区域规则全部删除）
  *
- * **需求冲突**（两个能力都要）：
- * 1. 视频块需要编辑入口（工具条）——`<video>` 是原生媒体元素，Android
- *    WebView 里 Chromium 把落在视频画面上的触摸交给媒体手势层处理，不像
- *    `<img>` 把 click 冒泡给 ProseMirror → 不穿透则画面区域无法参与编辑；
- * 2. 官方 video render 显式设了 `video.controls = true`（blocks dist
- *    `a.controls = !0`，audio 分支同款）——播放键/暂停键/进度条是 Chromium
- *    UA shadow DOM 里的**原生媒体控件**，必须保持可点。
+ * **退役原因（v9 埋点真机日志实锤，2026-09-28 17:37）**：单击视频媒体控件
+ * （播放/暂停/进度条）永不出现。六次单击全部 `tgt=div.bn-visual-media-wrapper`、
+ * video 直挂探针（[onVideo]）**零命中**——`pointer-events: none` 让 hit-test
+ * target 永远落在包装层，事件从不经过 video 本体，Chromium "tap 画面显示
+ * 控件"手势（监听在 video 上）**架构性失效**。初始态显示/重渲染显示走的是
+ * 内部通路，tap 通路已死，JS 侧任何"只 stopPropagation 不 preventDefault"
+ * 的放行都救不了（七轮实测无效）。
  *
- * **六轮演进（全记录，防再绕弯）**：
+ * **v10 终态**：video 恢复浏览器默认命中（pointer-events:auto，即删除本区域
+ * 全部规则）——事件 target 回到 video 本体，原生控件 tap/播放/seek 全活。
+ * "点击不弹工具条"改由 EditorApp.tsx 在 **PM `handleDOMEvents` prop 层**
+ * 拦截（handler 返回 true 跳过 PM 选区建立，事件传播不受影响）；
+ * 长按弹工具条同步迁移（fire 挪到 pointerup 后的宏任务，避开官方
+ * preventShowWhileMouseDown 抑制窗）——机关全记录见
+ * bindVideoBlockGestures 头注释。
+ *
+ * **八轮演进史存档（防再绕弯）**：
  * - 二轮：video 整体 `pointer-events: none` → 画面穿透，但控件全灭；
  * - 三轮：恢复 `::-webkit-media-controls-enclosure / -panel` → 失败：容器
  *   全尺寸覆盖画面，穿透被抵消；
- * - 四轮：细粒度恢复具体控件伪元素 → 控件可点 ✅，但中央 overlay 播放键
- *   与"点画面弹工具条"的产品语义仍然互斥（死按钮/误触问题）；
- * - **六轮定稿（本版）**：工具条弹出改走 **JS 长按接管**（EditorApp.tsx 的
- *   bindVideoBlockGestures：长按视频弹工具条、单击收起、其余点击一律不弹），
- *   本 CSS 只承担两件事——① video 穿透（事件通道，target 落到包装层供
- *   JS 分派）；② 细粒度恢复底部原生控件。
+ * - 四轮：细粒度恢复具体控件伪元素 → 控件可点，但中央 overlay 播放键
+ *   与"点画面弹工具条"互斥（死按钮/误触）；
+ * - 五轮：中央键 display:none（用户不满"按钮被改消失"）；
+ * - 六/七轮：长按接管 + 拦截改仅 stopPropagation + 中央键/三点恢复——
+ *   控件可点但 tap 显示控件的手势已被穿透架构杀死，无法救回；
+ * - **八轮（终态）**：穿透架构整体退役（本版），改 PM props 层拦截。
  *
- * **当前伪元素策略**：
- * - `overlay-play-button`（暂停态视频中央的大按钮）：**display:none 整键
- *   隐藏**——它覆盖画面、恢复命中必截胡穿透（三轮教训），留着又是
- *   "看得见点不动"的死按钮（五轮真机反馈）；播放/暂停统一走底部面板。
- * - `overflow-button`（右下角三点菜单）+ 底部播放键/进度条/静音/全屏：
- *   细粒度恢复命中，小区域不影响画面穿透。
- *
- * ⚠️ 历史教训（二轮注释的错误论断）：曾断言「官方 video 无 controls 属性」
- * ——错。官方明确设了 `controls = true`；minify 长行 grep 截断看漏
- * `.controls = !0`，教训：长行要用 Python 切片看完整上下文。
+ * ⚠️ 历史教训：曾断言「官方 video 无 controls 属性」——错（官方明确
+ * `controls = true`）；minify 长行 grep 截断看漏，教训：长行用 Python 切片。
  */
-.bn-visual-media-wrapper video {
-  pointer-events: none;
-}
+
 /**
- * 中央 overlay 播放键（暂停态浮现在视频中间的大按钮）：**恢复显示与命中**
- * （第七轮，v2026-09-28 真机反馈"中央播放暂停按钮消失了"）。
+ * v10.1（2026-09-28）：视频手势区禁用文本选择（长按弹条稳定性防御）。
  *
- * 演进：四轮曾 `pointer-events: none`（用户点它没反应）→ 五轮改
- * `display: none`（消除死按钮）→ **七轮恢复**。恢复的安全性有真机证据：
- * 第二轮观测（中央键可见、未钉死时期）——点中央键区域被截获、点边缘/
- * 同行空白正常穿透，说明**该键命中区是中央按钮本身，不是全画面容器**
- * （区别于三轮翻车的 enclosure）。且长按接管（EditorApp 的
- * bindVideoBlockGestures）后即使放行也不破坏"单击不弹"：点中央键的
- * target=video → JS 判定放行 → Chromium 处理播放/暂停（原生语义）；
- * 点画面空白 target=包装层 → JS 接管（长按弹/单击收）。
+ * 长按判定是自实现计时（500ms），与 Chromium 内部长按手势（文本选择/
+ * 上下文菜单，阈值同量级）存在竞态——若 Chromium 先启动手势，可能派发
+ * pointercancel 或扰乱选区，长按弹条随之不稳定（真机反馈"时弹时不弹"，
+ * 完整嫌疑清单见 bindVideoBlockGestures 头注释 v10.1 段）。
+ *
+ * 只罩媒体包装层：video/wrapper 内本无可选文本，禁用零副作用，tap/
+ * 播放/seek 手势不受影响（user-select 只管文本选择）；caption 等
+ * contenteditable 在 wrapper 之外，不受此规则影响，长按仍可正常选字。
  */
-.bn-visual-media-wrapper video::-webkit-media-controls-overlay-play-button {
-  pointer-events: auto;
-}
-/**
- * 右下角三点（溢出菜单）按钮：第四轮细粒度清单遗漏，点击无反应
- * （真机反馈），第五轮补上恢复。小区域按钮，不影响画面穿透。
- */
-.bn-visual-media-wrapper video::-webkit-media-controls-overflow-button {
-  pointer-events: auto;
-}
-.bn-visual-media-wrapper video::-webkit-media-controls-play-button,
-.bn-visual-media-wrapper video::-webkit-media-controls-timeline,
-.bn-visual-media-wrapper video::-webkit-media-controls-mute-button,
-.bn-visual-media-wrapper video::-webkit-media-controls-fullscreen-button {
-  pointer-events: auto;
+.bn-visual-media-wrapper,
+.bn-visual-media-wrapper * {
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* ⚠️ 不要加 `html { scroll-behavior: smooth }`（v1.11.9 两轮实测均已移除）：
