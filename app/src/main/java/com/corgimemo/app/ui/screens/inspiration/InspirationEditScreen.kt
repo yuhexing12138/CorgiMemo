@@ -467,6 +467,38 @@ fun InspirationEditScreen(
     }
 
     /**
+     * Replace 上传通道的通用收尾（v2026-09-29）：非图片媒体（视频/音频/文件）
+     * 的 chooser 结果处理——raw 字节拷贝进应用目录（视频/音频/文件**必须**走
+     * [ImageUtils.copyUriToInternalStorageRaw]，BitmapFactory 压缩链路解码
+     * 非图片媒体必失败返回 null）→ 先写路径槽 → 再交还 chooser 会话。
+     *
+     * **次序约定**（与桥协议强绑定，同图片通道）：路径槽必须先于
+     * [BlockNoteBridgeController.deliverFileChooserResult]
+     * 就位，否则 JS 侧 `uploadImage` 上行查不到路径会按失败结转。
+     * 取消 / 拷贝失败：`deliverFileChooserResult(null)` 收尾（WebView 侧不触发
+     * 上传；若 JS 侧已挂起则按官方 Upload error 结转）。
+     *
+     * ⚠️ 本函数必须先于下方引用它的 replace 媒体 Launcher 声明——Kotlin 局部函数
+     * 声明顺序即可见性，launcher 的 lambda 捕获其后的局部函数会 Unresolved reference。
+     */
+    fun handleReplaceUploadResult(uri: Uri?) {
+        if (uri == null) {
+            blockNoteController.deliverFileChooserResult(null)
+            return
+        }
+        coroutineScope.launch {
+            val savedPath = ImageUtils.copyUriToInternalStorageRaw(context, uri)
+            if (savedPath != null) {
+                /** 先写路径槽（上行查询就位），再交还 chooser 会话 */
+                blockNoteController.pendingUploadPath = savedPath
+                blockNoteController.deliverFileChooserResult(uri)
+            } else {
+                blockNoteController.deliverFileChooserResult(null)
+            }
+        }
+    }
+
+    /**
      * 官方 Replace Image「Upload」标签的图片选择 Launcher（v2026-09-24 新增）
      *
      * **背景**：官方 Replace Image 弹层的「Upload」标签只有配置 `uploadFile` 才渲染；
@@ -502,10 +534,45 @@ fun InspirationEditScreen(
         }
     }
 
-    /** 接线：`onShowFileChooser`（图片类）→ 拉起本 Launcher（组合期一次即可，lambda 引用稳定） */
+    /**
+     * 官方 Replace「Upload」标签的视频选择 Launcher（v2026-09-29 新增）。
+     *
+     * **背景**：v2026-09-24 的宿主门禁只放行图片类 accept，视频块的 video 系
+     * MIME 请求被 `onShowFileChooser` 拒绝（return false）——WebView 对
+     * false 的处理是静默取消，表现为点击「Upload video」毫无反应。本轮宿主侧
+     * 按 accept 归一出媒体类别放行后，Screen 在此按类别派发。
+     *
+     * 拷贝走 [ImageUtils.copyUriToInternalStorageRaw]（原样字节，禁走图片压缩
+     * 链路），结果收尾统一交 [handleReplaceUploadResult]。
+     */
+    val replaceVideoUploadLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? -> handleReplaceUploadResult(uri) }
+
+    /** 官方 Replace「Upload」标签的音频选择 Launcher（v2026-09-29 新增，同视频通道） */
+    val replaceAudioUploadLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? -> handleReplaceUploadResult(uri) }
+
+    /** 官方 Replace「Upload」标签的任意文件选择 Launcher（v2026-09-29 新增，文件块通配 accept 走此通道） */
+    val replaceAnyUploadLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? -> handleReplaceUploadResult(uri) }
+
+    /**
+     * 接线：`onShowFileChooser` 按媒体类别派发（v2026-09-24 图片；
+     * v2026-09-29 扩展视频/音频/文件。组合期一次即可，lambda 引用稳定）。
+     * ⚠️ 必须在上方各 launcher 声明之后——Kotlin lambda 捕获其后的局部变量
+     * 会报「Variable must be initialized」级编译错误。
+     */
     LaunchedEffect(Unit) {
-        blockNoteController.onFileChooserRequested = {
-            replaceUploadLauncher.launch("image/*")
+        blockNoteController.onFileChooserRequested = { kind ->
+            when (kind) {
+                "video" -> replaceVideoUploadLauncher.launch("video/*")
+                "audio" -> replaceAudioUploadLauncher.launch("audio/*")
+                "any" -> replaceAnyUploadLauncher.launch("*/*")
+                else -> replaceUploadLauncher.launch("image/*")
+            }
         }
     }
 

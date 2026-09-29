@@ -291,10 +291,11 @@ class BlockNoteBridgeController {
         private set
 
     /**
-     * 最近一次「官方 Replace Image → Upload」会话拷贝出的图片路径（v2026-09-24）
+     * 最近一次「官方 Replace → Upload」会话拷贝出的媒体文件路径
+     * （v2026-09-24 图片；v2026-09-29 起视频/音频/文件复用同一槽位）。
      *
      * 链路：JS 侧官方 UploadTab → `<input type="file">` → 宿主 `onShowFileChooser`
-     * → Screen 拉起图片选择器 → 拷贝进应用目录 → **先写本槽** →
+     * → Screen 按类别拉起选择器 → 拷贝进应用目录 → **先写本槽** →
      * [deliverFileChooserResult] 交还 WebView → input onChange → 官方调
      * `editor.uploadFile` → JS 上行 `uploadImage` → [handleUpMessageOnMainThread]
      * 查本槽并下行 `uploadImageResult{requestId, path}`（消费后置空）。
@@ -315,12 +316,15 @@ class BlockNoteBridgeController {
     internal var pendingFileChooserCallback: ValueCallback<Array<Uri>>? = null
 
     /**
-     * 文件选择请求上抛（v2026-09-24）：`onShowFileChooser` 触发时通知 Screen
-     * 拉起图片选择器（复用现有 GetContent 流程）。Screen 在选图/取消后调
-     * [deliverFileChooserResult] 收尾。null = Screen 未接线（此时 chooser 直接
-     * 以取消收场，Upload 标签表现为无反应，不崩溃）。
+     * 文件选择请求上抛（v2026-09-24 图片；v2026-09-29 扩展媒体类别）：
+     * `onShowFileChooser` 触发时通知 Screen 拉起**对应类别**的系统选择器。
+     * 参数为媒体类别（[classifyFileChooserAccept] 的归一值）：
+     * `"image"` / `"video"` / `"audio"` / `"any"`（accept 为空或通配 MIME），
+     * Screen 据此派发到对应 Launcher（图片走压缩链路，其余走 raw 字节拷贝）。
+     * Screen 在选择/取消后调 [deliverFileChooserResult] 收尾。null = Screen
+     * 未接线（此时 chooser 直接以取消收场，Upload 标签表现为无反应，不崩溃）。
      */
-    var onFileChooserRequested: (() -> Unit)? = null
+    var onFileChooserRequested: ((String) -> Unit)? = null
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pendingInit: JSONObject? = null
@@ -1838,18 +1842,20 @@ private fun createEditorWebView(
             }
 
             /**
-             * 文件选择通道（v2026-09-24 新增）：官方 Replace Image「Upload」标签的
-             * 宿主半边。**Android WebView 的 `<input type="file">` 必须由宿主实现
-             * 本回调才能弹出选择器**——不实现时点击"Upload image"毫无反应
-             * （又一个"点了没反应"的哑按钮）。
+             * 文件选择通道（v2026-09-24 新增图片；v2026-09-29 扩展视频/音频/文件）：
+             * 官方 Replace 弹层「Upload」标签的宿主半边。**Android WebView 的
+             * `<input type="file">` 必须由宿主实现本回调才能弹出选择器**——不实现
+             * 或 accept 未被放行时点击「Upload」毫无反应（又一个「点了没反应」的
+             * 哑按钮；视频 Upload 无响应的根因正是当初门禁只放行图片类）。
              *
-             * **本项目只接图片类请求**（`accept` 含 image 前缀或为空；图片块官方
-             * 固定传 image 系 MIME）：暂存回调 + 上抛
+             * **放行类别**（[classifyFileChooserAccept] 归一）：image 系、video 系、
+             * audio 系 MIME，以及空 / 通配 MIME（文件块官方固定传通配，视频/音频块
+             * 分别固定传 video 系 / audio 系）——暂存回调后**携带类别**上抛
              * [BlockNoteBridgeController.onFileChooserRequested]
-             * 让 Screen 拉起现有图片选择流程，选完经
+             * 让 Screen 按类别拉起选择流程，选完经
              * [BlockNoteBridgeController.deliverFileChooserResult] 交还。
-             * 其余类型（视频/音频/文件块的 Upload 标签）返回 false 明确不支持——
-             * 官方控件按"宿主无能力"收场，不崩溃；后续需要时按同模式扩展。
+             * 其余不可识别的 accept 返回 false 明确不支持——官方控件按
+             * 「宿主无能力」收场，不崩溃。
              *
              * ⚠️ `onReceiveValue` 只能调用一次：接管前若上一会话回调有残留，
              * 先以 `null` 收尾再接管；同时清空路径槽（会话语义重新开始）。
@@ -1867,22 +1873,22 @@ private fun createEditorWebView(
                 fileChooserParams: WebChromeClient.FileChooserParams
             ): Boolean {
                 val acceptTypes = fileChooserParams.acceptTypes ?: emptyArray()
-                val acceptsImage = acceptTypes.isEmpty() || acceptTypes.any { it.contains("image") }
-                if (!acceptsImage) {
+                val mediaKind = classifyFileChooserAccept(acceptTypes)
+                if (mediaKind == null) {
                     Log.d(TAG, "file chooser unsupported accept: ${acceptTypes.joinToString()}")
                     return false
                 }
                 controller.pendingFileChooserCallback?.onReceiveValue(null)
                 controller.pendingUploadPath = null
                 controller.pendingFileChooserCallback = filePathCallback
-                Log.d(TAG, "file chooser requested (image)")
+                Log.d(TAG, "file chooser requested ($mediaKind)")
                 val handler = controller.onFileChooserRequested
                 if (handler == null) {
                     /** Screen 未接线：立即取消收场，WebView 不挂起等待 */
                     controller.pendingFileChooserCallback = null
                     filePathCallback.onReceiveValue(null)
                 } else {
-                    handler()
+                    handler(mediaKind)
                 }
                 return true
             }
@@ -1938,6 +1944,38 @@ private fun createEditorWebView(
     }
     controller.webView = webView
     return webView
+}
+
+/**
+ * 把 `<input accept>` 的 MIME 列表归一为媒体类别（v2026-09-29）。
+ *
+ * **为什么需要归一**：官方 UploadTab 会把所在媒体块的 `fileBlockAccept` 原样传给
+ * WebView（图片块 image 系 / 视频块 video 系 / 音频块 audio 系 / 文件块通配），
+ * 宿主据此决定「要不要放行这次 chooser 请求 + Screen 拉哪类选择器」。
+ * v2026-09-24 的旧门禁只认「含 image」，视频/音频/文件块全部被拒——
+ * WebView 对 `onShowFileChooser` 返回 false 的处理是**静默取消**，
+ * 表现为点击「Upload」毫无反应（Replace video 无响应的根因）。
+ *
+ * 判定顺序即优先级（accept 理论上可写多个值，取第一个命中的类别）：
+ * 1. 任一值含 "image" → `"image"`；2. "video" → `"video"`；3. "audio" → `"audio"`；
+ * 4. 空列表或含通配 MIME（`*` 前缀）→ `"any"`；其余 → null（宿主拒绝，
+ * Chromium 静默取消，与旧版不可识别类型行为一致）。
+ *
+ * @return `"image"` / `"video"` / `"audio"` / `"any"`；不可识别返回 null
+ */
+private fun classifyFileChooserAccept(acceptTypes: Array<String>): String? {
+    if (acceptTypes.isEmpty()) return "any"
+    for (accept in acceptTypes) {
+        val lower = accept.lowercase()
+        when {
+            lower.contains("image") -> return "image"
+            lower.contains("video") -> return "video"
+            lower.contains("audio") -> return "audio"
+            /** 通配 MIME（accept 属性的 `*` 前缀形态）→ 任意文件，按 any 处理 */
+            lower.startsWith("*") -> return "any"
+        }
+    }
+    return null
 }
 
 /**
