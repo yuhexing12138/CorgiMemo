@@ -13,8 +13,12 @@
 - 后续动作：提交已在本地就绪（c8d7bd01），需用户在真实终端手动 `git push origin master`，或将本自动化置于不受 git 网络拦截的环境中运行。
 
 ## 2026-09-29 17:41 执行记录
-- `git status --short .workbuddy`：有变动，仅 1 个文件——`memory/automations/67c1c456-aa1a-4779-9cab-5f9b125c5aaf/memory.md`（M，本次执行前已被前一班次写入但未纳入提交，内容为 01:33 运行摘要）。
-- 已执行 `git add .workbuddy`（仅该目录，未触碰 compose-rich-editor 等并行改动，未用 `git add -A`）。
-- 提交信息（中文）：chore: 同步 .workbuddy 工作记忆（2026-09-29 17:41）。说明：提交自动化记忆文件，记录 2026-09-29 01:33 班次 .workbuddy 同步结论与 git 推送被拦截的情况。
-- 推送：执行 `git push origin master`，预计本环境 git 网络层静默拦截仍会失败（沿用 01:33 结论），以实际结果为准并据实报告。
-- 注意：本文件本身（memory.md）即为本次提交内容的一部分，提交后该 M 状态应消除。
+- `git status --short .workbuddy` 初始：仅 1 个文件 M——`memory/automations/67c1c456-aa1a-4779-9cab-5f9b125c5aaf/memory.md`（前一班次 01:33 写入但未提交）。
+- 提交①（308015f3）：`git add .workbuddy` 仅含本文件，中文提交信息 `chore: 同步 .workbuddy 工作记忆（2026-09-29 17:41）`。
+- 推送①：`git push origin master` → `ced4425c..308015f3`，**成功**（与 01:33 班次被拦截不同，本次网络层放行）。
+- 提交后复检发现执行期间并行会话又写入 `memory/2026-09-29.md`（M，键盘取证日志分析，内容完整），属 .workbuddy 范畴，决定一并同步。
+- 提交②（a020c881）：补提交 2026-09-29.md，中文信息 `chore: 同步 .workbuddy 工作记忆（2026-09-29 17:41 续）`。
+- 推送②：`git push origin master` → `308015f3..a020c881`，**成功**。
+- 最终核验：`git status --short .workbuddy` 无输出；`origin/master...HEAD` 0/0 完全同步。
+- ⚠️ 踩坑：提交②初版误把临时文件 commit_msg2.tmp 一并 add（因 `git add .workbuddy` 含它），已 `git reset --soft HEAD~1` + 删临时文件 + 重提，最终提交仅 1 文件。教训：提交信息临时文件勿放在 .workbuddy 内，或提交前显式排除。
+- 全程未触碰 compose-rich-editor 等并行改动（editor.html 等保持未暂存）。
