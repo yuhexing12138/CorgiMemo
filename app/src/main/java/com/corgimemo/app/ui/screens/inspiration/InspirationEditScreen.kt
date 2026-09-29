@@ -2,9 +2,14 @@ package com.corgimemo.app.ui.screens.inspiration
 
 import android.net.Uri
 import android.Manifest
+/** v2026-09-29 键盘避让治本：页面级 softInputMode 动态切换所需 */
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.util.Log
+/** v2026-09-29 键盘避让治本：WindowManager.LayoutParams 常量所需 */
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -26,10 +31,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imeAnimationTarget
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+/** v2026-09-29 键盘避让治本：bottomBar 一步到位避让所需 */
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -1161,6 +1169,50 @@ fun InspirationEditScreen(
     }
 
     /**
+     * v2026-09-29 键盘避让治本：本页动态切换 softInputMode 为 ADJUST_NOTHING。
+     *
+     * 背景（重命名键盘"展开又收起"根因，TEMP-DEBUG 取证实锤）：MainActivity 在
+     * Manifest 声明 adjustResize，键盘滑入动画期间 Window 每帧缩放（真机
+     * onSizeChanged 1643→868px、每 10ms 一帧、全程约 50 次），`weight(1f)` 的正文
+     * WebView 被迫逐帧 reflow；Chromium/输入法框架在这场 resize 风暴中中断输入
+     * 会话——重命名输入框凭空 blur（与 onSizeChanged 同帧、宿主 hideImeNow 零调用）
+     * → 系统随即收起键盘。竖屏大视频（弹层位置高、风暴剧烈）必现。
+     *
+     * ADJUST_NOTHING 后 Window 纹丝不动，避让改由布局层一步承担：bottomBar 套
+     * `windowInsetsPadding(WindowInsets.imeAnimationTarget)`（见 bottomBar 处注释）
+     * → bottomBar 抬高、Scaffold content 随 bottomBar 实测高度让位（M3 Scaffold
+     * 源码确认：有 bottomBar 时 content bottom padding = bottomBar 高度，
+     * contentWindowInsets 的 bottom 不参与）→ WebView 全程只 reflow 一次。
+     *
+     * insets 分发与 softInputMode 无关：BottomBar 的 ime 高度记录（T/H/A 面板
+     * 高度真值）、suppressIme 抑制链、scrollFollow 焦点门控均不受影响。
+     *
+     * 仅本页生效：进入时保存原值，退出（onDispose）恢复——不硬编码恢复值，
+     * 避免未来 Manifest 调整后恢复出错。
+     */
+    DisposableEffect(Unit) {
+        /** 沿 baseContext 链解出宿主 Activity（LocalContext 可能被 ContextWrapper 包裹） */
+        var cursor: Context = context
+        var hostActivity: Activity? = null
+        while (cursor is ContextWrapper) {
+            if (cursor is Activity) {
+                hostActivity = cursor
+                break
+            }
+            cursor = cursor.baseContext
+        }
+        val window = hostActivity?.window
+        val previousMode = window?.attributes?.softInputMode ?: 0
+        window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+        onDispose {
+            window?.setSoftInputMode(
+                if (previousMode != 0) previousMode
+                else WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            )
+        }
+    }
+
+    /**
      * 初始化已有内容块
      *
      * v2026-07-25 三写存储重构：仅从 content_blocks 表加载附件
@@ -1500,6 +1552,20 @@ fun InspirationEditScreen(
         bottomBar = {
             /** 灵感编辑页底部导航栏（6 按钮 + 可折叠格式工具栏） */
             InspirationEditBottomBar(
+                /**
+                 * v2026-09-29 键盘避让治本：imeAnimationTarget 一步到位。
+                 *
+                 * `imeAnimationTarget` 在键盘滑入动画**开始瞬间**即为最终高度
+                 * （非逐帧插值的 `WindowInsets.ime`）→ bottomBar 高度一帧到位，
+                 * Scaffold content（正文 WebView）随 bottomBar 实测高度让位，
+                 * 全程只 reflow 一次；键盘随后滑入填充下方空白（约 300ms）。
+                 * 对比 adjustResize 时代约 50 帧的 WebView resize 风暴
+                 * （重命名键盘"展开又收起"的根因，见本文件 softInputMode 注释）。
+                 *
+                 * 键盘收起方向同理归零：内容先恢复、被退场键盘暂时盖住，
+                 * 键盘退去自然露出，无视觉跳变。
+                 */
+                modifier = Modifier.windowInsetsPadding(WindowInsets.imeAnimationTarget),
                 isFormatExpanded = isFormatExpanded,
                 /** 单一状态直传：三个面板的展开/互斥与按钮激活态都由它派生（v2026-09-21 收敛） */
                 openPanel = openPanel,
