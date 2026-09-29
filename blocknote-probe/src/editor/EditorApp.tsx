@@ -2170,7 +2170,7 @@ const VIDEO_LONG_PRESS_MOVE_TOLERANCE = 20;
  * 1. **IME 门（方案 B，用户选定）**：v10 的 ed.focus() 拉起软键盘（日志
  *    ime bottom→900px），视口高度剧变 → 浮动工具条 flip/shift 重算被顶走/
  *    夹边——不稳定嫌疑之首。focus 前临时打 inputmode="none"、focus 后宏
- *    任务还原（机关详见 selectVideoBlock 注释）；
+ *    任务还原（机关详见 selectMediaBlock 注释）；
  * 2. **blockId 按下时刻快照**（downBlockId）：500ms 按住期间 React 重渲染
  *    可能替换 DOM，原"抬手后从 startEl 反查"在 detached 节点上 closest()
  *    失败 → fire skip → 不弹。嫌疑之二，一并消除；
@@ -2184,7 +2184,7 @@ const VIDEO_LONG_PRESS_MOVE_TOLERANCE = 20;
  * IME 门改条件式——焦点已在编辑器时不打标不 focus（对已聚焦元素动
  * inputmode 会触发 Chromium restartInput，焦点扰动污染 dispatch，工具条
  * 被杀）；仅焦点不在编辑器时才走"打标→focus→还原"。详见
- * selectVideoBlock 注释。同时加 v10.2 定性埋点（post-dispatch /
+ * selectMediaBlock 注释。同时加 v10.2 定性埋点（post-dispatch /
  * after300-deep 读官方 store + canApplyInlineStyles + hasFocus +
  * inputmode），若回归仍在可一轮日志三分根因。
  *
@@ -2256,13 +2256,36 @@ const VIDEO_LONG_PRESS_MOVE_TOLERANCE = 20;
  * inVideoPictureArea 判定命中 → PM 层 mousedown/click 拦截生效 → 单击不建
  * 选区 → 不弹条（视频画面的保护逻辑误伤了文件形态）。**修法**：onPointerUp
  * 快速 tap 路径在 collapse 分支之后加 else if——未选中且按在
- * `.bn-file-name-with-icon` 上 → 宏任务复用 selectVideoBlock（IME 门 +
+ * `.bn-file-name-with-icon` 上 → 宏任务复用 selectMediaBlock（IME 门 +
  * v10.5 选中下沉 + v10.3 确定性弹条全链同构，dispatch 前置位
  * lastSelectedId）；再单击走既有 collapse 链收起；键盘全程不弹（IME 门 +
  * NodeSelection 无文本焦点 + collapse blur）。视频预览形态（视频画面）单击
  * 保持现状不弹条——原生播放控件手势优先；官方 Block.css 另给文件形态
  * 选中态灰底（`.ProseMirror-selectednode .bn-file-name-with-icon`），
  * 弹条后视觉反馈 = 蓝框 + 灰底双重。
+ *
+ * **v11 图片单击选中（用户需求 2026-09-29：图片点击「选中→工具条→键盘不弹」
+ * 闭环）**：图片块此前走官方默认点击路径——PM 建 NodeSelection（蓝框）+ 官方
+ * 工具条，但 DOM 焦点随点击回到 contenteditable → 软键盘弹起（反直觉），且
+ * 没有「再击收起」。本轮把手势接管从 video 扩展到 image（预览态与文件展示态
+ * `.bn-file-name-with-icon` 同属 image 块区域、自然覆盖；caption 等
+ * contenteditable 仍放行正常编辑），交互定稿：
+ * - **单击未选中图片** → 选中（蓝框）+ 弹工具条 + 键盘不弹（若已弹则收起）；
+ * - **再次单击已选中图片** → 蓝框与工具条消失 + 键盘不弹。
+ * 实现上与视频共用同一套基础设施（本函数统一单绑定，按块类型分发交互；
+ * 拆成两个独立绑定会让 handleDOMEvents 的 props 保存/恢复互相覆盖泄漏）：
+ * - PM `handleDOMEvents` 拦截扩到 image 区域——官方「点击建选区 + 焦点回
+ *   编辑器」路径整体停用（这正是弹键盘的根因）；
+ * - 选中复用 selectMediaBlock 全链（v10.5 下沉挂对蓝框层 + v10.3 确定性弹条
+ *   + v10.2 条件式 IME 门），新增 `blurFirst`：编辑器已持焦（键盘多半弹着）
+ *   时先 blur 收键盘，再走 IME 门防重弹；
+ * - 收起复用抽取出的 collapseSelectedMediaBlock（v10.6 findFrom textOnly +
+ *   v10.4 确定性关条 + blur 断 IME + v10.5 400ms 防重选窗）；
+ * - 图片 tap 无长按语义（不需要 500ms 计时），仅保留 20px 位移容差防滚动
+ *   误触；tap-select 放宏任务（官方 pointerup 清抑制窗监听须先跑完，v10
+ *   同理由）。图片埋点前缀 [iGesture]。
+ * 视频全部交互保持 v10.x 现状（长按选中/单击收起/预览画面单击不弹/文件形态
+ * 单击选中），埋点保持 [vGesture]。
  *
  * **v10 排错埋点**（TEMP-DEBUG，验证后删除）：v10 installed 指纹 /
  * [onVideo] video 直挂探针（**本轮关键验证点：单击后应出现 [onVideo] 行**，
@@ -2273,7 +2296,7 @@ const VIDEO_LONG_PRESS_MOVE_TOLERANCE = 20;
  * @param ed BlockNote 编辑器实例
  * @returns 解绑函数（React cleanup 时移除全部监听并恢复原 props）
  */
-function bindVideoBlockGestures(ed: any): () => void {
+function bindMediaBlockGestures(ed: any): () => void {
   const view = ed.prosemirrorView;
   const root: HTMLElement = view.dom;
 
@@ -2281,6 +2304,9 @@ function bindVideoBlockGestures(ed: any): () => void {
   let longPressDone = false;
   let startX = 0;
   let startY = 0;
+  /** v11：本次按下的交互模式——video=长按语义（计时），image=单击选中/再击收起。
+   *  onPointerUp 按 mode 分发；cleanupTransient 时清空。 */
+  let downMode: "video" | "image" | null = null;
   /** 本次按下时命中的元素（v10：长按 fire 挪到抬手后，据此反查块 id）。
    *  v10.1：降级为纯观测——blockId 改由 downBlockId 在按下时刻快照。 */
   let downStartEl: Element | null = null;
@@ -2290,8 +2316,9 @@ function bindVideoBlockGestures(ed: any): () => void {
   /** 长按成功选中的块 id（v10：单击收起判定用，不依赖 PM 层类型名） */
   let lastSelectedId: string | null = null;
 
-  /** TEMP-DEBUG（v10 排错埋点，验证后删除）：绑定指纹——确认本版本 JS 真的在运行 */
-  sendUp({ type: "diagnostic", message: "[vGesture] v10.7 installed" });
+  /** TEMP-DEBUG（v10 排错埋点，验证后删除）：绑定指纹——确认本版本 JS 真的在运行。
+   *  v11：手势接管扩展到 image，指纹升级 media-v11。 */
+  sendUp({ type: "diagnostic", message: "[vGesture] media-v11 installed" });
 
   /**
    * TEMP-DEBUG（v10.3 定性探针，验证后删除）：BlockNote 层 selectionUpdate
@@ -2363,6 +2390,24 @@ function bindVideoBlockGestures(ed: any): () => void {
   };
 
   /**
+   * v11：判定事件是否落在 image 块区域（预览态 img 与文件展示态
+   * `.bn-file-name-with-icon` 同属 `[data-content-type="image"]` 子树，一并
+   * 接管）；caption 等 contenteditable 放行——点图片说明文字应正常弹键盘编辑。
+   * 与 inVideoPictureArea 判定结构同构，分开放以便 handleDOMEvents 合并命中。
+   */
+  const inImageBlockArea = (t: EventTarget | null): boolean => {
+    if (!(t instanceof Element)) return false;
+    if ((t as HTMLElement).isContentEditable) return false;
+    return !!t.closest('[data-content-type="image"]');
+  };
+
+  /** v11：PM handleDOMEvents 拦截的合并命中判定——video 与 image 任一区域
+   *  命中即拦（返回 true 让 PM 跳过内置「点击建选区」，弹键盘的官方路径停用），
+   *  各自的交互语义由 pointer 手势层分发。 */
+  const inManagedMediaArea = (t: EventTarget | null): boolean =>
+    inVideoPictureArea(t) || inImageBlockArea(t);
+
+  /**
    * 长按成立（v10：由 onPointerUp 在抬手后的宏任务中调用）：
    * 手动建立块选中 → 官方 onChange 重算 → 工具条弹出。
    *
@@ -2404,19 +2449,48 @@ function bindVideoBlockGestures(ed: any): () => void {
    * 选中目标**下沉一层**至 blockContent（蓝框 class 挂载层）——详见
    * 头注释 v10.5 节与下沉代码处注释。
    *
+   * **v11 改名 selectMediaBlock + 新增 `blurFirst`（图片路径专用）**：
+   * 用户需求「点图片键盘不应弹起，**若已经弹起则收起**」。编辑器已持焦时
+   * （用户刚打完字的主路径）软键盘多半弹着，单纯 IME 门只能「防弹」不能
+   * 「收起」→ `blurFirst=true` 时先 `view.dom.blur()` 断开 IME 收起键盘；
+   * blur 后 `hasFocus()=false`，下方 IME 门随即走「打标→focus→还原」的
+   * 防弹分支（打标发生在非聚焦元素上，Chromium 不做 IME 重评估，焦点扰动
+   * 风险与 v10.2 已验证路径一致）。blur 已失焦时为无害无操作。视频长按
+   * 路径传 `false`，保持 v10.2 既有行为（已持焦则完全不动焦点）。
+   * v11 同步把调用点扩展为两处：视频长按 / 视频文件形态 tap（blurFirst=false）、
+   * 图片 tap 选中（blurFirst=true）。
+   *
    * @param blockId 长按目标块的 id（pointerdown 时刻快照，可能为 null）
    * @param startEl 按下时命中的元素（仅日志观测用）
+   * @param blurFirst v11：选中前若编辑器持焦则先 blur 收起软键盘（图片路径）
    */
-  const selectVideoBlock = (blockId: string | null, startEl: Element | null) => {
+  const selectMediaBlock = (
+    blockId: string | null,
+    startEl: Element | null,
+    blurFirst: boolean,
+  ) => {
     /** TEMP-DEBUG（v10.1 埋点，验证后删除）：startEl 是否仍在文档中（观测 DOM 替换频率） */
     sendUp({
       type: "diagnostic",
-      message: `[vGesture] fire blockId=${blockId} connected=${startEl?.isConnected ?? "null-el"}`,
+      message: `[vGesture] fire blockId=${blockId} blurFirst=${blurFirst} connected=${startEl?.isConnected ?? "null-el"}`,
     });
     if (!blockId) {
       /** TEMP-DEBUG（v10 埋点，验证后删除） */
       sendUp({ type: "diagnostic", message: "[vGesture] fire skip: no blockId" });
       return;
+    }
+    /**
+     * v11 blurFirst：图片路径——编辑器持焦（键盘多半弹着）先 blur 收键盘。
+     * 放在 IME 门之前：blur 后必走 IME 门的「打标→focus→还原」防弹分支。
+     */
+    if (blurFirst && view.hasFocus()) {
+      try {
+        view.dom.blur();
+        /** TEMP-DEBUG（v11 埋点，验证后删除） */
+        sendUp({ type: "diagnostic", message: "[iGesture] blurFirst: ime collapsed" });
+      } catch (e: any) {
+        sendUp({ type: "error", message: `imageBlurFirst: ${e?.message ?? e}` });
+      }
     }
     /** IME 门（v10.2 条件式）：焦点已在编辑器 → 完全跳过（见头注释） */
     const editable = view.dom as HTMLElement;
@@ -2584,13 +2658,164 @@ function bindVideoBlockGestures(ed: any): () => void {
     }
   };
 
+  /**
+   * v11：收起当前媒体块选中（自视频 v10.4~v10.6 collapse 链抽取共用）——
+   * 视频单击收起与图片再击收起走同一条链：
+   * 1. **选区移出**：`Selection.findFrom($to,1,true) ?? findFrom($from,-1,true)`
+   *    （v10.6：textOnly=true 只找文本位、跳过 atom——`TextSelection.near`
+   *    会把相邻视频/图片块解析成 NodeSelection，导致蓝框残留/同位无操作）；
+   * 2. **确定性关条**：手动 `store.setState(false)`（v10.4，与弹条对称，
+   *    官方 onSelectionChange→setState 链非确定不能依赖）；
+   * 3. **blur 断 IME**：光标进文本位 + 持焦必弹键盘（v10.4），blur 后键盘
+   *    收起——图片路径「再击收起键盘不弹起」依赖此步；
+   * 4. **400ms 防重选窗**（v10.5）：吞掉 tap 的合成 mousedown/click（PM 对
+   *    contentEditable=false nodeview 的点击默认重建 NodeSelection → 蓝框
+   *    复现），窗后自动解绑不影响真实点击。
+   *
+   * @param sel 当前 NodeSelection（调用方已判定其目标块 = lastSelectedId）
+   */
+  const collapseSelectedMediaBlock = (sel: NodeSelection) => {
+    lastSelectedId = null;
+    /** v10.6 修法（详见头注释 v10.6 节）：findFrom textOnly 替代 near */
+    const $from = view.state.doc.resolve(sel.from);
+    const $to = view.state.doc.resolve(sel.to);
+    const $textPos = Selection.findFrom($to, 1, true) ?? Selection.findFrom($from, -1, true);
+    if ($textPos) {
+      view.dispatch(view.state.tr.setSelection($textPos));
+    }
+    /** v10.4：确定性关闭 + blur 收键盘（见上注释） */
+    try {
+      ed.getExtension(FormattingToolbarExtension)?.store?.setState(false);
+    } catch (e: any) {
+      sendUp({ type: "error", message: `videoForceHide: ${e?.message ?? e}` });
+    }
+    try {
+      view.dom.blur();
+    } catch (e: any) {
+      sendUp({ type: "error", message: `videoCollapseBlur: ${e?.message ?? e}` });
+    }
+    /**
+     * v10.5 collapse 防重选：快速 tap 的合成 mousedown/click 发生在
+     * pointerup 之后（Chromium 顺序 pointerup → touchend → mousedown →
+     * mouseup → click），PM 对 contentEditable=false nodeview 的点击
+     * 默认行为 = 重建 NodeSelection(video) → class 挂回
+     * .bn-block-content → 蓝框"collapse 后又出现"（v10.4 日志实锤：
+     * collapse 后 4ms BN selChange store=true + selNode 残留）。
+     * root（= view.dom）上以 capture 挂 400ms 时间窗拦截器，窗内
+     * preventDefault + stopPropagation 吞掉合成事件（preventDefault
+     * mousedown 同时阻断焦点回移与 click 合成，巩固 v10.4 的防弹键
+     * 成果）；handler 内自检过期自解绑 + setTimeout 兜底，窗后真实
+     * 点击不受影响。
+     */
+    const collapseAt = Date.now();
+    const swallowSyntheticTap = (e: Event) => {
+      if (Date.now() - collapseAt < 400) {
+        e.preventDefault();
+        e.stopPropagation();
+      } else {
+        root.removeEventListener("mousedown", swallowSyntheticTap, true);
+        root.removeEventListener("click", swallowSyntheticTap, true);
+      }
+    };
+    root.addEventListener("mousedown", swallowSyntheticTap, true);
+    root.addEventListener("click", swallowSyntheticTap, true);
+    window.setTimeout(() => {
+      root.removeEventListener("mousedown", swallowSyntheticTap, true);
+      root.removeEventListener("click", swallowSyntheticTap, true);
+    }, 500);
+    /** TEMP-DEBUG（v10.4 埋点，验证后删除）：collapse 后快照 + 300ms 复读
+     *  （定性"工具条仍在"：store/toolbar 最终态；蓝框：selNode class） */
+    const probeAfterCollapse = (label: string) => {
+      const s = view.state.selection;
+      const tb = document.querySelector('[class*="toolbar"]');
+      let sn = "n/a";
+      let act = "n/a";
+      let st = "n/a";
+      try {
+        const snEl = document.querySelector(".ProseMirror-selectednode");
+        if (!snEl) {
+          sn = "false";
+        } else {
+          /** v10.5 升级：挂载层身份 + 蓝框 computed（与 probeState 同口径） */
+          const holder = snEl as HTMLElement;
+          const cType = holder.getAttribute("data-content-type") ?? "-";
+          const target = holder.firstElementChild ?? holder;
+          const cs = window.getComputedStyle(target);
+          sn = `${cType}|${cs.outlineWidth}/${cs.outlineStyle}/${cs.outlineColor}`;
+        }
+      } catch {
+        /* 探针只读 */
+      }
+      try {
+        const ae = document.activeElement;
+        act = ae ? `${ae.tagName}.${String(ae.className).split(/\s+/).slice(0, 1).join("")}` : "null";
+      } catch {
+        /* 探针只读 */
+      }
+      try {
+        st = String(ed.getExtension(FormattingToolbarExtension)?.store?.state);
+      } catch {
+        /* 探针只读 */
+      }
+      sendUp({
+        type: "diagnostic",
+        message: `[vGesture] ${label} sel=${s.constructor.name} empty=${s.empty} store=${st} toolbar=${tb ? "in" : "null"} selNode=${sn} active=${act} hasFocus=${view.hasFocus()}`,
+      });
+    };
+    probeAfterCollapse("post-collapse");
+    window.setTimeout(() => probeAfterCollapse("after300-collapse"), 300);
+  };
+
   const onPointerUp = () => {
     const wasLongPress = longPressDone;
     const startEl = downStartEl;
     const upBlockId = downBlockId; /** v10.1：cleanup 前取快照 */
+    const mode = downMode; /** v11：cleanup 前快照交互模式（cleanup 会清空） */
     cleanupTransient();
     /** TEMP-DEBUG（v10 埋点，验证后删除）：无条件记录抬指与长按状态 */
-    sendUp({ type: "diagnostic", message: `[vGesture] up wasLongPress=${wasLongPress}` });
+    sendUp({ type: "diagnostic", message: `[vGesture] up wasLongPress=${wasLongPress} mode=${mode}` });
+    if (mode === "image") {
+      /**
+       * v11 图片 tap 分流：单击选中 / 再击收起（交互定义见头注释 v11 节）。
+       * - 收起判定与视频同构：当前选区是 NodeSelection 且其块 id
+       *   （blockContent 无 id → 从父级 blockContainer 取，v10.5 口径）
+       *   === lastSelectedId（只能由本文件 tap-select 建立，官方点击路径
+       *   已被 handleDOMEvents 拦停）→ collapseSelectedMediaBlock
+       *   （findFrom textOnly + 确定性关条 + blur 收键盘 + 400ms 防重选窗，
+       *   键盘全程不弹）；
+       * - 未选中 → 宏任务 selectMediaBlock(blurFirst=true)：先 blur 收起
+       *   已弹键盘，再经 IME 门（打标→focus→还原）dispatch 下沉 NodeSelection
+       *   + 手动 setState(true) 确定性弹条。放宏任务是 v10 既有要求（官方
+       *   FormattingToolbarExtension 的 pointerup 清抑制窗监听须先跑完）。
+       * 位移超 20px 的滚动意图已在 onPointerMove 里 cleanup（up 不触发）。
+       */
+      try {
+        const sel = view.state.selection;
+        const selId: string | null =
+          sel instanceof NodeSelection
+            ? ((sel.node.attrs?.id as string | undefined) ??
+              ((sel.$from.parent?.attrs?.id as string | undefined) ?? null))
+            : null;
+        if (selId && selId === lastSelectedId) {
+          /** TEMP-DEBUG（v11 埋点，验证后删除） */
+          sendUp({ type: "diagnostic", message: "[iGesture] up: collapse" });
+          collapseSelectedMediaBlock(sel);
+        } else if (upBlockId && startEl) {
+          /** TEMP-DEBUG（v11 埋点，验证后删除） */
+          sendUp({ type: "diagnostic", message: "[iGesture] up: tap-select" });
+          window.setTimeout(() => {
+            try {
+              selectMediaBlock(upBlockId, startEl, true);
+            } catch (err: any) {
+              sendUp({ type: "error", message: `imageTapSelect: ${err?.message ?? err}` });
+            }
+          }, 0);
+        }
+      } catch (e: any) {
+        sendUp({ type: "error", message: `imageTap: ${e?.message ?? e}` });
+      }
+      return;
+    }
     if (wasLongPress && startEl) {
       /**
        * v10：fire 挪到抬手后的宏任务。pointerdown 放行后官方
@@ -2602,7 +2827,8 @@ function bindVideoBlockGestures(ed: any): () => void {
        */
       window.setTimeout(() => {
         try {
-          selectVideoBlock(upBlockId, startEl);
+          /** v11：视频长按路径 blurFirst=false——保持 v10.2 既有焦点行为 */
+          selectMediaBlock(upBlockId, startEl, false);
         } catch (err: any) {
           sendUp({ type: "error", message: `videoLongPress: ${err?.message ?? err}` });
         }
@@ -2638,134 +2864,34 @@ function bindVideoBlockGestures(ed: any): () => void {
       if (selId && selId === lastSelectedId) {
         /** TEMP-DEBUG（验证后删除） */
         sendUp({ type: "diagnostic", message: "[vGesture] up: collapse" });
-        lastSelectedId = null;
         /**
-         * v10.6 collapse 选区修正（真机 14:20 日志实锤：v10.5 下 collapse
-         * 后蓝框不消失，post-collapse 同步时刻 class 就在、after300 仍在，
-         * 且零 BN selChange=拦截器已挡住合成点击——残留与重选无关）：
-         * **根因是 `TextSelection.near` 的语义**——它继承 Selection.near，
-         * 内部 findFrom 的 textOnly 默认 false，对相邻的 atom node
-         * （video，content=none 且 selectable）会**直接返回 NodeSelection**
-         * 而不是跳过：
-         * - v10.4：near(resolve(5)) → NodeSelection(video@6)——层级从
-         *   blockContainer 变到 video 层 → class 挂到 .bn-block-content →
-         *   "collapse 后反而有框" + BN selChange store=true；
-         * - v10.5：下沉后选区本就是 NodeSelection(video@6) →
-         *   near(resolve(6)) → findFrom 向后第一个命中 video 自己 →
-         *   **同位 NodeSelection → prev.eq(new)=true → PM 无事发生** →
-         *   class 原样保留（syncNodeSelection 的 clearNodeSelection 分支
-         *   根本不触发）。
-         * **修法**：`Selection.findFrom($pos, ±1, true)`（textOnly=true，
-         * 只匹配文本位置、跳过 atom）——先从视频块**之后**找文本位
-         * （trailing 段落），找不到再从块**之前**找；两者皆空才放弃
-         * （不动选区，行为退化为 v10.5）。
+         * v11：collapse 链（v10.6 findFrom textOnly + v10.4 确定性关条 +
+         * blur 断 IME + v10.5 400ms 防重选窗）抽取为共享
+         * collapseSelectedMediaBlock——图片再击收起走同一条链，机制详见
+         * 函数处注释。
          */
-        const $from = view.state.doc.resolve(sel.from);
-        const $to = view.state.doc.resolve(sel.to);
-        const $textPos = Selection.findFrom($to, 1, true) ?? Selection.findFrom($from, -1, true);
-        if ($textPos) {
-          view.dispatch(view.state.tr.setSelection($textPos));
-        }
-        /** v10.4：确定性关闭 + blur 收键盘（见上注释） */
-        try {
-          ed.getExtension(FormattingToolbarExtension)?.store?.setState(false);
-        } catch (e: any) {
-          sendUp({ type: "error", message: `videoForceHide: ${e?.message ?? e}` });
-        }
-        try {
-          view.dom.blur();
-        } catch (e: any) {
-          sendUp({ type: "error", message: `videoCollapseBlur: ${e?.message ?? e}` });
-        }
-        /**
-         * v10.5 collapse 防重选：快速 tap 的合成 mousedown/click 发生在
-         * pointerup 之后（Chromium 顺序 pointerup → touchend → mousedown →
-         * mouseup → click），PM 对 contentEditable=false nodeview 的点击
-         * 默认行为 = 重建 NodeSelection(video) → class 挂回
-         * .bn-block-content → 蓝框"collapse 后又出现"（v10.4 日志实锤：
-         * collapse 后 4ms BN selChange store=true + selNode 残留）。
-         * root（= view.dom）上以 capture 挂 400ms 时间窗拦截器，窗内
-         * preventDefault + stopPropagation 吞掉合成事件（preventDefault
-         * mousedown 同时阻断焦点回移与 click 合成，巩固 v10.4 的防弹键
-         * 成果）；handler 内自检过期自解绑 + setTimeout 兜底，窗后真实
-         * 点击不受影响。
-         */
-        const collapseAt = Date.now();
-        const swallowSyntheticTap = (e: Event) => {
-          if (Date.now() - collapseAt < 400) {
-            e.preventDefault();
-            e.stopPropagation();
-          } else {
-            root.removeEventListener("mousedown", swallowSyntheticTap, true);
-            root.removeEventListener("click", swallowSyntheticTap, true);
-          }
-        };
-        root.addEventListener("mousedown", swallowSyntheticTap, true);
-        root.addEventListener("click", swallowSyntheticTap, true);
-        window.setTimeout(() => {
-          root.removeEventListener("mousedown", swallowSyntheticTap, true);
-          root.removeEventListener("click", swallowSyntheticTap, true);
-        }, 500);
-        /** TEMP-DEBUG（v10.4 埋点，验证后删除）：collapse 后快照 + 300ms 复读
-         *  （定性"工具条仍在"：store/toolbar 最终态；蓝框：selNode class） */
-        const probeAfterCollapse = (label: string) => {
-          const s = view.state.selection;
-          const tb = document.querySelector('[class*="toolbar"]');
-          let sn = "n/a";
-          let act = "n/a";
-          let st = "n/a";
-          try {
-            const snEl = document.querySelector(".ProseMirror-selectednode");
-            if (!snEl) {
-              sn = "false";
-            } else {
-              /** v10.5 升级：挂载层身份 + 蓝框 computed（与 probeState 同口径） */
-              const holder = snEl as HTMLElement;
-              const cType = holder.getAttribute("data-content-type") ?? "-";
-              const target = holder.firstElementChild ?? holder;
-              const cs = window.getComputedStyle(target);
-              sn = `${cType}|${cs.outlineWidth}/${cs.outlineStyle}/${cs.outlineColor}`;
-            }
-          } catch {
-            /* 探针只读 */
-          }
-          try {
-            const ae = document.activeElement;
-            act = ae ? `${ae.tagName}.${String(ae.className).split(/\s+/).slice(0, 1).join("")}` : "null";
-          } catch {
-            /* 探针只读 */
-          }
-          try {
-            st = String(ed.getExtension(FormattingToolbarExtension)?.store?.state);
-          } catch {
-            /* 探针只读 */
-          }
-          sendUp({
-            type: "diagnostic",
-            message: `[vGesture] ${label} sel=${s.constructor.name} empty=${s.empty} store=${st} toolbar=${tb ? "in" : "null"} selNode=${sn} active=${act} hasFocus=${view.hasFocus()}`,
-          });
-        };
-        probeAfterCollapse("post-collapse");
-        window.setTimeout(() => probeAfterCollapse("after300-collapse"), 300);
+        collapseSelectedMediaBlock(sel);
       } else if (upBlockId && startEl && startEl.closest(".bn-file-name-with-icon")) {
         /**
          * v10.7 文件形态单击弹条：视频转「文件展示」（showPreview=false）后，
          * 文件名区域（.bn-file-name-with-icon）仍被 inVideoPictureArea 命中
          * → PM 层拦截挡住了官方「点击建选区」→ 未选中态单击永远不弹条。
-         * 此处补齐单击语义：复用 selectVideoBlock 全链（IME 门防键盘 +
+         * 此处补齐单击语义：复用 selectMediaBlock 全链（IME 门防键盘 +
          * v10.5 下沉让蓝框挂对层 + v10.3 手动 setState(true) 确定性弹条），
          * 与长按路径完全同构；fire 放宏任务是 v10 的既有要求（官方
          * FormattingToolbarExtension 的 pointerup 清抑制窗监听须先跑完）。
          * 判定用 closest 实时探测（downStartEl 快照仅观测用，选中语义以
          * 按下时刻元素为准即可）；预览形态（视频画面）不命中此分支，单击
          * 维持零动作，原生控件手势不受影响。再单击由上方 collapse 分支
-         * 收起（selectVideoBlock 已置 lastSelectedId，闭环成立）。
+         * 收起（selectMediaBlock 已置 lastSelectedId，闭环成立）。
+         * v11：函数更名 selectMediaBlock，blurFirst=false（视频路径不变，
+         * 键盘语义仍由 IME 门 + collapse blur 负责）。
          */
         /** TEMP-DEBUG（v10.7 埋点，验证后删除） */
         sendUp({ type: "diagnostic", message: "[vGesture] up: tap-select (file form)" });
         window.setTimeout(() => {
           try {
-            selectVideoBlock(upBlockId, startEl);
+            selectMediaBlock(upBlockId, startEl, false);
           } catch (err: any) {
             sendUp({ type: "error", message: `videoTapSelect: ${err?.message ?? err}` });
           }
@@ -2788,6 +2914,8 @@ function bindVideoBlockGestures(ed: any): () => void {
       window.clearTimeout(timer);
       timer = null;
     }
+    /** v11：交互模式一并复位（调用方 cleanup 前已自行快照） */
+    downMode = null;
     root.removeEventListener("pointermove", onPointerMove, { capture: true });
     root.removeEventListener("pointerup", onPointerUp, { capture: true });
     root.removeEventListener("pointercancel", onPointerCancel, { capture: true });
@@ -2795,37 +2923,47 @@ function bindVideoBlockGestures(ed: any): () => void {
 
   const onPointerDown = (e: PointerEvent) => {
     /** TEMP-DEBUG（验证后删除）：进入判定前先报 target 与判定结果 */
-    const areaHit = inVideoPictureArea(e.target);
+    const videoHit = inVideoPictureArea(e.target);
+    const imageHit = inImageBlockArea(e.target);
     sendUp({
       type: "diagnostic",
-      message: `[vGesture] down tgt=${describeTarget(e.target)} inArea=${areaHit} primary=${e.isPrimary}`,
+      message: `[vGesture] down tgt=${describeTarget(e.target)} video=${videoHit} image=${imageHit} primary=${e.isPrimary}`,
     });
-    if (!e.isPrimary || !areaHit) return;
+    if (!e.isPrimary || (!videoHit && !imageHit)) return;
     /**
      * v10：**零拦截**（连 stopPropagation 都不做）——事件自然传播，
      * video（穿透退役后恢复命中、成为 hit-test target）在 target 段收到
      * 事件，原生控件手势全活；tap 手势完整。这里只启动长按计时；
      * PM 的"点击建立选区"由下方 handleDOMEvents prop 层挡
      * （返回 true 跳过 PM 处理，不改事件传播）。
+     *
+     * v11：image 命中走 tap-toggle 模式——无长按语义（不需要 500ms 计时），
+     * 仅快照 downMode/downStartEl/downBlockId 并挂 move/up/cancel（move 的
+     * 20px 位移容差对图片同样生效：滚动/拖拽意图取消 tap，防误选中）；
+     * tap 语义在 onPointerUp 的 image 分支分发。
      */
     longPressDone = false;
+    downMode = imageHit ? "image" : "video";
     downStartEl = e.target instanceof Element ? e.target : null;
     /** v10.1：块 id 在按下时刻快照（不受按住期间 DOM 替换影响） */
     downBlockId = downStartEl?.closest(".bn-block[data-id]")?.getAttribute("data-id") ?? null;
     startX = e.clientX;
     startY = e.clientY;
-    timer = window.setTimeout(() => {
-      timer = null;
-      /** v10：计时到点只置标记，fire 挪到 pointerup 后的宏任务（见 onPointerUp） */
-      longPressDone = true;
-    }, VIDEO_LONG_PRESS_MS);
+    if (videoHit) {
+      /** 仅视频需要长按计时（v10：计时到点只置标记，fire 挪到 pointerup 后宏任务） */
+      timer = window.setTimeout(() => {
+        timer = null;
+        longPressDone = true;
+      }, VIDEO_LONG_PRESS_MS);
+    }
     root.addEventListener("pointermove", onPointerMove, { capture: true });
     root.addEventListener("pointerup", onPointerUp, { capture: true });
     root.addEventListener("pointercancel", onPointerCancel, { capture: true });
   };
 
   /**
-   * PM props 层选区拦截（v10 新机关，替代 v7~v9 的 stopPropagation 闸）。
+   * PM props 层选区拦截（v10 新机关，替代 v7~v9 的 stopPropagation 闸；
+   * v11 命中判定扩展为 video ∪ image 两类媒体区域）。
    *
    * ProseMirror 的 `handleDOMEvents` prop：事件冒泡到 view.dom 时 PM 先征询
    * 这些 handler，**返回 true = PM 跳过该事件的全部内置处理**（含 mousedown
@@ -2834,10 +2972,14 @@ function bindVideoBlockGestures(ed: any): () => void {
    * preventDefault ≠ stopPropagation）。时序上 video（target）早已在
    * target 段收到事件（先于冒泡到 view.dom）——这就是"PM 不弹工具条"与
    * "原生媒体手势全活"能共存的机关。
+   *
+   * v11 图片侧：官方"点击建 NodeSelection + 焦点回 contenteditable（弹
+   * 键盘）"路径由此整体停用，改由 pointer 手势层接管（tap-select /
+   * tap-collapse，见 onPointerUp image 分支）。
    */
-  const videoHandleDOMEvents: Record<string, (view: unknown, event: MouseEvent) => boolean> = {
+  const mediaHandleDOMEvents: Record<string, (view: unknown, event: MouseEvent) => boolean> = {
     mousedown: (_pmView, event) => {
-      const hit = inVideoPictureArea(event.target);
+      const hit = inManagedMediaArea(event.target);
       /** TEMP-DEBUG（v10 埋点，验证后删除） */
       sendUp({
         type: "diagnostic",
@@ -2846,7 +2988,7 @@ function bindVideoBlockGestures(ed: any): () => void {
       return hit;
     },
     click: (_pmView, event) => {
-      const hit = inVideoPictureArea(event.target);
+      const hit = inManagedMediaArea(event.target);
       /** TEMP-DEBUG（v10 埋点，验证后删除） */
       sendUp({
         type: "diagnostic",
@@ -2860,7 +3002,7 @@ function bindVideoBlockGestures(ed: any): () => void {
   (view as any).setProps({
     handleDOMEvents: {
       ...((prevHandleDOMEvents as Record<string, unknown>) ?? {}),
-      ...videoHandleDOMEvents,
+      ...mediaHandleDOMEvents,
     },
   });
 
@@ -3020,13 +3162,15 @@ function EditorCore(props: {
   });
 
   /**
-   * 视频块手势接管（v2026-09-28）：长按弹工具条 / 点击收起 / 其余点击一律不弹。
-   * 用户定稿的交互（替代官方"点击弹"——与 Android 原生媒体手势区域互斥，
-   * 演进史见 editor.css 与 bindVideoBlockGestures 头注释）。
+   * 媒体块手势接管（v2026-09-29 v11）：video 长按弹工具条 / 点击收起 /
+   * 其余点击一律不弹（v10.x 交互不变）；image（预览态 + 文件展示态）
+   * 单击选中 / 再击收起、键盘不弹（已弹则收）。两类块统一单绑定——共用
+   * IME 门 / 选中下沉 / 确定性弹条收条 / 防重选窗与 handleDOMEvents 拦截
+   * （拆双绑定会让 props 保存/恢复互相覆盖泄漏），交互分发见函数内注释。
    * editor 为单次创建的稳定实例，绑定/解绑各执行一次。
    */
   useEffect(() => {
-    return bindVideoBlockGestures(editor);
+    return bindMediaBlockGestures(editor);
   }, [editor]);
 
   /**
