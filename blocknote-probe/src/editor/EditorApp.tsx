@@ -2249,6 +2249,21 @@ const VIDEO_LONG_PRESS_MOVE_TOLERANCE = 20;
  * findFrom($from,-1,true)`（textOnly=true 只找文本位置，先块后再块前）。
  * 见 collapse 分支处详注。
  *
+ * **v10.7 文件形态单击弹条（showPreview=false 手势闭环）**：用户经工具条
+ * 把视频转成「文件展示」（官方 createFileBlockWrapper 在 showPreview=false
+ * 时走 createFileNameWithIcon 渲染 `.bn-file-name-with-icon`）后，单击文件
+ * 无反应——该 DOM 仍在 `.bn-block-content[data-content-type="video"]` 内，
+ * inVideoPictureArea 判定命中 → PM 层 mousedown/click 拦截生效 → 单击不建
+ * 选区 → 不弹条（视频画面的保护逻辑误伤了文件形态）。**修法**：onPointerUp
+ * 快速 tap 路径在 collapse 分支之后加 else if——未选中且按在
+ * `.bn-file-name-with-icon` 上 → 宏任务复用 selectVideoBlock（IME 门 +
+ * v10.5 选中下沉 + v10.3 确定性弹条全链同构，dispatch 前置位
+ * lastSelectedId）；再单击走既有 collapse 链收起；键盘全程不弹（IME 门 +
+ * NodeSelection 无文本焦点 + collapse blur）。视频预览形态（视频画面）单击
+ * 保持现状不弹条——原生播放控件手势优先；官方 Block.css 另给文件形态
+ * 选中态灰底（`.ProseMirror-selectednode .bn-file-name-with-icon`），
+ * 弹条后视觉反馈 = 蓝框 + 灰底双重。
+ *
  * **v10 排错埋点**（TEMP-DEBUG，验证后删除）：v10 installed 指纹 /
  * [onVideo] video 直挂探针（**本轮关键验证点：单击后应出现 [onVideo] 行**，
  * 证明事件真正到达 video）/ [touch] tap 完整性 / [cancel] / after300 /
@@ -2276,7 +2291,7 @@ function bindVideoBlockGestures(ed: any): () => void {
   let lastSelectedId: string | null = null;
 
   /** TEMP-DEBUG（v10 排错埋点，验证后删除）：绑定指纹——确认本版本 JS 真的在运行 */
-  sendUp({ type: "diagnostic", message: "[vGesture] v10.6 installed" });
+  sendUp({ type: "diagnostic", message: "[vGesture] v10.7 installed" });
 
   /**
    * TEMP-DEBUG（v10.3 定性探针，验证后删除）：BlockNote 层 selectionUpdate
@@ -2732,6 +2747,29 @@ function bindVideoBlockGestures(ed: any): () => void {
         };
         probeAfterCollapse("post-collapse");
         window.setTimeout(() => probeAfterCollapse("after300-collapse"), 300);
+      } else if (upBlockId && startEl && startEl.closest(".bn-file-name-with-icon")) {
+        /**
+         * v10.7 文件形态单击弹条：视频转「文件展示」（showPreview=false）后，
+         * 文件名区域（.bn-file-name-with-icon）仍被 inVideoPictureArea 命中
+         * → PM 层拦截挡住了官方「点击建选区」→ 未选中态单击永远不弹条。
+         * 此处补齐单击语义：复用 selectVideoBlock 全链（IME 门防键盘 +
+         * v10.5 下沉让蓝框挂对层 + v10.3 手动 setState(true) 确定性弹条），
+         * 与长按路径完全同构；fire 放宏任务是 v10 的既有要求（官方
+         * FormattingToolbarExtension 的 pointerup 清抑制窗监听须先跑完）。
+         * 判定用 closest 实时探测（downStartEl 快照仅观测用，选中语义以
+         * 按下时刻元素为准即可）；预览形态（视频画面）不命中此分支，单击
+         * 维持零动作，原生控件手势不受影响。再单击由上方 collapse 分支
+         * 收起（selectVideoBlock 已置 lastSelectedId，闭环成立）。
+         */
+        /** TEMP-DEBUG（v10.7 埋点，验证后删除） */
+        sendUp({ type: "diagnostic", message: "[vGesture] up: tap-select (file form)" });
+        window.setTimeout(() => {
+          try {
+            selectVideoBlock(upBlockId, startEl);
+          } catch (err: any) {
+            sendUp({ type: "error", message: `videoTapSelect: ${err?.message ?? err}` });
+          }
+        }, 0);
       }
     } catch (e: any) {
       sendUp({ type: "error", message: `videoTapCollapse: ${e?.message ?? e}` });
