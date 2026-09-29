@@ -8,6 +8,8 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.graphics.Bitmap
+/** TEMP-DEBUG 焦点取证：onFocusChanged 参数类型所需，定位后随埋点一并移除 */
+import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -18,6 +20,8 @@ import android.provider.MediaStore
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
+/** TEMP-DEBUG 键盘取证：onApplyWindowInsets 参数类型所需，定位后随埋点一并移除 */
+import android.view.WindowInsets
 /** 软键盘抑制（v2026-09-21）：WebView 子类拦截输入连接所需 */
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
@@ -48,6 +52,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.annotation.RequiresApi
 import androidx.core.content.FileProvider
+/** TEMP-DEBUG 键盘取证：IME insets 兼容读取所需，定位后随埋点一并移除 */
+import androidx.core.view.WindowInsetsCompat
 import com.corgimemo.app.ui.components.GlobalSnackbarController
 import com.corgimemo.app.ui.theme.FontCatalog
 import com.corgimemo.app.ui.theme.ThemeManager
@@ -2098,6 +2104,21 @@ private const val IME_SUPPRESS_SCRIPT = """
  */
 private class ImeSuppressibleWebView(context: Context) : WebView(context) {
 
+    /** TEMP-DEBUG 上次上报的 IME 可见性（insets 翻转日志去重用），定位后随埋点一并删除 */
+    private var lastReportedImeVisible: Boolean = false
+
+    /**
+     * TEMP-DEBUG 取证辅助（v2026-09-29 键盘收起排查）：把当前调用点前 12 帧拼成单行栈。
+     * 不用 Log.getStackTraceString 是因为完整栈 40+ 行易撞 logcat 单条约 4KB 的截断上限，
+     * 且 12 帧足够覆盖「宿主 → 桥 → 视图」的完整调用链。定位后随埋点一并删除。
+     */
+    private fun imeStack(): String = Throwable().stackTrace
+        .drop(1) // 去掉 imeStack 自身这一帧，栈从真实调用方开始
+        .take(12)
+        .joinToString(" <- ") { frame ->
+            "${frame.className.substringAfterLast('.')}.${frame.methodName}:${frame.lineNumber}"
+        }
+
     /** 是否抑制软键盘（宿主面板展开期间为 true） */
     var isImeSuppressed: Boolean = false
         set(value) {
@@ -2129,15 +2150,50 @@ private class ImeSuppressibleWebView(context: Context) : WebView(context) {
     }
 
     /**
+     * TEMP-DEBUG 系统级键盘真值监听（v2026-09-29 键盘收起取证）：
+     * IME 可见性翻转时上报（API 30+ 平台才报告 IME insets，低版本本日志恒不翻转，
+     * 届时以 hide/show 栈日志为准）。判据：
+     * - insets 收起瞬间存在 hideImeNow 栈 = 宿主主动收；
+     * - insets 收起但无任何 hide 栈 = 系统/输入法/Chromium 侧自行收起。
+     * 定位后随埋点一并删除本 override。
+     */
+    override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {
+        val ime = WindowInsetsCompat.toWindowInsetsCompat(insets)
+            .getInsets(WindowInsetsCompat.Type.ime())
+        val visible = ime.bottom > 0
+        if (visible != lastReportedImeVisible) {
+            lastReportedImeVisible = visible
+            Log.i(TAG, "TEMP-DEBUG ime insets: visible=$visible height=${ime.bottom} suppress=$isImeSuppressed")
+        }
+        return super.onApplyWindowInsets(insets)
+    }
+
+    /**
+     * TEMP-DEBUG WebView 视图焦点翻转取证（v2026-09-29）：
+     * 记录谁抢走/交还视图焦点（Compose 根、其他控件等），
+     * 用于判断「WebView 失焦 → Chromium 主动收键盘」路径。定位后随埋点一并删除。
+     */
+    override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
+        super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
+        Log.i(TAG, "TEMP-DEBUG webview focus: gain=$gainFocus suppress=$isImeSuppressed stack=${imeStack()}")
+    }
+
+    /**
      * 立即隐藏软键盘（幂等：键盘未显示时为空操作）。
      *
      * ⚠️ `windowToken` 为空表示视图尚未 attach 到窗口，此时把 null 传给
      * `hideSoftInputFromWindow` 会抛 IllegalArgumentException，故先做空值守卫。
      */
     fun hideImeNow() {
-        val token = windowToken ?: return
+        val token = windowToken ?: run {
+            // TEMP-DEBUG 未 attach 时调用会被静默跳过，取证期也要留痕（对照「调了但没收掉」），定位后删除
+            Log.i(TAG, "TEMP-DEBUG hideImeNow: SKIP no-windowToken stack=${imeStack()}")
+            return
+        }
         val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
             ?: return
+        // TEMP-DEBUG 键盘收起取证：记录调用方栈（与 ime insets 真值对照），定位后删除
+        Log.i(TAG, "TEMP-DEBUG hideImeNow: suppress=$isImeSuppressed stack=${imeStack()}")
         imm.hideSoftInputFromWindow(token, 0)
     }
 
@@ -2169,6 +2225,8 @@ private class ImeSuppressibleWebView(context: Context) : WebView(context) {
             imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
         }
         Log.d(TAG, "ime show requested | viewFocus=$focused")
+        // TEMP-DEBUG 键盘弹出取证：记录调用方栈（键盘「弹了又收」时对照 hide 日志时序），定位后删除
+        Log.i(TAG, "TEMP-DEBUG showImeNow: viewFocus=$focused stack=${imeStack()}")
     }
 
     /**

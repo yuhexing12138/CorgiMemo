@@ -1043,6 +1043,77 @@ export default function EditorApp() {
     };
   }, [pushEditorFocus, isEditorDomFocused]);
 
+  /**
+   * TEMP-DEBUG（v2026-09-29 rename 键盘探针，定位后删除）：焦点去向明细追踪。
+   *
+   * **背景**：Rename video 弹层输入框聚焦后键盘"展开又收起"，焦点门控修复后
+   * 仍复现——需精确定位键盘收起瞬间焦点的去向。本探针在 document **capture**
+   * 段记录每一对 focusin/focusout 的目标与来向：
+   * - `out input to=null activeAfter=body` = 焦点凭空消失（系统/卸载行为）；
+   * - `out input to=div.xxx` = 有代码主动把焦点转移走了（顺藤摸瓜找调用方）。
+   * capture 段先于任何目标处理器，不会被业务代码 stopPropagation 吞掉。
+   */
+  useEffect(() => {
+    const describe = (el: EventTarget | null): string => {
+      if (!(el instanceof Element)) return String(el);
+      const tag = el.tagName.toLowerCase();
+      const cls =
+        typeof el.className === "string"
+          ? el.className
+              .split(" ")
+              .filter((c) => c && !c.startsWith("bn-"))
+              .slice(0, 2)
+              .join(".")
+          : "";
+      const ct = el.getAttribute?.("data-content-type") ?? "";
+      const ce = el.getAttribute?.("contenteditable");
+      return `${tag}${cls ? "." + cls : ""}${ct ? `[ct=${ct}]` : ""}${ce ? "[ce]" : ""}`;
+    };
+    const onFocusIn = (e: FocusEvent) => {
+      sendUp({
+        type: "diagnostic",
+        message: `[focusTrace] in ${describe(e.target)} from=${describe(e.relatedTarget)}`,
+      });
+    };
+    const onFocusOut = (e: FocusEvent) => {
+      sendUp({
+        type: "diagnostic",
+        message: `[focusTrace] out ${describe(e.target)} to=${describe(e.relatedTarget)} activeAfter=${describe(document.activeElement)}`,
+      });
+    };
+    document.addEventListener("focusin", onFocusIn, true);
+    document.addEventListener("focusout", onFocusOut, true);
+    return () => {
+      document.removeEventListener("focusin", onFocusIn, true);
+      document.removeEventListener("focusout", onFocusOut, true);
+    };
+  }, []);
+
+  /**
+   * TEMP-DEBUG（v2026-09-29 rename 键盘探针，定位后删除）：Rename 弹层 DOM
+   * 挂载/卸载监控。Mantine Dropdown（`.bn-form-popover`，keepMounted=false）
+   * 卸载 = 输入框从 DOM 移除 = 键盘必然收起的直接证据；配合 [focusTrace] 可
+   * 区分「弹层被关」（React 卸载路径）与「仅焦点丢失」（系统/第三方路径）。
+   * placeholder 摘要用于区分同类的链接/题注弹层。
+   */
+  useEffect(() => {
+    let lastPresent = false;
+    const obs = new MutationObserver(() => {
+      const el = document.querySelector(".bn-form-popover");
+      const present = !!el;
+      if (present === lastPresent) return;
+      lastPresent = present;
+      const placeholder =
+        el?.querySelector("input")?.getAttribute("placeholder") ?? "";
+      sendUp({
+        type: "diagnostic",
+        message: `[renameProbe] form-popover ${present ? "mounted" : "unmounted"}${present ? ` placeholder=${placeholder}` : ""}`,
+      });
+    });
+    obs.observe(document.body, { childList: true, subtree: true });
+    return () => obs.disconnect();
+  }, []);
+
   // ---- Bridge 下行绑定 ----
   useEffect(() => {
     // 诊断日志：确认宿主桥是否存在（真机缺失 = ready 上行走不出去）
