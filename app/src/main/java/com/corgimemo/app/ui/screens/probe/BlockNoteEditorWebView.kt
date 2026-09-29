@@ -1903,6 +1903,8 @@ private fun createEditorWebView(
 
         /**
          * 下载通道（v2026-09-29 新增）：原生媒体控件三点菜单「下载」选项的宿主开关。
+         * ⚠️ 本调用处于 WebView 的 apply 块内（隐式接收者，本函数无 webView 局部
+         * 变量——曾误写 `webView.setDownloadListener` 导致 Unresolved reference）。
          *
          * **为什么设置 listener 后选项才出现**：WebView 媒体控件里「下载」的显隐由
          * Chromium 按宿主下载能力判定（MediaControlsDownloadButtonDelegate 走
@@ -1922,7 +1924,7 @@ private fun createEditorWebView(
          * 非本地 URL（编辑器内理论上不会出现）一律记日志忽略，不接系统下载器——
          * 本应用无网络下载语义，避免引入外部输入面。
          */
-        webView.setDownloadListener { url, _, _, _, _ ->
+        setDownloadListener { url, _, _, _, _ ->
             if (url != null && isExportableLocalMedia(url)) {
                 Log.d(TAG, "download requested (native menu): $url")
                 exportLocalMediaToGallery(appContext, url)
