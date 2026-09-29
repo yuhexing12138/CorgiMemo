@@ -3283,10 +3283,29 @@ function EditorCore(props: {
       let raf = 0;
       let running = false;
       let prevDiff = 0;
+      /**
+       * v2026-09-29 焦点门控：焦点不在编辑器（contenteditable）内时，本机制
+       * **完全不参与滚动**（入口短路 + step 每帧复查，滚动中途失焦即退出）。
+       *
+       * **为什么必须有**（Replace video → Rename video 键盘"展开后又收起"根因）：
+       * 本机制的滚动目标是 `coordsAtPos(selection.from)`——**PM 选区**坐标。
+       * 聚焦 Rename 输入框只转移 **DOM 焦点**，PM 选区仍是 NodeSelection(视频块)；
+       * 键盘弹出 → WebView 高度收缩 → 本机制被 resize 触发，把**视频块**当
+       * "光标"拉回可见区，与 Chromium 的"让输入框可见"滚动互相拉锯——
+       * 竖屏大视频必然出界必然触发（横屏小视频零动作，完美解释"特定尺寸才出现"）。
+       * 门控后失焦期零滚动，Chromium 独占输入框滚动，键盘稳定弹出。
+       *
+       * **适用性**：本机制语义是"文本光标跟随"，前提即焦点在编辑器内；
+       * v1.11.9 原始场景（正文打字键盘弹出光标被遮）焦点本就在编辑器，零回归。
+       */
+      const editorHasFocus = () => {
+        const view = editor.prosemirrorView;
+        return !!view && !view.isDestroyed && view.hasFocus();
+      };
       const step = () => {
         const view = editor.prosemirrorView;
         const doc = document.documentElement;
-        if (!view || view.isDestroyed) {
+        if (!view || view.isDestroyed || !editorHasFocus()) {
           running = false;
           return;
         }
@@ -3335,6 +3354,8 @@ function EditorCore(props: {
         }
       };
       const kickScrollFollow = () => {
+        /** v2026-09-29 焦点门控：失焦期直接短路，连 rAF 都不起 */
+        if (!editorHasFocus()) return;
         if (!running) {
           running = true;
           step();
