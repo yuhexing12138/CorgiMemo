@@ -1,8 +1,11 @@
 package com.corgimemo.app.ui.screens.probe
 
 import android.annotation.SuppressLint
+import android.app.Activity
+import android.app.Dialog
 import android.content.ContentValues
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
@@ -13,6 +16,7 @@ import android.os.Looper
 import android.os.Message
 import android.provider.MediaStore
 import android.util.Log
+import android.view.View
 import android.view.ViewGroup
 /** 软键盘抑制（v2026-09-21）：WebView 子类拦截输入连接所需 */
 import android.view.inputmethod.EditorInfo
@@ -1760,6 +1764,79 @@ private fun createEditorWebView(
                 return true
             }
 
+            /** 视频全屏承载 Dialog（v2026-09-29）：非 null 即全屏中，onShow/onHide 双侧防重入 */
+            private var fullscreenDialog: Dialog? = null
+
+            /**
+             * HTML5 视频全屏通道（v2026-09-29 新增）：编辑器内 `<video controls>` 右下角
+             * 「全屏」按钮的宿主半边。**Android WebView 的视频全屏必须由 WebChromeClient
+             * 实现 onShowCustomView / onHideCustomView 才可用**——未实现时 Chromium 判定
+             * "宿主无全屏能力"（fullscreenEnabled=false），把全屏按钮渲染为灰色禁用态、
+             * 点击无反应（又一个"点了没反应"的哑按钮，成因与 onShowFileChooser 同理）。
+             *
+             * 实现：全屏 Dialog 承载 Chromium 传来的视频渲染层（custom view），进入后
+             * 视频铺满整屏（letterbox，黑底自然融合）。退出三条路收敛：
+             * ① 用户按返回键 → Dialog cancel → 转发 callback.onCustomViewHidden() 通知
+             *   Chromium 结束全屏态；
+             * ② Chromium 侧要求退出（视频控件"退出全屏"按钮 / JS exitFullscreen）→
+             *   onHideCustomView → dismiss（不回调 callback：它只在宿主主动退出时通知用）；
+             * ③ 已在全屏中又收到进入请求 → 直接 onCustomViewHidden() 防叠加。
+             *
+             * ⚠️ Dialog 必须以 Activity 为宿主（applicationContext 会 BadTokenException），
+             * 故对 createEditorWebView 收到的 context 逐层解包找 Activity；解包失败按
+             * "宿主无能力"收场（onCustomViewHidden，按钮回到灰色，不崩溃）。
+             *
+             * ⚠️ 方向/生命周期（本版边界）：不强制横屏、不做 Activity 重建恢复——
+             * 竖屏下横视频上下留黑边；若全屏中 Activity 被销毁，Dialog 由系统
+             * WindowLeaked 告警收尾，不影响主流程。全屏自动横屏留待按需迭代。
+             */
+            override fun onShowCustomView(
+                view: View,
+                callback: WebChromeClient.CustomViewCallback
+            ) {
+                if (fullscreenDialog != null) {
+                    /** 已在全屏中：防叠加，直接收场 */
+                    callback.onCustomViewHidden()
+                    return
+                }
+                val activity = context.findHostActivity()
+                if (activity == null) {
+                    Log.d(TAG, "video fullscreen requested but no activity host, ignore")
+                    callback.onCustomViewHidden()
+                    return
+                }
+                val dialog = Dialog(activity, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+                dialog.setContentView(
+                    view,
+                    ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                )
+                /** 返回键退出：Dialog cancel → 通知 Chromium 结束全屏态 */
+                dialog.setOnCancelListener {
+                    fullscreenDialog = null
+                    callback.onCustomViewHidden()
+                    Log.d(TAG, "video fullscreen exited (back)")
+                }
+                fullscreenDialog = dialog
+                dialog.show()
+                Log.d(TAG, "video fullscreen shown")
+            }
+
+            /**
+             * Chromium 侧要求退出全屏（视频控件"退出全屏"按钮 / JS exitFullscreen）：
+             * 摘掉 cancel 监听后 dismiss，防 dismiss 路径误触发取消回调；
+             * 此处**不**调 callback.onCustomViewHidden()——callback 只用于宿主主动
+             * 退出时通知 Chromium，Chromium 发起本回调时已自知全屏结束。
+             */
+            override fun onHideCustomView() {
+                fullscreenDialog?.setOnCancelListener(null)
+                fullscreenDialog?.dismiss()
+                fullscreenDialog = null
+                Log.d(TAG, "video fullscreen exited (webkit)")
+            }
+
             /**
              * 文件选择通道（v2026-09-24 新增）：官方 Replace Image「Upload」标签的
              * 宿主半边。**Android WebView 的 `<input type="file">` 必须由宿主实现
@@ -1828,6 +1905,19 @@ private fun createEditorWebView(
     }
     controller.webView = webView
     return webView
+}
+
+/**
+ * 逐层解包 Context 找宿主 Activity（tailrec，对包壳 Context 稳）。
+ * 供视频全屏 Dialog 定位 Activity 宿主（Dialog 不能用 applicationContext 创建，
+ * 否则 BadTokenException）；找不到返回 null，调用方按"宿主无能力"收场。
+ * 与 InspirationImageGallery / VoicePreviewDialog 内私有实现同构
+ * （各文件私有副本，不为单一用途新增全局 API）。
+ */
+private tailrec fun Context.findHostActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findHostActivity()
+    else -> null
 }
 
 /**
