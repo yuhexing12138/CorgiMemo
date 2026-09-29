@@ -1902,27 +1902,28 @@ private fun createEditorWebView(
         })
 
         /**
-         * 下载通道（v2026-09-29 新增）：原生媒体控件三点菜单「下载」选项的宿主开关。
-         * ⚠️ 本调用处于 WebView 的 apply 块内（隐式接收者，本函数无 webView 局部
-         * 变量——曾误写 `webView.setDownloadListener` 导致 Unresolved reference）。
+         * 下载兜底通道（v2026-09-29）。⚠️ 本调用处于 WebView 的 apply 块内
+         * （隐式接收者，本函数无 webView 局部变量——曾误写
+         * `webView.setDownloadListener` 导致 Unresolved reference）。
          *
-         * **为什么设置 listener 后选项才出现**：WebView 媒体控件里「下载」的显隐由
-         * Chromium 按宿主下载能力判定（MediaControlsDownloadButtonDelegate 走
-         * `GetSettings()->GetDownloadEnabled()`，WebView 侧与 DownloadListener 是否
-         * 设置挂钩）——未设置时 Chromium 判定"宿主无下载能力"，选项**不渲染**
-         * （本项目此前即因此只剩「播放速度」一项）。同理，「画中画」因 WebView 平台
-         * 不支持 Web 画中画 API（MDN 兼容表：`requestPictureInPicture` 在
-         * WebView Android 为 No support，按钮根本不会渲染进 DOM），宿主配置无解——
-         * 三点菜单只能恢复「下载」+ 既有「播放速度」，画中画为平台边界而非缺陷。
+         * **⚠️ 真相修正（真机复测 + Chromium 源码定案）**：本监听与媒体控件三点
+         * 菜单「下载」选项的显隐**无关**——早先注释称"设置 listener 后选项出现"
+         * 系低质社区问答误导，真机验证证伪。真实机制（html_media_element.cc 的
+         * `SupportsSave()`）：**视频 src 为本地文件（file://，或 Android 默认开启的
+         * kContentSchemeIsLocal 之下的 content://）时，Chromium 有意隐藏下载按钮**
+         * （源码注释原话 "It is not useful to offer a save feature on local files"），
+         * 全平台一致、宿主零杠杆——桌面 Chrome 打开本地视频同样没有该选项。
+         * 编辑器内视频全部是本地文件，故三点菜单恒只有「播放速度」；「画中画」另因
+         * WebView 平台禁用 Web 画中画 API（aw_settings.cc 固定
+         * `picture_in_picture_enabled = false`）同样不渲染——两者均为平台行为而非缺陷。
          *
-         * **点击落点**：三点菜单点「下载」→ Chromium 发起下载 → 回调本监听。
-         * 编辑器内媒体资源全部是本地 file:// 文件，经 [isExportableLocalMedia] 判定后
-         * 复用 [exportLocalMediaToGallery]——与 onCreateWindow 的 window.open 下载
-         * 通路同一落点（官方 BlockNote 工具条「下载」= window.open），两条路收敛到
-         * 同一个导出实现（MediaStore 直存 / API 26-28 分享面板降级 + Snackbar 反馈）。
-         *
-         * 非本地 URL（编辑器内理论上不会出现）一律记日志忽略，不接系统下载器——
-         * 本应用无网络下载语义，避免引入外部输入面。
+         * **保留本监听的理由（兜底）**：万一未来出现非本地源（http 系）媒体，
+         * 三点菜单「下载」会真正出现，回调经 [isExportableLocalMedia] 命中本地媒体
+         * 分支后复用 [exportLocalMediaToGallery]（与 onCreateWindow 的 window.open
+         * 下载通路同一落点：MediaStore 直存 / API 26-28 分享面板降级 + Snackbar 反馈），
+         * 导出链路即插即用。当前本地媒体的「下载」语义由官方 BlockNote 工具条
+         * 「下载」按钮（window.open）承担。非本地 URL 记日志忽略——本应用无网络
+         * 下载语义，不引入外部输入面。
          */
         setDownloadListener { url, _, _, _, _ ->
             if (url != null && isExportableLocalMedia(url)) {
