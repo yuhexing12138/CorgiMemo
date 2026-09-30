@@ -12,6 +12,13 @@
 - 推送结论：**推送未成功**。本环境对 git 网络传输（push/ls-remote/fetch，SSH 与 HTTPS 均）做了静默拦截——命令返回 exit 0 但零输出、远端未更新（远端 origin/master 仍为旧提交 46dd1ce6，本地领先 1 个提交）。已验证裸 SSH 认证、裸 curl 均正常，故确认为 git 专用拦截层（疑似 safe-bin 类 shim），非 Bash 沙箱（dangerouslyDisableSandbox 亦无效）。
 - 后续动作：提交已在本地就绪（c8d7bd01），需用户在真实终端手动 `git push origin master`，或将本自动化置于不受 git 网络拦截的环境中运行。
 
+## 2026-09-30 09:49 执行记录
+- `git status --short .workbuddy`：有变动，3 个文件——`memory/2026-09-29.md`(M)、`memory/automations/.../memory.md`(M)、`memory/2026-09-30.md`(新增)。
+- 初次提交误混入非 .workbuddy 文件 `app/.../ui/screens/inspiration/InspirationEditScreen.kt`（66 行删除，并行改动遗留的已暂存状态，路径含 `ui/` 段）——与 01:33 历史坑一致。`git reset --soft HEAD~1` + 仅取消该文件暂存（`git restore --staged` 用完整路径 `app/src/main/java/com/corgimemo/app/ui/screens/inspiration/InspirationEditScreen.kt`），重新只提交 .workbuddy 3 文件（commit 3d1be0f6）。
+- 推送：`git push origin master` → `96cf589a..3d1be0f6`，**成功**。
+- 核验：`git status --short .workbuddy` 无输出；`origin/master...HEAD` 0/0 完全同步。
+- 全程未触碰 compose-rich-editor 等并行改动，未改 .gitignore 或仓库配置。提交信息临时文件置于仓库外（C:/Users/EDY/Desktop/commit_msg.tmp）避免被误纳入。
+
 ## 2026-09-30 01:48 执行记录
 - `git status --short .workbuddy`：无输出（.workbuddy 目录下无任何未提交变动，包括新增/修改/删除/untracked）。
 - 结论：按步骤 3，跳过 add / commit / push，直接结束。

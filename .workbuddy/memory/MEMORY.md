@@ -37,6 +37,7 @@
 - ★ 环境坑：WorkBuddy fs shim 对 vitest Temp/哈希文件写 EPERM → 多文件 run 随机中断 → 分批重跑累计覆盖。
 
 ## 浮层 / 事件 / 定位
+- ★★ **「几何全对 + hit-test 命中 + overflow 无裁」却看不见 ⇒ 查祖先的「合成/包含属性」**（v2026-09-30 第十八轮）：`will-change: transform` / `opacity<1` / `filter` / `backdrop-filter` / `contain` / `transform-style` 会让元素**提升为独立合成层**，合成层按**自身 bounds** 建绘制边界——**这不是 `overflow` 边界**，`overflow:visible` 无效，`getBoundingClientRect` 与 `elementFromPoint` 全部正常（hit-test 走 layout 树不感知合成层裁剪）。本案真凶 = floating-ui 给浮动宿主写的**内联** `willChange:'transform'`（`@floating-ui/react-dom` dist 第 220 行），把工具条上方 69px 的弹层裁掉；`POP(clip)` 全程 `NONE` 是正常的（它只查 overflow/clip-path）。修法：常驻样式表 `div:has(> .bn-formatting-toolbar) { will-change: auto !important; overflow: visible !important; }` —— 样式表 `!important` 能压过**无** `!important` 的内联声明；`:has()` 配 `> ` 直接子选择器收敛作用域。**排查这类问题必须用「祖先合成属性探针」**，`overflow`/`clip-path` 探针会完全漏掉。
 - ★★ createPortal/position:fixed 不阻断 React 事件（沿 fiber 传播）→ 只能 e.stopPropagation()。
 - ★ 浮动工具条尺寸全写死+视口夹取（键盘改 innerHeight 勿缓存 vh）；Portal 出去查 CSS 变量继承断链（--editor-primary/--mantine-*/--bn-*）。
 - ★ PositionPopover 两件套缺一不可：`focusManagerProps={{disabled:true}}` + 自建 Portal 宿主 `div.bn-root.bn-mantine`；必须官方 middleware 三件套 `offset(10)+shift()+flip()`。
