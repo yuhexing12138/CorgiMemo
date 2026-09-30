@@ -124,6 +124,8 @@ temp_commit_msg.txt
 # ============================================================
 # vite 每次启动生成的配置快照（文件名带时间戳，属噪声）
 blocknote-probe/vite.config.ts.timestamp-*
+# editor 专用 vite 配置（vite.editor.config.ts）同样会生成时间戳快照
+blocknote-probe/vite.editor.config.ts.timestamp-*
 # 探针页构建产物与截图（exploreProbe 的本地调试输出）
 blocknote-probe/probe-result.png
 app/src/main/assets/blocknote-probe/
@@ -131,3 +133,7 @@ app/src/main/assets/blocknote-web/probe/
 
 # 诊断日志（临时抓取，不入库）
 diag_*.txt
+# WebView 编辑器 adb logcat 抓取与手工日志（大文件、高频变动，不进版本库）
+blocknote_log.txt
+日志.txt
+log/artifact-check.txt

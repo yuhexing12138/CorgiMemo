@@ -261,3 +261,60 @@
 .bn-block-outer:first-child > .bn-block > .bn-block-content {
   padding-top: 0 !important;
 }
+
+/**
+ * 浮层「键盘避让」的样式说明（v2026-09-30 第三轮）。
+ *
+ * ⚠️ **本文件不承载位移规则，也不承载 transition。**
+ *
+ * ## 位移
+ * 由 `EditorApp` 的避让 effect **动态生成**到一张常驻 `<style>` 元素里
+ * （每帧整表重写，含具体 px 值），形如：
+ * `.bn-formatting-toolbar[data-ime-shift] { position: relative !important; top: -219.8px !important; }`
+ *
+ * ⚠️ **第二十五轮：载体由 `transform: translateY()` 改为 `position: relative + top`。**
+ * `transform` 会与官方 floating-ui 的 `autoUpdate` 形成**每秒一次的重定位反馈环**
+ * （工具条被 transform 移动 → floating-ui 回读到该 rect → 把弹层重定位回
+ * 工具条"未避让位" → 弹层横跳出屏 = 用户看到"弹层消失"）。真机时间线铁证与
+ * 完整成因见 `EditorApp.tsx` 中 `shiftStyleEl` 的 KDoc。
+ *
+ * ## 方案演进（每一轮都被真机日志推翻/修正，勿再走回头路）
+ * 1. **直写 `el.style.transform`** → 失败。两类目标的 `style` 都由
+ *    React / floating-ui 托管，DOM 直写被下一帧抹掉。
+ * 2. **`classList.add` + 内联 CSS 变量** → **一成一败**。
+ *    `.bn-form-popover`（本项目 JSX 静态 className）生效；
+ *    `.bn-formatting-toolbar` 不生效——它渲染为 Mantine 的 `<Flex>`
+ *    （`@blocknote/mantine/src/toolbar/Toolbar.tsx`），带框架生成的
+ *    hash class（`m_8bffd616`、`__m__-_r_6_`），React 判定 className 变化
+ *    后整串重写，把我们的类抹掉。
+ * 3. **`data-` 属性开关 + 动态样式表 + `transform`**（第三~二十四轮）→
+ *    位移能生效，但与 floating-ui 的 `autoUpdate` 形成反馈环，弹层每秒横跳出屏。
+ * 4. **`data-` 属性开关 + 动态样式表 + `position:relative/top`**（第二十五轮）
+ *    → 布局层位移，双方读到的几何一致，floating-ui 反馈环消失。
+ * 5. **同上，但取消「每帧摘属性测量」**（第二十八轮，**当前**）→
+ *    第四轮身份探针（`[idProbe]` + `[attrHook]`）证实：第 4 步虽解决了
+ *    floating-ui 的环，但 `applyShift` 自己的
+ *    「`removeAttribute` → 测量 → `setAttribute`」写法 + 它自己的
+ *    `MutationObserver(document.body, childList+subtree)` 构成了**第二个自激环**——
+ *    真机 `[attrHook]` 统计 `removeAttribute x70` / `setAttribute x36`，
+ *    属性「不存在」的时间占多数 ⇒ 位移多数时刻**没生效** ⇒ 弹层停在键盘后
+ *    （用户："弹层直接看不见了"）。修法：改用 `rawBottom = rect.bottom + prevDy`
+ *    **纯算术反算原始位**，永不摘属性；`MutationObserver` 亦收紧为**只在
+ *    `.bn-form-popover` 增删时**调度。本次起 `data-ime-shift` 只在
+ *    `needAvoid`/`needPullDown` **状态真正翻转**时写入一次（幂等，先查再写）。
+ *
+ * ## ★ transition 为什么不在这里（重要）
+ * 第二轮曾加 `transition: transform 120ms`。但它与「**每帧**先
+ * `removeAttribute`（位移归零）再 `setAttribute`（重新施加）」的做法**互斥**：
+ * 位移每次都被拉回 0 再重新出发，120ms 的过渡永远跑不完、被反复打断，
+ * 元素会长时间停在「接近原始位置」。**键盘动画期宿主本就在帧级下发
+ * `imeHeight`，位移天然逐帧平滑，不需要 CSS 过渡。**
+ *
+ * ⚠️ 第二十五轮改用 `top` 后同理：**不得给 `top` 加 transition**，
+ * 否则与本 effect 的「每帧摘/置属性」互相打断，症状与第二轮完全一致。
+ *
+ * ★ 第二十八轮起「每帧摘属性」已**彻底移除**（只在值变化时才写），
+ * 理论上 transition 不再被打断；但**仍不加**——键盘动画期的逐帧
+ * `imeHeight` 已经提供了平滑度，加 transition 只会引入 120ms 的**跟手延迟**
+ * （工具条追不上键盘上沿），得不偿失。
+ */

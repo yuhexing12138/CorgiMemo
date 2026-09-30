@@ -16,6 +16,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.Message
+import android.os.SystemClock
 import android.provider.MediaStore
 import android.util.Log
 import android.view.View
@@ -68,6 +69,20 @@ import java.io.File
 import kotlin.math.roundToInt
 
 private const val TAG = "BlockNoteEditor"
+
+/**
+ * 键盘过渡期冻结窗口（ms，v2026-09-30 键盘收起修复）。
+ *
+ * IME insets 可见性翻转后的该时长内视为「键盘过渡期」：WebView 高度正被键盘避让
+ * 连续改写（adjustResize 逐帧缩放），且 Compose 侧 `WindowInsets.ime` 更新存在滞后
+ * ——v1.11.9 的 min-height 门控（判 `imeBottomState == 0`）会在真实机日志实证的
+ * 竞态窗口里误判为"键盘收起"而放行下发（18:07 日志：59.785 insets true → 59.797
+ * 下发 → 59.798 show 被系统撤销 → 59.819 blur），relayout 中断 Chromium 输入会话。
+ * 窗口内宿主应冻结 min-height 下发并暂存，窗口结束后补发（450ms 覆盖典型键盘
+ * 动画 ~300ms + 余量；最坏代价是 min-height 晚 450ms 生效，用户无感）。
+ */
+internal const val IME_TRANSITION_FREEZE_MS = 450L
+
 private const val FONT_HOST = "corgimemo.local"
 private const val FONT_PATH_PREFIX = "/fonts/"
 private const val EDITOR_URL = "file:///android_asset/blocknote-web/editor/editor.html"
@@ -250,6 +265,37 @@ class BlockNoteBridgeController {
      * 字号后上行，宿主据此更新 BodyFontSizeManager 并持久化。参数为 px（1px=1dp）。
      */
     var onBaseFontSizeChanged: ((Int) -> Unit)? = null
+
+    /**
+     * 表单弹层展开/关闭回调（v2026-09-30 键盘收起修复）
+     *
+     * JS 侧 `.bn-form-popover` 挂载/卸载时经上行 `formPopoverOpen` 触发。
+     * 宿主根据状态决定是否给底部工具栏套 `imePadding()`——弹层期不套，
+     * 避免 WebView 在键盘动画期间被逐帧压缩（详见宿主侧注释）。
+     */
+    var onFormPopoverOpenChanged: ((Boolean) -> Unit)? = null
+
+    /**
+     * 表单弹层当前是否展开（v2026-09-30 键盘收起修复）
+     *
+     * **Compose 快照状态**：宿主读取它会参与重组（用于条件化 bottomBar 的
+     * `imePadding`）。由上行 `formPopoverOpen` 分支直接赋值。
+     */
+    var formPopoverOpen by mutableStateOf(false)
+        private set
+
+    /**
+     * IME 过渡期信号查询器（v2026-09-30 键盘收起修复）
+     *
+     * 由 [createEditorWebView] 在 WebView 创建时注入（转发
+     * [ImeSuppressibleWebView.isImeTransitionActive]）。宿主（InspirationEditScreen）
+     * 的 min-height 门控在下发前经 [isImeTransitionActive] 查询，过渡期内冻结下发。
+     * WebView 未创建时为 null → 查询恒 false（照常直发，不影响 pendingCommands 通道）。
+     */
+    internal var imeTransitionChecker: (() -> Boolean)? = null
+
+    /** WebView 是否处于键盘过渡期（insets 翻转后 [IME_TRANSITION_FREEZE_MS] 内）；WebView 未创建时恒 false */
+    internal fun isImeTransitionActive(): Boolean = imeTransitionChecker?.invoke() ?: false
 
     /**
      * 撤销/重做可用态（v1.7）：JS 侧历史栈变化后经 `undoState` 上行。
@@ -704,6 +750,35 @@ class BlockNoteBridgeController {
             JSONObject().put("type", "setEditorMinHeight").put("height", heightDp.toDouble())
         )
 
+    /**
+     * 软键盘高度下行（v2026-09-30 键盘遮挡弹层修复）。
+     *
+     * 宿主在弹层打开期间**不避让键盘**（见 `InspirationEditScreen` 的 bottomBar
+     * 条件避让），WebView 高度恒定、键盘物理盖住屏幕底部。JS 侧原本打算读
+     * `visualViewport` 自行测量，但真机日志证明 WebView 高度不变时系统不会 resize
+     * 它，`visualViewport.resize` 不触发（`viewport |` 诊断埋点 0 次打印），JS 侧
+     * 收不到通知。故由宿主主动把键盘高度推下来，供表单弹层（`.bn-form-popover`）
+     * 计算避让位移。
+     *
+     * @param heightDp 键盘高度（**dp**）。⚠️ 必须传 dp 而非物理 px：WebView 用
+     *                 `initial-scale=1.0`，JS 侧 1 CSS px = 1 dp，而 JS 的
+     *                 `window.innerHeight` 也是 CSS px——两者必须同一单位才能相减。
+     *                 真机实证：键盘 905 物理 px 在 density 2.75 机型上 = 329dp，
+     *                 早前误传物理 px 导致位移量被放大 2.75 倍、弹层飞出屏幕。
+     * @param gapDp    WebView 视口**底边到屏幕底部**的距离（dp）。键盘从屏幕底升起，
+     *                 先吃掉这段 gap 才轮到 WebView 视口；JS 侧据此算「视口被盖住的
+     *                 高度 = heightDp - gapDp」。本页弹层期该值 = Scaffold
+     *                 `innerPadding.bottom`（底部工具栏高度，真机 72dp）。
+     *                 键盘收起时两个值都传 0。
+     */
+    fun setImeHeight(heightDp: Float, gapDp: Float) =
+        enqueueCommand(
+            JSONObject()
+                .put("type", "imeHeight")
+                .put("heightPx", heightDp.toDouble())
+                .put("gapDp", gapDp.toDouble())
+        )
+
     /** 主题下行（深浅 + 主色 + 编辑区背景色，v1.9 增 background） */
     fun setTheme(dark: Boolean, primary: String, background: String) {
         val theme = JSONObject()
@@ -974,6 +1049,24 @@ class BlockNoteBridgeController {
                 "editorFocus" -> {
                     editorFocused = msg.optBoolean("focused", false)
                     Log.i(TAG, "diag | editorFocus = $editorFocused")
+                }
+                /**
+                 * 表单弹层展开/关闭上行（v2026-09-30 键盘收起修复）
+                 *
+                 * JS 侧 MutationObserver 监控 `.bn-form-popover` 挂载/卸载后上报。
+                 * 宿主据此在弹层打开期间**让底部工具栏不避让键盘**：`imePadding()` 读
+                 * 逐帧 `WindowInsets.ime`，会使 WebView 每帧收缩 → Scaffold content 区
+                 * 每帧变矮 → Chromium 输入会话失去稳定锚点 → input 凭空 blur → 系统收回
+                 * 键盘（真机日志：700ms 内 onSizeChanged 106 次）。弹层期不避让后
+                 * WebView 高度恒定、会话稳定（同场景 0 次）；弹层关闭后恢复正常避让。
+                 * 缺失字段按 false 处理（旧产物不下发 → 不切换，行为与改动前一致）。
+                 */
+                "formPopoverOpen" -> {
+                    val open = msg.optBoolean("open", false)
+                    Log.i(TAG, "diag | formPopoverOpen = $open")
+                    // Compose 快照状态：驱动宿主条件化 bottomBar 的 imePadding（弹层期不套）
+                    formPopoverOpen = open
+                    onFormPopoverOpenChanged?.invoke(open)
                 }
                 /**
                  * v2026-09-22：`saveSelection` 的应答——选区区间上行。
@@ -1949,6 +2042,9 @@ private fun createEditorWebView(
         loadUrl(EDITOR_URL)
     }
     controller.webView = webView
+    // v2026-09-30 键盘收起修复：把 View 侧 IME 过渡期信号接入桥控制器，
+    // 宿主 min-height 门控经 controller.isImeTransitionActive() 查询（见常量注释）
+    controller.imeTransitionChecker = { webView.isImeTransitionActive() }
     return webView
 }
 
@@ -2108,6 +2204,25 @@ private class ImeSuppressibleWebView(context: Context) : WebView(context) {
     private var lastReportedImeVisible: Boolean = false
 
     /**
+     * 最近一次 IME insets 可见性翻转的 uptimeMillis（v2026-09-30 键盘收起修复）。
+     * 0 = 本次进程内从未翻转（此时 [isImeTransitionActive] 恒 false，宿主照常直发）。
+     */
+    private var lastImeInsetFlipUptimeMs: Long = 0L
+
+    /**
+     * 是否处于键盘过渡期（v2026-09-30 键盘收起修复）：
+     * insets 可见性翻转后 [IME_TRANSITION_FREEZE_MS] 内返回 true。
+     *
+     * 此窗口内键盘正在弹出/收起：WebView 高度被 adjustResize 逐帧改写，且 Compose
+     * 侧 `WindowInsets.ime` 更新滞后——v1.11.9 门控（`imeBottomState == 0`）恰在
+     * 窗口内误放行 min-height 下发，relayout 中断 Chromium 输入会话（真机 18:07
+     * 日志：insets true 后 12ms 内 show 被撤销、input blur）。宿主应在窗口内
+     * 冻结 `setEditorMinHeight` 并暂存待窗口结束后补发。
+     */
+    fun isImeTransitionActive(): Boolean =
+        SystemClock.uptimeMillis() - lastImeInsetFlipUptimeMs < IME_TRANSITION_FREEZE_MS
+
+    /**
      * TEMP-DEBUG 取证辅助（v2026-09-29 键盘收起排查）：把当前调用点前 12 帧拼成单行栈。
      * 不用 Log.getStackTraceString 是因为完整栈 40+ 行易撞 logcat 单条约 4KB 的截断上限，
      * 且 12 帧足够覆盖「宿主 → 桥 → 视图」的完整调用链。定位后随埋点一并删除。
@@ -2150,12 +2265,16 @@ private class ImeSuppressibleWebView(context: Context) : WebView(context) {
     }
 
     /**
-     * TEMP-DEBUG 系统级键盘真值监听（v2026-09-29 键盘收起取证）：
-     * IME 可见性翻转时上报（API 30+ 平台才报告 IME insets，低版本本日志恒不翻转，
-     * 届时以 hide/show 栈日志为准）。判据：
+     * 系统级键盘真值监听（v2026-09-29 取证，v2026-09-30 **转正为生产信号源**）：
+     * 读取 IME insets 可见性，翻转时记录时间戳供 [isImeTransitionActive] 判定键盘
+     * 过渡期。⚠️ 本 override 已承担生产职责——后续清理 TEMP-DEBUG 时**只删日志行，
+     * 不得删除本 override**。
+     *
+     * API 30+ 平台才报告 IME insets；低版本本方法恒不翻转（visible 保持 false），
+     * 过渡期判定退化为"从不冻结"——即回退到旧行为，不影响正确性只失去保护。
+     * TEMP-DEBUG 日志判据（定位后随埋点一并删除）：
      * - insets 收起瞬间存在 hideImeNow 栈 = 宿主主动收；
      * - insets 收起但无任何 hide 栈 = 系统/输入法/Chromium 侧自行收起。
-     * 定位后随埋点一并删除本 override。
      */
     override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {
         val ime = WindowInsetsCompat.toWindowInsetsCompat(insets)
@@ -2163,7 +2282,17 @@ private class ImeSuppressibleWebView(context: Context) : WebView(context) {
         val visible = ime.bottom > 0
         if (visible != lastReportedImeVisible) {
             lastReportedImeVisible = visible
-            Log.i(TAG, "TEMP-DEBUG ime insets: visible=$visible height=${ime.bottom} suppress=$isImeSuppressed")
+            // 生产信号：翻转时间戳（v2026-09-30 键盘收起修复）
+            lastImeInsetFlipUptimeMs = SystemClock.uptimeMillis()
+            // TEMP-DEBUG 补全字段：仅打了 bottom 无法判断是「整体位移」还是「高度归零」，
+            // 也无法对照 isVisible 标志位（定位后随埋点一并删除）
+            Log.i(
+                TAG,
+                "TEMP-DEBUG ime insets: visible=$visible" +
+                    " ime=[l=${ime.left} t=${ime.top} r=${ime.right} b=${ime.bottom}]" +
+                    " isVisible=${WindowInsetsCompat.toWindowInsetsCompat(insets).isVisible(WindowInsetsCompat.Type.ime())}" +
+                    " suppress=$isImeSuppressed"
+            )
         }
         return super.onApplyWindowInsets(insets)
     }

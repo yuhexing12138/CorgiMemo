@@ -2,14 +2,12 @@ package com.corgimemo.app.ui.screens.inspiration
 
 import android.net.Uri
 import android.Manifest
-/** v2026-09-29 键盘避让治本：页面级 softInputMode 动态切换所需 */
-import android.app.Activity
 import android.content.Context
-import android.content.ContextWrapper
 import android.content.pm.PackageManager
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
-/** v2026-09-29 键盘避让治本：WindowManager.LayoutParams 常量所需 */
-import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -31,13 +29,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.imeAnimationTarget
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-/** v2026-09-29 键盘避让治本：bottomBar 一步到位避让所需 */
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -80,6 +75,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -156,6 +152,7 @@ import com.mohamedrejeb.richeditor.ui.material3.RichTextEditorDefaults
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.corgimemo.app.ui.screens.probe.BlockNoteBridgeController
 import com.corgimemo.app.ui.screens.probe.BlockNoteEditorWebView
+import com.corgimemo.app.ui.screens.probe.IME_TRANSITION_FREEZE_MS
 import com.corgimemo.app.ui.components.LongPressRepeatIconButton
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -1169,50 +1166,6 @@ fun InspirationEditScreen(
     }
 
     /**
-     * v2026-09-29 键盘避让治本：本页动态切换 softInputMode 为 ADJUST_NOTHING。
-     *
-     * 背景（重命名键盘"展开又收起"根因，TEMP-DEBUG 取证实锤）：MainActivity 在
-     * Manifest 声明 adjustResize，键盘滑入动画期间 Window 每帧缩放（真机
-     * onSizeChanged 1643→868px、每 10ms 一帧、全程约 50 次），`weight(1f)` 的正文
-     * WebView 被迫逐帧 reflow；Chromium/输入法框架在这场 resize 风暴中中断输入
-     * 会话——重命名输入框凭空 blur（与 onSizeChanged 同帧、宿主 hideImeNow 零调用）
-     * → 系统随即收起键盘。竖屏大视频（弹层位置高、风暴剧烈）必现。
-     *
-     * ADJUST_NOTHING 后 Window 纹丝不动，避让改由布局层一步承担：bottomBar 套
-     * `windowInsetsPadding(WindowInsets.imeAnimationTarget)`（见 bottomBar 处注释）
-     * → bottomBar 抬高、Scaffold content 随 bottomBar 实测高度让位（M3 Scaffold
-     * 源码确认：有 bottomBar 时 content bottom padding = bottomBar 高度，
-     * contentWindowInsets 的 bottom 不参与）→ WebView 全程只 reflow 一次。
-     *
-     * insets 分发与 softInputMode 无关：BottomBar 的 ime 高度记录（T/H/A 面板
-     * 高度真值）、suppressIme 抑制链、scrollFollow 焦点门控均不受影响。
-     *
-     * 仅本页生效：进入时保存原值，退出（onDispose）恢复——不硬编码恢复值，
-     * 避免未来 Manifest 调整后恢复出错。
-     */
-    DisposableEffect(Unit) {
-        /** 沿 baseContext 链解出宿主 Activity（LocalContext 可能被 ContextWrapper 包裹） */
-        var cursor: Context = context
-        var hostActivity: Activity? = null
-        while (cursor is ContextWrapper) {
-            if (cursor is Activity) {
-                hostActivity = cursor
-                break
-            }
-            cursor = cursor.baseContext
-        }
-        val window = hostActivity?.window
-        val previousMode = window?.attributes?.softInputMode ?: 0
-        window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
-        onDispose {
-            window?.setSoftInputMode(
-                if (previousMode != 0) previousMode
-                else WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
-            )
-        }
-    }
-
-    /**
      * 初始化已有内容块
      *
      * v2026-07-25 三写存储重构：仅从 content_blocks 表加载附件
@@ -1552,20 +1505,6 @@ fun InspirationEditScreen(
         bottomBar = {
             /** 灵感编辑页底部导航栏（6 按钮 + 可折叠格式工具栏） */
             InspirationEditBottomBar(
-                /**
-                 * v2026-09-29 键盘避让治本：imeAnimationTarget 一步到位。
-                 *
-                 * `imeAnimationTarget` 在键盘滑入动画**开始瞬间**即为最终高度
-                 * （非逐帧插值的 `WindowInsets.ime`）→ bottomBar 高度一帧到位，
-                 * Scaffold content（正文 WebView）随 bottomBar 实测高度让位，
-                 * 全程只 reflow 一次；键盘随后滑入填充下方空白（约 300ms）。
-                 * 对比 adjustResize 时代约 50 帧的 WebView resize 风暴
-                 * （重命名键盘"展开又收起"的根因，见本文件 softInputMode 注释）。
-                 *
-                 * 键盘收起方向同理归零：内容先恢复、被退场键盘暂时盖住，
-                 * 键盘退去自然露出，无视觉跳变。
-                 */
-                modifier = Modifier.windowInsetsPadding(WindowInsets.imeAnimationTarget),
                 isFormatExpanded = isFormatExpanded,
                 /** 单一状态直传：三个面板的展开/互斥与按钮激活态都由它派生（v2026-09-21 收敛） */
                 openPanel = openPanel,
@@ -1950,9 +1889,41 @@ fun InspirationEditScreen(
                  * 只读挡得住用户打字，挡不住"点一下删除块"。故工具栏必须自己再拦一道。
                  */
                 toolbarEnabled = !isLocked,
-                modifier = Modifier.safeAreaForEditBar()
+                /**
+                 * 底部工具栏的键盘避让（v2026-09-30 键盘收起修复·最终版）
+                 *
+                 * ## 真凶（真机日志实证）
+                 *
+                 * `safeAreaForEditBar()` = `imePadding()`，读的是 `WindowInsets.ime`
+                 * （键盘动画的**当前值**）——动画期间它**每帧**变化，于是本工具栏每帧被抬高
+                 * → Scaffold content 区每帧变矮 → WebView（`weight(1f)`）的 viewport
+                 * 逐帧变化 → Chromium 输入会话在动画中段失去稳定锚点 → 结束会话 →
+                 * 弹层 input 凭空 blur → 系统把键盘收走。
+                 *
+                 * 真机日志（09:48）铁证：弹层打开到键盘完全展开的 700ms 内，WebView 的
+                 * `onSizeChanged` 被触发 **106 次**（1692→868→1729px 往复抖动）。
+                 * 此前试过的 `softInputMode=ADJUST_PAN` 无效，正因为 `imePadding` 读的是
+                 * Compose 的 `WindowInsets`，与窗口级 resize 无关。
+                 *
+                 * ## 修法（**重命名弹层打开期间不避让**）
+                 *
+                 * 弹层打开（`formPopoverOpen == true`）时不套 `imePadding()`：
+                 * WebView 高度**恒定** → 无逐帧收缩 → 输入会话稳定。
+                 * 真机日志（10:04）验证：同场景 `onSizeChanged` **0 次**，键盘可正常展开。
+                 *
+                 * 弹层关闭后恢复 `safeAreaForEditBar()`——普通正文输入照旧避让键盘，
+                 * 行为与修复前完全一致。
+                 *
+                 * ## 已知取舍（用户决策）
+                 *
+                 * 弹层打开期间工具栏**不跟随键盘上移**，会被键盘盖住。这是**有意接受**的：
+                 * 重命名时用户只需操作弹层输入框，不需要底部工具栏。
+                 * 弹层自身的键盘避让由 JS 侧（`visualViewport`）承担，见 EditorApp.tsx
+                 * 的「表单弹层键盘避让」effect。
+                 */
+                modifier = if (blockNoteController.formPopoverOpen) Modifier else Modifier.safeAreaForEditBar()
             )
-        }
+        },
     ) { innerPadding ->
         /**
          * ⚠️ v1.11.9 诊断埋点（**临时**，定位"键盘弹出 WebView 不收缩"后移除）：
@@ -1975,16 +1946,136 @@ fun InspirationEditScreen(
          * 捕获普通局部变量会是旧值，读 state 才拿得到最新值。
          */
         val imeBottomState = remember { mutableStateOf(0) }
+        /**
+         * ⚠️ v2026-09-30 精准埋点 + 避让参数（**临时埋点部分**待清理）：
+         * `innerPadding` 是 Scaffold `remember` 出来的**同一个自适应 PaddingValues 实例**
+         * （内部 `paddingHolder` 是 mutableStateOf），实例本身永不变化——故不能拿它当
+         * `LaunchedEffect` 的 key（原埋点因此只打 1 次）。这里直接**读它的分量**：
+         * `calculateBottomPadding()` 内部读的就是那个 state，在 Composable 里读即建立订阅，
+         * 值变化会自动触发重组，配合 `LaunchedEffect(值)` 就能逐次打出。
+         *
+         * Scaffold 源码中 `bottom = if (isBottomBarEmpty) insets else bottomBar高度`——
+         * 本页 bottomBar 非空，故 `bottom` 是**工具栏实测高度**（真机 72dp）。
+         * 它同时是「WebView 视口底边到屏幕底」的距离，是键盘避让的换算基准（见下）。
+         */
+        val diagInnerBottom = innerPadding.calculateBottomPadding()
         LaunchedEffect(diagImeBottomPx) {
             imeBottomState.value = diagImeBottomPx
+            /**
+             * v2026-09-30 键盘高度下发（弹层避让的数据源）：
+             * 弹层期宿主不避让键盘 → WebView 高度恒定 → JS 侧 `visualViewport`
+             * 不触发 resize、无从感知键盘。故把键盘高度主动推给 JS，供
+             * `.bn-form-popover` 计算避让位移（详见 `setImeHeight` KDoc）。
+             * 键盘收起（0）也要下发，用于清除残留位移。
+             *
+             * ⚠️ 传 **dp** 而非物理 px：JS 的 `window.innerHeight` 是 CSS px，
+             * WebView `initial-scale=1.0` 下 1 CSS px = 1 dp，必须同单位。
+             * 同时传 `gapDp`（视口底边到屏底距离）——键盘从屏幕底升起、先吃掉这段
+             * gap 才轮到视口，JS 侧需用它算出「视口真正被盖住的高度」。
+             */
+            blockNoteController.setImeHeight(
+                heightDp = with(density) { diagImeBottomPx.toDp().value },
+                gapDp = diagInnerBottom.value
+            )
             Log.d(
                 "BlockNoteEditor",
                 "diag | ime bottom=${diagImeBottomPx}px" +
-                    " (${with(density) { diagImeBottomPx.toDp() }})"
+                    " (${with(density) { diagImeBottomPx.toDp() }})" +
+                    " | gapDp=${diagInnerBottom.value}"
             )
         }
-        LaunchedEffect(innerPadding) {
-            Log.d("BlockNoteEditor", "diag | innerPadding: $innerPadding")
+        /**
+         * ⚠️ v2026-09-30 埋点（**临时**，定位弹层期 WebView 压缩源的取值验证）：
+         * `WindowInsets.ime.getBottom(density)` 是 @Composable 重载，必须在外层求值
+         * （effect 体内不可调用）。本 effect 用于观察 innerPadding 与 ime 是否同步变化。
+         */
+        val diagImeBottomForPadding = WindowInsets.ime.getBottom(density)
+        LaunchedEffect(diagInnerBottom, blockNoteController.formPopoverOpen) {
+            Log.d(
+                "BlockNoteEditor",
+                "diag | innerPadding top=${innerPadding.calculateTopPadding()}" +
+                    " bottom=$diagInnerBottom" +
+                    " | ime.getBottom=${diagImeBottomForPadding}px" +
+                    " | formPopoverOpen=${blockNoteController.formPopoverOpen}"
+            )
+        }
+        /**
+         * ⚠️ v2026-09-30 逐帧 insets 采样埋点（**临时**，定位「静置期弹层消失」真因）：
+         *
+         * 背景：真机日志显示弹层挂载后键盘升起，静置 2.6~3.7s 后
+         * `imeHeight` 逐帧降至 0、弹层卸载；但用户口述「键盘并未收起」。
+         * 现有埋点只在 insets **翻转瞬间**打日志（`onApplyWindowInsets`），
+         * 缺少静置期的**连续值**——无法判定「键盘真收」还是「insets 被污染」。
+         *
+         * 本 effect 用 `withFrameNanos` 按 ~150ms 节流采样，打印三路真值：
+         * 1. `WindowInsets.ime.getBottom()`：Compose 层 insets 真值（键盘是否真动）
+         * 2. `innerPadding.calculateBottomPadding()`：Scaffold 侧派生值
+         * 3. 弹层开关态：判定采样窗口
+         *
+         * ⚠️ **key 必须是 `Unit`（长驻）**：若以 `formPopoverOpen` 为 key，弹层关闭瞬间
+         * effect 被取消，恰好丢掉「关闭后收键盘衰变」这段最关键的数据。
+         * 故本 effect 全程存活，靠内部 `wasOpen` 边沿检测划定采样窗口：
+         * 弹层打开起采样，关闭后继续 1.5s 抓尾迹，然后静默等待下一次打开。
+         * 定位后随埋点一并删除。
+         */
+        LaunchedEffect(Unit) {
+            var wasOpen = false
+            var closeAtMs = 0L
+            var lastEmit = 0L
+            while (true) {
+                withFrameNanos { }
+                val open = blockNoteController.formPopoverOpen
+                val nowMs = SystemClock.uptimeMillis()
+                // 边沿检测：仅在「打开中」或「关闭后 1.5s 尾迹窗」内采样，其余时刻零开销
+                if (open && !wasOpen) {
+                    wasOpen = true
+                    closeAtMs = 0L
+                    lastEmit = 0L
+                } else if (!open && wasOpen) {
+                    wasOpen = false
+                    closeAtMs = nowMs
+                }
+                val inWindow = open || (closeAtMs > 0L && nowMs - closeAtMs <= 1500L)
+                if (!inWindow) continue
+                // ~150ms 节流：键盘动画单帧 16ms，150ms 足以看清衰变曲线又不刷屏
+                if (nowMs - lastEmit < 150L) continue
+                lastEmit = nowMs
+                /**
+                 * ⚠️ `WindowInsets.ime.getBottom(density)` 带 `@Composable` 重载，
+                 * 协程体内**不可调用**（编译报 "Composable invocations can only happen
+                 * from the context of a @Composable function"）。故复用上方已有的
+                 * [imeBottomState]——它在 Composable 作用域求值、又在
+                 * `LaunchedEffect(diagImeBottomPx)` 里同步写入，正是「Composable 取值 +
+                 * 协程可读」的现成载体，无需另建 state。
+                 */
+                val imeBottomNow = imeBottomState.value
+                Log.d(
+                    "BlockNoteEditor",
+                    "diag | [insetsTrace] open=$open" +
+                        " compose.imeBottom=${imeBottomNow}px" +
+                        " | innerBottom=$diagInnerBottom" +
+                        // 关闭后相对关闭时刻的耗时（判断「静置多久后消失」）
+                        " | sinceCloseMs=${if (closeAtMs > 0L) nowMs - closeAtMs else -1L}" +
+                        " | uptime=$nowMs"
+                )
+            }
+        }
+
+        /**
+         * min-height 下发闸门（v2026-09-30 键盘收起修复）：
+         * 包装 [blockNoteController.setEditorMinHeight]，在 WebView 报告的「键盘过渡期」
+         * （IME insets 翻转后 [IME_TRANSITION_FREEZE_MS] 内）冻结下发并暂存最新值，
+         * 窗口结束后补发。真机 18:07 日志实证：门控读 Compose 侧 `imeBottomState`
+         * 有滞后，View 侧 insets 已翻转（键盘开始弹出）时门控仍误判"键盘收起"而放行，
+         * min-height relayout（bn-editor 857→662px）落在键盘 show 窗口期，中断
+         * Chromium 输入会话 → Rename 弹层 input 凭空 blur → 键盘被系统收走。
+         * 离开本页面时撤销挂起的补发（onDispose），防止对已释放的 WebView 发命令。
+         */
+        val editorMinHeightGate = remember {
+            EditorMinHeightGate { blockNoteController.setEditorMinHeight(it) }
+        }
+        DisposableEffect(Unit) {
+            onDispose { editorMinHeightGate.dispose() }
         }
 
         /**
@@ -2431,9 +2522,18 @@ fun InspirationEditScreen(
                          * 与 Android WebView 的键盘避让互相激发，视口坍缩到一行高
                          * （真机实测 innerHeight 620 → 28）。冻结为键盘收起时的稳定值，
                          * 键盘收起后自然恢复。
+                         *
+                         * v2026-09-30 键盘收起修复：`imeBottomState` 是 Compose 侧
+                         * insets，更新滞后于 View 侧——键盘刚弹出（View 已翻转 visible=true、
+                         * WebView 开始缩放）的窗口期内它仍是 0，原门控在此误放行。
+                         * 现交由 [editorMinHeightGate] 二次判定：WebView 报告处于键盘
+                         * 过渡期（insets 翻转后 450ms 内）则冻结暂存、窗口后补发。
                          */
                         if (imeBottomState.value == 0) {
-                            blockNoteController.setEditorMinHeight(heightDp.value)
+                            editorMinHeightGate.deliver(
+                                heightDp.value,
+                                blockNoteController.isImeTransitionActive()
+                            )
                         }
                     },
                 /** 唯一真值：内容区实际生效背景色（Transparent 已在源头回落为主题 background） */
@@ -2904,5 +3004,68 @@ fun RecordingWaveAnimation(isListening: Boolean) {
                     .background(MaterialTheme.colorScheme.primary)
             )
         }
+    }
+}
+
+/**
+ * min-height 下发闸门（v2026-09-30 键盘收起修复）。
+ *
+ * 职责：包装一次 `setEditorMinHeight` 下发，按「WebView 是否处于键盘过渡期」
+ * 决定立即下发或冻结暂存。
+ *
+ * - **非过渡期**：立即下发，并撤销任何挂着的补发（本次直发已覆盖其值）；
+ * - **过渡期**（WebView insets 翻转后 [IME_TRANSITION_FREEZE_MS] 内）：不下发，
+ *   暂存最新值并安排补发；窗口内若又有新的 onSizeChanged，pending 被更新为
+ *   最新值、补发时间点顺延（removeCallbacks + 重新 postDelayed），最终只补发
+ *   一次且值不丢。过渡期内 WebView 尺寸稳定后（键盘弹完/收完）通常不再有新的
+ *   onSizeChanged，补发即是最后一次测得的真实高度——最坏代价是 min-height 晚
+ *   450ms 生效，用户无感。
+ *
+ * 修复的竞态：v1.11.9 门控判 `imeBottomState == 0`（Compose 侧 insets），而
+ * Compose 更新滞后于 View 侧——键盘 show 窗口期（真机 18:07 日志：insets true
+ * 后仅 12ms 即被系统撤销）内门控误放行，min-height relayout 中断 Chromium 输入
+ * 会话 → Rename 弹层 input 凭空 blur → 键盘被收走。
+ *
+ * @param deliver 实际下发动作（注入 `blockNoteController::setEditorMinHeight`）
+ */
+private class EditorMinHeightGate(private val deliver: (Float) -> Unit) {
+
+    /** 过渡期内暂存的待下发值；null = 无挂起补发 */
+    private var pendingValue: Float? = null
+
+    /** 主线程 handler：补发定时用（onSizeChanged 回调在主线程，无并发问题） */
+    private val handler = Handler(Looper.getMainLooper())
+
+    /** 窗口结束后的补发动作：取暂存值下发并清空 */
+    private val deliverPending = Runnable {
+        pendingValue?.let { value ->
+            pendingValue = null
+            deliver(value)
+        }
+    }
+
+    /**
+     * 提交一次 min-height 值（值单位 dp，语义与 [BlockNoteBridgeController.setEditorMinHeight] 一致）。
+     *
+     * @param value WebView 实测高度（dp）
+     * @param imeTransitionActive WebView 报告的键盘过渡期判定（insets 翻转后 450ms 内为 true）
+     */
+    fun deliver(value: Float, imeTransitionActive: Boolean) {
+        if (!imeTransitionActive) {
+            // 非过渡期：直发，并撤销挂起的补发（本次已携带更新的值，补发作废）
+            pendingValue = null
+            handler.removeCallbacks(deliverPending)
+            deliver(value)
+        } else {
+            // 过渡期：冻结——暂存最新值，窗口结束后补发（重复冻结顺延时间点）
+            pendingValue = value
+            handler.removeCallbacks(deliverPending)
+            handler.postDelayed(deliverPending, IME_TRANSITION_FREEZE_MS)
+        }
+    }
+
+    /** 撤销挂起的补发（宿主页面离开时调用，防止向已释放的 WebView 发命令） */
+    fun dispose() {
+        handler.removeCallbacks(deliverPending)
     }
 }

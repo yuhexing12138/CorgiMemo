@@ -121,7 +121,18 @@ export default defineConfig({
   },
   build: {
     outDir: "../app/src/main/assets/blocknote-web/editor",
-    emptyOutDir: true,
+    /**
+     * ⚠️ **必须为 false**（v2026-09-30 修正）。
+     *
+     * 本产物是 `vite-plugin-singlefile` 打出的**单文件** `editor.html`，
+     * 每次构建都会**整体覆盖**同一路径，目录里不存在需要清理的陈旧 chunk
+     * （`assetsInlineLimit: 1e8` 已把所有资源内联）。
+     *
+     * 置 `true` 时 vite 会先 `emptyDir()` —— 该操作经本机安全删除层会被拦
+     * （`node-safe-delete-shim` 的 bulk-delete 守卫 + 沙箱规则），
+     * **构建直接失败、产物停留在旧版**（真机症状：改了源码、哈希却不变）。
+     */
+    emptyOutDir: false,
     assetsInlineLimit: 100000000,
     rollupOptions: {
       input: resolve(__dirname, "editor.html"),

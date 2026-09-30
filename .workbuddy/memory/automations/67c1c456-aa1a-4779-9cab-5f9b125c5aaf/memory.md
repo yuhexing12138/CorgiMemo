@@ -34,3 +34,10 @@
 - 最终核验：`git status --short .workbuddy` 无输出；`origin/master...HEAD` 0/0 完全同步。
 - ⚠️ 踩坑：提交②初版误把临时文件 commit_msg2.tmp 一并 add（因 `git add .workbuddy` 含它），已 `git reset --soft HEAD~1` + 删临时文件 + 重提，最终提交仅 1 文件。教训：提交信息临时文件勿放在 .workbuddy 内，或提交前显式排除。
 - 全程未触碰 compose-rich-editor 等并行改动（editor.html 等保持未暂存）。
+
+## 2026-09-30 17:54 执行记录
+- `git status --short .workbuddy`：有变动，3 个文件（均 M）——`memory/2026-09-30.md`、`memory/MEMORY.md`、`memory/automations/67c1c456-aa1a-4779-9cab-5f9b125c5aaf/memory.md`。
+- 提交前核验：暂存区为空，并行改动（editor.html、InspirationEditScreen.kt、BlockNoteEditorWebView.kt、blocknote-probe/*）均**未暂存**，无历史坑中的"已暂存误混入"情况。`git add .workbuddy` 仅纳入本 3 文件（已 `git diff --cached --name-only` 核验）。
+- 提交①（422c4bbd）：中文提交信息 `chore: 同步 .workbuddy 工作记忆（2026-09-30 17:54）`，临时信息文件置于仓库外（C:/Users/EDY/Desktop/commit_msg.tmp）避免被误纳入，提交后删除。提交后 `git status --short .workbuddy` 无输出。
+- 推送：`git push origin master` → `3d1be0f6..422c4bbd`，**成功**；`origin/master...HEAD` 核验 `0 0` 完全同步。
+- 全程未触碰 compose-rich-editor 等并行改动，未修改 .gitignore 或仓库配置。

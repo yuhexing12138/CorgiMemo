@@ -60,6 +60,25 @@ export type DownMessage =
    * fontSize 样式的文字；有选区时仍走 `format("fontSize")` 行内样式。
    */
   | { type: "setBaseFontSize"; fontSizePx: number }
+  /**
+   * 软键盘高度下发（v2026-09-30 键盘遮挡弹层修复，单位 px）。
+   *
+   * ## 为什么需要这条消息
+   * 宿主为保证 Chromium 输入会话稳定，在表单弹层打开期间让底部工具栏
+   * **不避让键盘**（`imePadding()` 会逐帧压缩 WebView，见
+   * `InspirationEditScreen.kt` 的 bottomBar 条件避让）——代价是 WebView
+   * 高度恒定，**键盘物理上盖住屏幕底部**，而 WebView 内并不知道。
+   *
+   * 原本打算由 JS 读 `visualViewport` 自行计算遮挡量，但真机日志证明：
+   * WebView 高度不变时系统不会 resize 它，**`visualViewport.resize` 根本不
+   * 触发**（`viewport` 诊断埋点 0 次打印），JS 侧无从感知键盘。故改由宿主
+   * 主动把键盘高度推下来，JS 用它直接算遮挡，不依赖任何视口事件。
+   *
+   * 取值 = `WindowInsets.ime.getBottom(density)` 换算成 **dp**；键盘收起时下发 0。
+   * 另带 `gapDp`（WebView 视口底边到屏幕底的距离）——键盘从屏幕底升起，先吃掉
+   * 这段 gap 才轮到 WebView 视口，JS 侧据此算「视口被盖住的高度 = heightPx - gapDp」。
+   */
+  | { type: "imeHeight"; heightPx: number; gapDp: number }
   /** 主动要一次快照（返回键/切后台前） */
   | { type: "requestSave" }
   /** 撤销/重做（v1.2：原页面撤销/重做按钮经桥触发） */
@@ -420,6 +439,17 @@ export type UpMessage =
    * 是否落在 `.bn-editor` 内；仅在状态翻转时上行（去重，避免刷屏）。
    */
   | { type: "editorFocus"; focused: boolean }
+  /**
+   * 表单弹层（`.bn-form-popover`）展开/关闭状态（v2026-09-30 键盘收起修复）
+   *
+   * 由 JS 侧 MutationObserver 监控弹层 DOM 挂载/卸载后上行。宿主据此在弹层
+   * 打开期间**让底部工具栏不避让键盘**（`imePadding()` 读逐帧 `WindowInsets.ime`，
+   * 会使 WebView 每帧收缩 → 打断 Chromium 输入会话 → input 凭空 blur → 系统收回
+   * 键盘；真机日志：700ms 内 onSizeChanged 106 次）。弹层期不避让后 WebView 高度
+   * 恒定，会话稳定（同场景 onSizeChanged 0 次）。弹层关闭后宿主恢复
+   * `safeAreaForEditBar()` 的正常避让。
+   */
+  | { type: "formPopoverOpen"; open: boolean }
   /**
    * 选区区间快照（v2026-09-22 新增）：对下行 `saveSelection` 的应答。
    *
